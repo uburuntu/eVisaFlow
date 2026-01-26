@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+downloads/
+downloads/debug/*.html
+snapshots/
+*.pdf
+.env
+.env.local
+config.json
+test-credentials.json

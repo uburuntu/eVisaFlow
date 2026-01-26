@@ -1,0 +1,21 @@
+{
+  "credentials": {
+    "auth": {
+      "type": "passport",
+      "passportNumber": "123456789"
+    },
+    "dateOfBirth": {
+      "day": 31,
+      "month": 3,
+      "year": 1980
+    },
+    "preferredTwoFactorMethod": "sms"
+  },
+  "purpose": "immigration_status_other",
+  "options": {
+    "headless": true,
+    "verbose": false,
+    "screenshotOnError": true,
+    "outputDir": "./downloads"
+  }
+}

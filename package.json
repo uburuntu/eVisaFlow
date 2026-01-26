@@ -1,0 +1,46 @@
+{
+  "name": "evisa-flow",
+  "version": "0.1.0",
+  "description": "Automated UK eVisa share code + PDF retrieval via Playwright.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "evisa-flow": "bin/evisa-flow.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap",
+    "dev": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --watch",
+    "lint": "eslint . --max-warnings=0",
+    "start": "node ./bin/evisa-flow.js",
+    "snapshots": "node ./scripts/snapshot.js",
+    "fixtures": "node ./scripts/refresh-fixtures.js",
+    "test": "node ./scripts/test-steps.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.2",
+    "pino": "^10.3.0",
+    "playwright": "^1.58.0",
+    "prompts": "^2.4.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "@types/prompts": "^2.4.9",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

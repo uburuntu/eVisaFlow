@@ -1,6 +1,6 @@
 {
   "name": "evisa-flow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Automated UK eVisa share code + PDF retrieval via Playwright.",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,11 +14,19 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "README.md",
+    "config.sample.json"
+  ],
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap",
     "dev": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --watch",
     "lint": "eslint . --max-warnings=0",
     "start": "node ./bin/evisa-flow.js",
+    "prepack": "npm run build",
     "snapshots": "node ./scripts/snapshot.js",
     "fixtures": "node ./scripts/refresh-fixtures.js",
     "test": "node ./scripts/test-steps.js",

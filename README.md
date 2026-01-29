@@ -52,6 +52,20 @@ const result = await flow.run();
 // { pdfPath: string, shareCode: string, validUntil?: Date }
 ```
 
+## Parallel usage
+
+This library is safe to run in parallel as long as each run writes to its own
+output location. The default PDF name is deterministic, so concurrent runs for the same person and date can overwrite each other.
+
+- Use a unique `options.outputDir` per run, or set `options.outputFile`.
+- Avoid sharing `options.userDataDir` across concurrent runs.
+
+## Privacy & security
+
+- No data is persisted beyond the output PDF and optional debug artifacts.
+- Do not commit real credentials or downloaded files.
+- For security reporting, see `SECURITY.md`.
+
 ## Config
 
 Create `config.json`:

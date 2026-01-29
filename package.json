@@ -1,6 +1,6 @@
 {
   "name": "evisa-flow",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Automated UK eVisa share code + PDF retrieval via Playwright.",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,11 +29,28 @@
     "prepack": "npm run build",
     "snapshots": "node ./scripts/snapshot.js",
     "fixtures": "node ./scripts/refresh-fixtures.js",
-    "test": "node ./scripts/test-steps.js",
+    "test": "npm run build && node --test",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "evisa",
+    "govuk",
+    "share-code",
+    "immigration",
+    "playwright",
+    "automation",
+    "uk",
+    "pdf"
+  ],
+  "author": "Ramzan Bekbulatov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uburuntu/eVisaFlow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/uburuntu/eVisaFlow/issues"
+  },
+  "homepage": "https://github.com/uburuntu/eVisaFlow#readme",
   "license": "MIT",
   "dependencies": {
     "commander": "^14.0.2",

@@ -25,7 +25,7 @@ debug-flow: build
 fixtures:
 	npm run fixtures
 
-test-steps: build
-	node scripts/test-steps.js
+test:
+	npm test
 
 .PHONY: install build dev lint typecheck run snapshots debug-flow fixtures test-steps

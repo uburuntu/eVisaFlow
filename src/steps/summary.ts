@@ -11,34 +11,31 @@ export class SummaryStep extends BaseStep {
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger } = context;
-    // Some sessions show a "Stay signed in" dialog.
+    await this.dismissStaySignedIn(context);
+    await this.dismissCookieBanner(context);
+
+    // Extract name and valid-until from the summary table before navigating away.
     try {
-      const staySignedIn = page.getByRole("button", { name: /Stay signed in/i });
-      if ((await staySignedIn.count()) > 0) {
-        logger.action("click", "stay-signed-in");
-        await staySignedIn.first().click();
+      const nameCell = page.locator('dt.govuk-summary-list__key:has-text("Name") + dd');
+      if ((await nameCell.count()) > 0) {
+        context.extractedData.name = (await nameCell.first().textContent())?.trim();
+        logger.debug("Extracted name from summary", { name: context.extractedData.name });
       }
     } catch {
-      // Ignore if dialog not present.
+      logger.warn("Failed to extract name from summary page");
     }
 
-    // Handle analytics cookie banner if present.
     try {
-      const accept = page.getByRole("button", { name: /Accept analytics cookies/i });
-      const reject = page.getByRole("button", { name: /Reject analytics cookies/i });
-      if ((await accept.count()) > 0) {
-        logger.action("click", "accept-analytics-cookies");
-        await accept.click();
-      } else if ((await reject.count()) > 0) {
-        logger.action("click", "reject-analytics-cookies");
-        await reject.click();
+      const validUntilCell = page.locator('dt.govuk-summary-list__key:has-text("Valid until") + dd');
+      if ((await validUntilCell.count()) > 0) {
+        context.extractedData.validUntil = (await validUntilCell.first().textContent())?.trim();
+        logger.debug("Extracted valid-until from summary", { validUntil: context.extractedData.validUntil });
       }
     } catch {
-      // Ignore if cookie banner not present.
+      logger.warn("Failed to extract valid-until from summary page");
     }
 
     logger.action("click", "create-share-code");
-    // "Create a share code" is a link styled as a button on this page.
     const linkByRole = page.getByRole("link", { name: /Create a share code/i });
     const linkBySelector = page.locator('a.govuk-button:has-text("Create a share code")');
     const linkByHref = page.locator('a[href^="/share/"][href$="/code"]');

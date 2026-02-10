@@ -11,16 +11,7 @@ export class ConfirmationStep extends BaseStep {
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger } = context;
-    // Some sessions show a "Stay signed in" dialog.
-    try {
-      const staySignedIn = page.getByRole("button", { name: /Stay signed in/i });
-      if ((await staySignedIn.count()) > 0) {
-        logger.action("click", "stay-signed-in");
-        await staySignedIn.first().click();
-      }
-    } catch {
-      // Ignore if dialog not present.
-    }
+    await this.dismissStaySignedIn(context);
 
     logger.action("click", "get-share-code");
     const linkByRole = page.getByRole("link", { name: /Get share code/i });

@@ -62,7 +62,6 @@ export interface Step {
   id: string;
   detect(page: import("playwright").Page): Promise<boolean>;
   execute(context: StepContext): Promise<void>;
-  validate?(context: StepContext): Promise<void>;
 }
 
 export interface Logger {

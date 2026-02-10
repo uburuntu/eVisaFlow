@@ -28,4 +28,4 @@ fixtures:
 test:
 	npm test
 
-.PHONY: install build dev lint typecheck run snapshots debug-flow fixtures test-steps
+.PHONY: install build dev lint typecheck run snapshots debug-flow fixtures test

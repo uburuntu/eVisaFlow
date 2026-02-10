@@ -48,9 +48,6 @@ export class StepRunner {
       }
 
       await step.execute(this.context);
-      if (step.validate) {
-        await step.validate(this.context);
-      }
 
       if (this.result) {
         return this.result;

@@ -5,9 +5,6 @@ export abstract class BaseStep implements Step {
   abstract id: string;
   abstract detect(page: Page): Promise<boolean>;
   abstract execute(context: StepContext): Promise<void>;
-  async validate(_context: StepContext): Promise<void> {
-    return;
-  }
 
   protected heading(page: Page, name: string): Locator {
     return page.getByRole("heading", { name });
@@ -40,5 +37,35 @@ export abstract class BaseStep implements Step {
       typeof selector === "string" ? page.locator(selector) : selector;
     await locator.waitFor({ state: "visible", timeout });
     await locator.click();
+  }
+
+  protected async dismissStaySignedIn(context: StepContext): Promise<void> {
+    const { page, logger } = context;
+    try {
+      const staySignedIn = page.getByRole("button", { name: /Stay signed in/i });
+      if ((await staySignedIn.count()) > 0) {
+        logger.action("click", "stay-signed-in");
+        await staySignedIn.first().click();
+      }
+    } catch {
+      // Ignore — dialog may not be present
+    }
+  }
+
+  protected async dismissCookieBanner(context: StepContext): Promise<void> {
+    const { page, logger } = context;
+    try {
+      const accept = page.getByRole("button", { name: /Accept analytics cookies/i });
+      const reject = page.getByRole("button", { name: /Reject analytics cookies/i });
+      if ((await accept.count()) > 0) {
+        logger.action("click", "accept-analytics-cookies");
+        await accept.click();
+      } else if ((await reject.count()) > 0) {
+        logger.action("click", "reject-analytics-cookies");
+        await reject.click();
+      }
+    } catch {
+      // Ignore — cookie banner may not be present
+    }
   }
 }

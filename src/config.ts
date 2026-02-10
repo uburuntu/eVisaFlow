@@ -19,16 +19,18 @@ const AuthMethodSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-export const ConfigSchema = z.object({
-  credentials: z.object({
-    auth: AuthMethodSchema,
-    dateOfBirth: z.object({
-      day: z.number().int().min(1).max(31),
-      month: z.number().int().min(1).max(12),
-      year: z.number().int().min(1900).max(2100),
-    }),
-    preferredTwoFactorMethod: z.enum(["sms", "email"]).optional(),
+export const CredentialsSchema = z.object({
+  auth: AuthMethodSchema,
+  dateOfBirth: z.object({
+    day: z.number().int().min(1).max(31),
+    month: z.number().int().min(1).max(12),
+    year: z.number().int().min(1900).max(2100),
   }),
+  preferredTwoFactorMethod: z.enum(["sms", "email"]).optional(),
+});
+
+export const ConfigSchema = z.object({
+  credentials: CredentialsSchema,
   purpose: z
     .enum(["right_to_work", "right_to_rent", "immigration_status_other"])
     .optional(),

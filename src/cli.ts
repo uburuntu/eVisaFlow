@@ -2,7 +2,7 @@ import { Command } from "commander";
 import prompts from "prompts";
 import { readFile } from "node:fs/promises";
 import { EVisaFlow } from "./evisa-flow.js";
-import { ConfigSchema, type ConfigFile } from "./config.js";
+import { ConfigSchema, CredentialsSchema, type ConfigFile } from "./config.js";
 import type {
   AuthMethod,
   Credentials,
@@ -51,22 +51,34 @@ const ensureCredentials = async (
         ],
       },
       {
-        type: seed?.auth?.type === "passport" || !seed?.auth?.type ? "text" : null,
+        type: (_prev: unknown, values: Record<string, unknown>) => {
+          const authType = seed?.auth?.type ?? values.authType;
+          return authType === "passport" ? "text" : null;
+        },
         name: "passportNumber",
         message: "Passport number",
       },
       {
-        type: seed?.auth?.type === "nationalId" ? "text" : null,
+        type: (_prev: unknown, values: Record<string, unknown>) => {
+          const authType = seed?.auth?.type ?? values.authType;
+          return authType === "nationalId" ? "text" : null;
+        },
         name: "idNumber",
         message: "National identity card number",
       },
       {
-        type: seed?.auth?.type === "brc" ? "text" : null,
+        type: (_prev: unknown, values: Record<string, unknown>) => {
+          const authType = seed?.auth?.type ?? values.authType;
+          return authType === "brc" ? "text" : null;
+        },
         name: "cardNumber",
         message: "Biometric residence card or permit number",
       },
       {
-        type: seed?.auth?.type === "ukvi" ? "text" : null,
+        type: (_prev: unknown, values: Record<string, unknown>) => {
+          const authType = seed?.auth?.type ?? values.authType;
+          return authType === "ukvi" ? "text" : null;
+        },
         name: "customerNumber",
         message: "UKVI customer number",
       },
@@ -129,12 +141,17 @@ const ensureCredentials = async (
     throw new Error("Invalid date of birth");
   }
 
-  return {
+  const credentials: Credentials = {
     auth,
     dateOfBirth: dob,
     preferredTwoFactorMethod:
       seed?.preferredTwoFactorMethod ?? (responses.twoFactor as TwoFactorMethod),
   };
+
+  // Validate the assembled credentials with Zod
+  CredentialsSchema.parse(credentials);
+
+  return credentials;
 };
 
 export const runCli = async (): Promise<void> => {
@@ -211,7 +228,10 @@ export const runCli = async (): Promise<void> => {
       },
       { onCancel: () => process.exit(1) }
     );
-    return response.code as string;
+    if (!response.code || typeof response.code !== "string") {
+      throw new Error("No security code provided");
+    }
+    return response.code;
   };
 
   const flow = new EVisaFlow({

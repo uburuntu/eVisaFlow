@@ -15,34 +15,10 @@ export class ProveStatusStep extends BaseStep {
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger } = context;
-    // Handle analytics cookie banner if present.
-    try {
-      const accept = page.getByRole("button", { name: /Accept analytics cookies/i });
-      const reject = page.getByRole("button", { name: /Reject analytics cookies/i });
-      if ((await accept.count()) > 0) {
-        logger.action("click", "accept-analytics-cookies");
-        await accept.click();
-      } else if ((await reject.count()) > 0) {
-        logger.action("click", "reject-analytics-cookies");
-        await reject.click();
-      }
-    } catch {
-      // Ignore if cookie banner not present.
-    }
-
-    // Some sessions show a "Stay signed in" dialog.
-    try {
-      const staySignedIn = page.getByRole("button", { name: /Stay signed in/i });
-      if ((await staySignedIn.count()) > 0) {
-        logger.action("click", "stay-signed-in");
-        await staySignedIn.first().click();
-      }
-    } catch {
-      // Ignore if dialog not present.
-    }
+    await this.dismissCookieBanner(context);
+    await this.dismissStaySignedIn(context);
 
     logger.action("click", "get-share-code");
-    // "Get a share code" is a link styled as a button on this page.
     const linkByRole = page.getByRole("link", { name: /Get a share code/i });
     const linkBySelector = page.locator('a.govuk-button:has-text("Get a share code")');
     const linkByHref = page.locator('a[href="/get-share-code"]');

@@ -35,13 +35,19 @@ export class TwoFactorCodeStep extends BaseStep {
     const handlerPromise = context.onTwoFactorRequired(method, {
       deadlineMs,
     });
+    let timeoutId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<string>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new TwoFactorTimeoutError("Timed out waiting for 2FA code"));
       }, options.twoFactorTimeoutMs);
     });
 
-    const code = await Promise.race([handlerPromise, timeoutPromise]);
+    let code: string;
+    try {
+      code = await Promise.race([handlerPromise, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId!);
+    }
     await page.getByLabel("Security code").fill(code);
     await page.getByRole("button", { name: "Continue" }).click();
     await page.waitForLoadState("domcontentloaded");

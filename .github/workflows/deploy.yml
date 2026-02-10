@@ -38,21 +38,21 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: DOTENV_FILE,DEPLOY_GHCR_TOKEN,GITHUB_ACTOR
+          envs: DOTENV_FILE,DEPLOY_GHCR_TOKEN
           script: |
-            mkdir -p /opt/eVisaFlowBot
-            echo "$DOTENV_FILE" > /opt/eVisaFlowBot/.env
-            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            mkdir -p ~/eVisaFlowBot
+            echo "$DOTENV_FILE" > ~/eVisaFlowBot/.env
+            chmod 600 ~/eVisaFlowBot/.env
+            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u uburuntu --password-stdin
             docker pull ghcr.io/uburuntu/evisaflow:service-latest
             docker stop eVisaFlowBot 2>/dev/null || true
             docker rm eVisaFlowBot 2>/dev/null || true
             docker run -d \
               --name eVisaFlowBot \
-              --env-file /opt/eVisaFlowBot/.env \
+              --env-file ~/eVisaFlowBot/.env \
               -v evisaflow-downloads:/app/service/downloads \
               --restart unless-stopped \
               ghcr.io/uburuntu/evisaflow:service-latest
         env:
           DOTENV_FILE: ${{ secrets.DOTENV_FILE }}
           DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}

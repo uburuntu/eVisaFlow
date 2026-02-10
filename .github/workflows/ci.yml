@@ -4,16 +4,18 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_call:
 
 jobs:
-  build:
+  lib:
+    name: Library
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
 
       - name: Install dependencies
@@ -33,6 +35,23 @@ jobs:
 
       - name: Test
         run: npm run test
+
+  service:
+    name: Service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build root (service depends on evisa-flow)
+        run: npm run build
 
       - name: Install service dependencies
         run: cd service && npm ci

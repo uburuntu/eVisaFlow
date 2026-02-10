@@ -45,12 +45,18 @@ export interface RunResult {
   validUntil?: Date;
 }
 
+export interface ExtractedData {
+  name?: string;
+  validUntil?: string;
+}
+
 export interface StepContext {
   credentials: Credentials;
   purpose: Purpose;
   options: Required<RunOptions>;
   logger: Logger;
   page: import("playwright").Page;
+  extractedData: ExtractedData;
   setResult: (result: RunResult) => void;
   onTwoFactorRequired: (
     method: TwoFactorMethod,

@@ -3,6 +3,7 @@ import tsParser from "@typescript-eslint/parser";
 
 const sharedIgnores = [
   "dist/**",
+  "service/dist/**",
   "node_modules/**",
   "downloads/**",
   "snapshots/**",
@@ -10,6 +11,9 @@ const sharedIgnores = [
 ];
 
 export default [
+  {
+    ignores: ["**/dist/**", "**/node_modules/**", "downloads/**", "snapshots/**", "tests/fixtures/**"],
+  },
   {
     files: ["**/*.ts"],
     ignores: sharedIgnores,

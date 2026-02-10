@@ -53,6 +53,7 @@ export class EVisaFlow {
         options,
         logger,
         page,
+        extractedData: {},
         onTwoFactorRequired: this.config.onTwoFactorRequired,
       },
     });

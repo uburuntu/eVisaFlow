@@ -106,7 +106,6 @@ export async function addMemberConversation(
   );
   cleanupIds.push(step4.message_id);
   let dobDay: number, dobMonth: number, dobYear: number;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const dobMsg = await conversation.waitFor("message:text");
     cleanupIds.push(dobMsg.message.message_id);

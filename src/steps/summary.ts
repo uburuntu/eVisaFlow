@@ -14,7 +14,7 @@ export class SummaryStep extends BaseStep {
     await this.dismissStaySignedIn(context);
     await this.dismissCookieBanner(context);
 
-    // Extract name and valid-until from the summary table before navigating away.
+    // Extract name from the summary table before navigating away.
     try {
       const nameCell = page.locator('dt.govuk-summary-list__key:has-text("Name") + dd');
       if ((await nameCell.count()) > 0) {
@@ -23,16 +23,6 @@ export class SummaryStep extends BaseStep {
       }
     } catch {
       logger.warn("Failed to extract name from summary page");
-    }
-
-    try {
-      const validUntilCell = page.locator('dt.govuk-summary-list__key:has-text("Valid until") + dd');
-      if ((await validUntilCell.count()) > 0) {
-        context.extractedData.validUntil = (await validUntilCell.first().textContent())?.trim();
-        logger.debug("Extracted valid-until from summary", { validUntil: context.extractedData.validUntil });
-      }
-    } catch {
-      logger.warn("Failed to extract valid-until from summary page");
     }
 
     logger.action("click", "create-share-code");

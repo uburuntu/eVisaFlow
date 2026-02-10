@@ -47,7 +47,6 @@ export interface RunResult {
 
 export interface ExtractedData {
   name?: string;
-  validUntil?: string;
 }
 
 export interface StepContext {

@@ -64,15 +64,11 @@ export class DownloadPdfStep extends BaseStep {
       );
     }
 
-    // Valid-until: prefer data extracted from summary page, fall back to download page text
+    // Valid-until: extract from the download page (share code expiry)
     let validUntil: Date | undefined;
-    if (context.extractedData.validUntil) {
-      validUntil = new Date(context.extractedData.validUntil);
-    } else {
-      const validUntilMatch = bodyText.match(validUntilRegex);
-      if (validUntilMatch?.[1]) {
-        validUntil = new Date(validUntilMatch[1]);
-      }
+    const validUntilMatch = bodyText.match(validUntilRegex);
+    if (validUntilMatch?.[1]) {
+      validUntil = new Date(validUntilMatch[1]);
     }
     if (validUntil && Number.isNaN(validUntil.getTime())) {
       logger.warn("Failed to parse valid-until date");

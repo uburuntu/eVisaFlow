@@ -1,0 +1,58 @@
+name: Deploy Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - service/**
+      - package.json
+      - package-lock.json
+      - src/**
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: service/Dockerfile
+          push: true
+          tags: ghcr.io/uburuntu/evisaflow:service-latest
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DOTENV_FILE,DEPLOY_GHCR_TOKEN,GITHUB_ACTOR
+          script: |
+            mkdir -p /opt/eVisaFlowBot
+            echo "$DOTENV_FILE" > /opt/eVisaFlowBot/.env
+            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            docker pull ghcr.io/uburuntu/evisaflow:service-latest
+            docker stop eVisaFlowBot 2>/dev/null || true
+            docker rm eVisaFlowBot 2>/dev/null || true
+            docker run -d \
+              --name eVisaFlowBot \
+              --env-file /opt/eVisaFlowBot/.env \
+              -v evisaflow-downloads:/app/service/downloads \
+              --restart unless-stopped \
+              ghcr.io/uburuntu/evisaflow:service-latest
+        env:
+          DOTENV_FILE: ${{ secrets.DOTENV_FILE }}
+          DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}

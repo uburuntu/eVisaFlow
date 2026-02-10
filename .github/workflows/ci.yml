@@ -33,3 +33,9 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      - name: Install service dependencies
+        run: cd service && npm ci
+
+      - name: Typecheck service
+        run: cd service && npx tsc --noEmit

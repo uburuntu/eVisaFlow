@@ -2,6 +2,8 @@
 
 Automate the GOV.UK eVisa flow to download the PDF and extract the share code.
 
+**[Try the Telegram Bot](https://t.me/eVisaFlowBot)** — manage share codes for your whole family, no setup required. Add up to 6 family members, get share codes on demand or on a 30-day schedule, with PDFs delivered straight to Telegram.
+
 ## Install
 
 ```bash

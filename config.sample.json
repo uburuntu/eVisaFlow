@@ -1,21 +1,25 @@
 {
-  "credentials": {
-    "auth": {
+  "applicant": {
+    "identityDocument": {
       "type": "passport",
-      "passportNumber": "123456789"
+      "number": "123456789"
     },
-    "dateOfBirth": {
-      "day": 31,
-      "month": 3,
-      "year": 1980
-    },
-    "preferredTwoFactorMethod": "sms"
+    "dateOfBirth": "1980-03-31"
   },
   "purpose": "immigration_status_other",
-  "options": {
-    "headless": true,
-    "verbose": false,
-    "screenshotOnError": true,
-    "outputDir": "./downloads"
-  }
+  "challengePreference": {
+    "deliveryMethod": "sms"
+  },
+  "browser": {
+    "headless": true
+  },
+  "artifacts": {
+    "pdf": {
+      "directory": "./downloads"
+    },
+    "diagnostics": {
+      "mode": "off"
+    }
+  },
+  "verbose": false
 }

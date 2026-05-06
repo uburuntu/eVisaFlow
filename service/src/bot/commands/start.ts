@@ -1,5 +1,5 @@
-import type { MyContext } from "../context.js";
 import { upsertUser } from "../../db/users.js";
+import type { MyContext } from "../context.js";
 
 export async function startCommand(ctx: MyContext): Promise<void> {
   if (!ctx.from) return;
@@ -9,7 +9,7 @@ export async function startCommand(ctx: MyContext): Promise<void> {
     ctx.from.id,
     ctx.from.first_name,
     ctx.from.username ?? null,
-    ctx.env.SCHEDULE_INTERVAL_DAYS,
+    ctx.env.SCHEDULE_INTERVAL_DAYS
   );
   ctx.session.userId = user.id;
 
@@ -32,13 +32,10 @@ export async function startCommand(ctx: MyContext): Promise<void> {
       "",
       "Your document numbers are <b>encrypted at rest</b> and never stored in plain text.",
     ].join("\n"),
-    { parse_mode: "HTML" },
+    { parse_mode: "HTML" }
   );
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

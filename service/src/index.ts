@@ -1,11 +1,11 @@
-import { loadEnv } from "./env.js";
-import { getSupabase } from "./db/client.js";
+import { mkdir } from "node:fs/promises";
+import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
+import { getSupabase } from "./db/client.js";
+import { loadEnv } from "./env.js";
 import { setConcurrency } from "./runner/queue.js";
 import { startScheduler } from "./scheduler/cron.js";
 import { createLogger } from "./utils/logger.js";
-import { run } from "@grammyjs/runner";
-import { mkdir } from "node:fs/promises";
 
 const env = loadEnv();
 const log = createLogger({ verbose: true });
@@ -20,10 +20,7 @@ const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log);
 const scheduler = startScheduler(bot, db, env, log);
 const runner = run(bot);
 
-log.info(
-  { concurrency: env.QUEUE_CONCURRENCY, cron: env.SCHEDULER_CRON },
-  "Bot started",
-);
+log.info({ concurrency: env.QUEUE_CONCURRENCY, cron: env.SCHEDULER_CRON }, "Bot started");
 
 // Graceful shutdown
 const shutdown = () => {

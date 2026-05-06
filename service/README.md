@@ -60,12 +60,13 @@ docker compose up -d
 
 ```bash
 # Install dependencies (including Playwright)
-npm install
-npx playwright install chromium --with-deps
+corepack enable
+pnpm install
+pnpm exec playwright install chromium --with-deps
 
 # Build and start
-npm run build
-npm start
+pnpm run build:service
+pnpm --filter evisa-flow-bot start
 ```
 
 ## Bot Commands

@@ -1,5 +1,5 @@
-import pino, { Logger as PinoLogger } from "pino";
-import type { Logger } from "../types.js";
+import pino, { type Logger as PinoLogger } from "pino";
+import type { Logger } from "../core/internal-types.js";
 
 export interface LoggerOptions {
   verbose: boolean;

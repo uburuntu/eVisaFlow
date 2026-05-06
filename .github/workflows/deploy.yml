@@ -5,9 +5,16 @@ on:
     branches: [main]
     paths:
       - service/**
+      - .github/workflows/ci.yml
+      - .github/workflows/deploy.yml
+      - .node-version
+      - biome.json
       - package.json
-      - package-lock.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - src/**
+      - Dockerfile
+      - service/Dockerfile
   workflow_dispatch:
 
 jobs:

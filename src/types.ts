@@ -1,80 +1,137 @@
 export type TwoFactorMethod = "sms" | "email";
 
-export type AuthMethod =
-  | { type: "passport"; passportNumber: string }
-  | { type: "nationalId"; idNumber: string }
-  | { type: "brc"; cardNumber: string }
-  | { type: "ukvi"; customerNumber: string };
+export type IdentityDocument =
+  | { type: "passport"; number: string }
+  | { type: "nationalId"; number: string }
+  | { type: "brc"; number: string }
+  | { type: "ukvi"; number: string };
 
-export type Purpose =
-  | "right_to_work"
-  | "right_to_rent"
-  | "immigration_status_other";
+export type DateOfBirth =
+  | string
+  | {
+      day: number;
+      month: number;
+      year: number;
+    };
 
-export interface Credentials {
-  auth: AuthMethod;
-  dateOfBirth: { day: number; month: number; year: number };
-  preferredTwoFactorMethod?: TwoFactorMethod;
+export type Purpose = "right_to_work" | "right_to_rent" | "immigration_status_other";
+
+export interface Applicant {
+  identityDocument: IdentityDocument;
+  dateOfBirth: DateOfBirth;
 }
 
-export interface RunOptions {
-  headless?: boolean;
+export type DiagnosticsMode = "off" | "sanitized" | "raw";
+
+export interface ArtifactRef {
+  kind: "pdf" | "snapshot" | "html" | "screenshot";
+  path: string;
+  sanitized: boolean;
+}
+
+export interface EVisaClientOptions {
+  browser?: {
+    headless?: boolean;
+    userDataDir?: string;
+  };
+  artifacts?: {
+    pdf?:
+      | boolean
+      | {
+          directory?: string;
+          path?: string;
+        };
+    diagnostics?: {
+      mode?: DiagnosticsMode;
+      directory?: string;
+    };
+  };
+  timeouts?: {
+    navigationMs?: number;
+    actionMs?: number;
+    twoFactorMs?: number;
+  };
+  onEvent?: (event: EVisaEvent) => void;
   verbose?: boolean;
-  screenshotOnError?: boolean;
-  outputDir?: string;
-  outputFile?: string;
-  userDataDir?: string;
-  navigationTimeoutMs?: number;
-  actionTimeoutMs?: number;
-  twoFactorTimeoutMs?: number;
 }
 
-export interface EVisaFlowConfig {
-  credentials: Credentials;
+export interface ChallengePreference {
+  deliveryMethod?: TwoFactorMethod;
+}
+
+export type EVisaChallenge = {
+  type: "security_code";
+  deliveryMethod: TwoFactorMethod;
+  deadlineMs: number;
+};
+
+export interface EVisaChallengeContext {
+  deadlineMs: number;
+  signal: AbortSignal;
+}
+
+export type EVisaChallengeResponse = { code: string };
+
+export interface CreateShareCodeRequest {
+  applicant: Applicant;
   purpose?: Purpose;
-  onTwoFactorRequired: (
-    method: TwoFactorMethod,
-    context: { deadlineMs: number }
-  ) => Promise<string>;
-  options?: RunOptions;
+  challengePreference?: ChallengePreference;
+  onChallenge: (
+    challenge: EVisaChallenge,
+    context: EVisaChallengeContext
+  ) => Promise<EVisaChallengeResponse>;
 }
 
-export interface RunResult {
-  pdfPath: string;
+export interface CreateShareCodeResult {
   shareCode: string;
-  validUntil?: Date;
+  validUntil?: string;
+  pdf?: {
+    path: string;
+    filename: string;
+  };
+  summary?: {
+    name?: string;
+    nationality?: string;
+    status?: string;
+  };
+  artifacts?: ArtifactRef[];
 }
 
-export interface ExtractedData {
-  name?: string;
-}
+export type EVisaPhase =
+  | "launching"
+  | "verifying_identity"
+  | "choosing_2fa"
+  | "waiting_for_2fa"
+  | "viewing_status"
+  | "creating_share_code"
+  | "downloading_pdf"
+  | "completed"
+  | "failed";
 
-export interface StepContext {
-  credentials: Credentials;
-  purpose: Purpose;
-  options: Required<RunOptions>;
-  logger: Logger;
-  page: import("playwright").Page;
-  extractedData: ExtractedData;
-  setResult: (result: RunResult) => void;
-  onTwoFactorRequired: (
-    method: TwoFactorMethod,
-    context: { deadlineMs: number }
-  ) => Promise<string>;
-}
-
-export interface Step {
-  id: string;
-  detect(page: import("playwright").Page): Promise<boolean>;
-  execute(context: StepContext): Promise<void>;
-}
-
-export interface Logger {
-  step(stepId: string, message: string): void;
-  action(action: string, detail?: string): void;
-  info(message: string, meta?: Record<string, unknown>): void;
-  warn(message: string, meta?: Record<string, unknown>): void;
-  error(message: string, meta?: Record<string, unknown>): void;
-  debug(message: string, meta?: Record<string, unknown>): void;
-  screenshot(label: string): void;
-}
+export type EVisaEvent =
+  | { type: "run_started"; phase: "launching" }
+  | { type: "phase_changed"; phase: EVisaPhase }
+  | {
+      type: "page_classified";
+      phase: EVisaPhase;
+      pageKind: string;
+      confidence: number;
+      evidence: string[];
+    }
+  | {
+      type: "challenge_required";
+      phase: "waiting_for_2fa";
+      challenge: EVisaChallenge;
+    }
+  | { type: "artifact_saved"; phase: EVisaPhase; artifact: ArtifactRef }
+  | { type: "completed"; phase: "completed"; result: CreateShareCodeResult }
+  | {
+      type: "failed";
+      phase: "failed";
+      error: {
+        name: string;
+        message: string;
+        code?: string;
+        retryable?: boolean;
+      };
+    };

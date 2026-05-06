@@ -1,0 +1,6 @@
+packages:
+  - .
+  - service
+
+minimumReleaseAge: 10080
+blockExoticSubdeps: true

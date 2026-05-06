@@ -1,15 +1,17 @@
-import { EVisaFlow } from "evisa-flow";
 import type {
-  Credentials,
+  Applicant,
+  CreateShareCodeResult,
   Purpose,
   TwoFactorMethod,
-  RunResult,
 } from "evisa-flow";
+import { EVisaClient } from "evisa-flow";
 import { requestCode } from "./two-factor-store.js";
 
 export interface RunRequest {
-  credentials: Credentials;
+  requestId: string;
+  applicant: Applicant;
   purpose: Purpose;
+  twoFactorMethod?: TwoFactorMethod;
   outputDir: string;
   headless: boolean;
   telegramId: number;
@@ -18,26 +20,32 @@ export interface RunRequest {
   onTwoFactorNeeded: (method: TwoFactorMethod) => Promise<void>;
 }
 
-export async function executeRun(request: RunRequest): Promise<RunResult> {
-  const flow = new EVisaFlow({
-    credentials: request.credentials,
-    purpose: request.purpose,
-    onTwoFactorRequired: async (method, { deadlineMs }) => {
-      // Notify the caller (bot) that 2FA is needed
-      await request.onTwoFactorNeeded(method);
-      // Wait for the user to submit the code via Telegram
-      return requestCode(
-        request.telegramId,
-        method,
-        request.memberName,
-        deadlineMs,
-      );
-    },
-    options: {
-      headless: request.headless,
-      outputDir: request.outputDir,
+export async function executeRun(request: RunRequest): Promise<CreateShareCodeResult> {
+  const client = new EVisaClient({
+    browser: { headless: request.headless },
+    artifacts: {
+      pdf: { directory: request.outputDir },
+      diagnostics: { mode: "off" },
     },
   });
 
-  return flow.run();
+  return client.createShareCode({
+    applicant: request.applicant,
+    purpose: request.purpose,
+    challengePreference: {
+      deliveryMethod: request.twoFactorMethod,
+    },
+    onChallenge: async (challenge, context) => {
+      await request.onTwoFactorNeeded(challenge.deliveryMethod);
+      const code = await requestCode(
+        request.requestId,
+        request.telegramId,
+        challenge.deliveryMethod,
+        request.memberName,
+        context.deadlineMs,
+        context.signal
+      );
+      return { code };
+    },
+  });
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const SOURCE_DIR = "downloads/debug";
@@ -28,12 +28,10 @@ const SAMPLE = {
   validUntil: "1 January 2030",
   shareCode: "ABC DEF GHI",
   csrf: "REDACTED",
-  pixel:
-    "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+  pixel: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
 };
 
-const escapeRegExp = (value) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const replaceDefinition = (html, label, value) => {
   const pattern = new RegExp(
@@ -66,10 +64,7 @@ const sanitizeHtml = (html) => {
     /Share code\s*([A-Z0-9]{3}\s+[A-Z0-9]{3}\s+[A-Z0-9]{3})/gi,
     `Share code ${SAMPLE.shareCode}`
   );
-  output = output.replace(
-    /([A-Z][a-z]+\\s+\\d{1,2},\\s+\\d{4})/g,
-    "January 1, 2030"
-  );
+  output = output.replace(/([A-Z][a-z]+\\s+\\d{1,2},\\s+\\d{4})/g, "January 1, 2030");
   output = output.replace(
     /name="_csrf" value="[^"]+"/g,
     `name="_csrf" value="${SAMPLE.csrf}"`

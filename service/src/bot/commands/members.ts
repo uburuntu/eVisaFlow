@@ -1,10 +1,10 @@
 import { InlineKeyboard } from "grammy";
-import type { MyContext } from "../context.js";
-import { getUserByTelegramId } from "../../db/users.js";
 import {
-  getActiveFamilyMembers,
   deactivateFamilyMember,
+  getActiveFamilyMembers,
 } from "../../db/family-members.js";
+import { getUserByTelegramId } from "../../db/users.js";
+import type { MyContext } from "../context.js";
 
 const TYPE_LABELS: Record<string, string> = {
   passport: "Passport",
@@ -14,10 +14,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export async function membersCommand(ctx: MyContext): Promise<void> {
@@ -31,9 +28,7 @@ export async function membersCommand(ctx: MyContext): Promise<void> {
 
   const members = await getActiveFamilyMembers(ctx.db, user.id);
   if (members.length === 0) {
-    await ctx.reply(
-      "No family members yet. Use /add to add one.",
-    );
+    await ctx.reply("No family members yet. Use /add to add one.");
     return;
   }
 
@@ -49,12 +44,8 @@ export async function membersCommand(ctx: MyContext): Promise<void> {
   }
 
   await ctx.reply(
-    [
-      `<b>Family Members</b>  (${members.length}/6)`,
-      "",
-      ...lines,
-    ].join("\n"),
-    { parse_mode: "HTML", reply_markup: kb },
+    [`<b>Family Members</b>  (${members.length}/6)`, "", ...lines].join("\n"),
+    { parse_mode: "HTML", reply_markup: kb }
   );
 }
 
@@ -70,8 +61,6 @@ export function registerMemberCallbacks(bot: import("grammy").Bot<MyContext>): v
 
     await deactivateFamilyMember(ctx.db, memberId, user.id);
     await ctx.answerCallbackQuery({ text: "Removed." });
-    await ctx.editMessageText(
-      "Member removed. Use /members to see the updated list.",
-    );
+    await ctx.editMessageText("Member removed. Use /members to see the updated list.");
   });
 }

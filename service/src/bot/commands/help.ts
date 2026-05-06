@@ -14,6 +14,6 @@ export async function helpCommand(ctx: MyContext): Promise<void> {
         "2FA codes sent to each family member's phone or email. " +
         "Have their devices nearby!",
     ].join("\n"),
-    { parse_mode: "HTML" },
+    { parse_mode: "HTML" }
   );
 }

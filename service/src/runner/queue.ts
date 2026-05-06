@@ -22,7 +22,7 @@ export async function enqueue(
   telegramId: number,
   memberName: string,
   execute: () => Promise<void>,
-  onPositionUpdate: (position: number) => void,
+  onPositionUpdate: (position: number) => void
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const item: QueueItem = {
@@ -45,7 +45,10 @@ export async function enqueue(
 
 async function processQueue(): Promise<void> {
   while (activeCount < concurrency && queue.length > 0) {
-    const item = queue.shift()!;
+    const item = queue.shift();
+    if (!item) {
+      continue;
+    }
     activeCount++;
 
     // Notify remaining items of their new positions
@@ -65,4 +68,10 @@ async function processQueue(): Promise<void> {
 
 export function getQueueStats(): { active: number; waiting: number } {
   return { active: activeCount, waiting: queue.length };
+}
+
+export function resetQueueForTests(): void {
+  queue.splice(0, queue.length);
+  activeCount = 0;
+  concurrency = 2;
 }

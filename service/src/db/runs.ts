@@ -20,7 +20,7 @@ export async function insertRun(
     user_id: string;
     family_member_id: string;
     trigger: "manual" | "scheduled";
-  },
+  }
 ): Promise<DbRun> {
   const { data, error } = await db
     .from("runs")
@@ -43,7 +43,7 @@ export async function updateRunStatus(
     share_code?: string;
     valid_until?: string;
     error_message?: string;
-  },
+  }
 ): Promise<void> {
   const payload: Record<string, unknown> = { status: update.status };
   if (update.share_code !== undefined) payload.share_code = update.share_code;

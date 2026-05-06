@@ -1,15 +1,18 @@
-FROM mcr.microsoft.com/playwright:v1.58.0-jammy
+FROM mcr.microsoft.com/playwright:v1.59.1-jammy
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+RUN corepack enable
 
-COPY tsconfig.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY service/package.json ./service/package.json
+RUN pnpm install --frozen-lockfile
+
+COPY tsconfig.json biome.json ./
 COPY src ./src
 COPY bin ./bin
 COPY scripts ./scripts
 
-RUN npm run build
+RUN pnpm run build:lib
 
 CMD ["node", "./bin/evisa-flow.js"]

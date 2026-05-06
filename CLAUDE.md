@@ -10,9 +10,10 @@ eVisaFlow automates the GOV.UK eVisa flow using Playwright browser automation to
 
 ```bash
 make build          # Build (tsup → dist/)
-make lint           # ESLint with zero warnings
+make lint           # Biome CI with zero warnings
 make typecheck      # tsc --noEmit
-make test           # Build + node --test (runs tests/steps.test.js)
+make test           # Build + node --test for library and service tests
+make validate       # Lint + typecheck + build + test + pack dry-run + audit
 make dev            # Build with --watch
 make debug-flow     # Headed browser run (requires scripts/debug-flow.js, gitignored)
 make snapshots      # Capture page snapshots
@@ -24,14 +25,15 @@ make fixtures       # Sanitize debug HTML → tests/fixtures/
 ## Architecture
 
 **Dual entry points:**
-- Library: `src/index.ts` → exports `EVisaFlow` class and types
+- Library: `src/index.ts` → exports `EVisaClient`, errors, and public domain types
 - CLI: `src/cli.ts` → `bin/evisa-flow.js` (uses commander + prompts)
 
-**Step-based flow engine:** The core pattern is a sequential step runner that loops through 11 page steps. Each step implements `detect()` → `execute()` → `validate()`.
+**Classified step engine:** The public API accepts one domain request (`EVisaClient.createShareCode`). Internally, each browser page is reduced to a `PageSnapshot`, classified into a stable `PageKind`, then routed to one existing step action.
 
-- `src/evisa-flow.ts` — Orchestrator: creates steps, launches browser, runs StepRunner
-- `src/core/step-runner.ts` — Execution loop: detect current page → execute matching step → repeat (max 30 iterations)
-- `src/core/page-detector.ts` — Iterates steps, returns first whose `detect()` matches
+- `src/evisa-client.ts` — Public orchestrator: creates steps, launches browser, maps domain API to internal runner
+- `src/core/page-snapshot.ts` — Captures normalized page state for classification and sanitized diagnostics
+- `src/core/page-classifier.ts` — Classifies snapshots into stable page kinds and phases
+- `src/core/step-runner.ts` — Execution loop: classify current page → execute matching step → repeat (max 30 iterations)
 - `src/core/browser.ts` — Playwright chromium launcher wrapper
 - `src/steps/base-step.ts` — Base class with helpers (`heading()`, `hasHeading()`, `waitForElement()`, `safeClick()`)
 - `src/steps/*.ts` — 11 steps in order: entry-page → document-type → document-number → date-of-birth → two-factor-method → two-factor-code → prove-status → purpose-selection → confirmation → summary → download-pdf
@@ -39,9 +41,10 @@ make fixtures       # Sanitize debug HTML → tests/fixtures/
 **Supporting modules:**
 - `src/utils/selectors.ts` — All DOM selectors and heading strings used for page detection and interaction
 - `src/utils/logger.ts` — Pino-based structured logger
-- `src/errors/index.ts` — Custom error hierarchy (PageDetectionError, SelectorNotFoundError, TwoFactorTimeoutError, AuthenticationError, SessionExpiredError)
+- `src/errors/index.ts` — Custom error hierarchy with stable `code`, retryability, phase, page kind, and artifact refs
 - `src/config.ts` — Zod schema for config file validation
-- `src/types.ts` — All TypeScript types (Credentials, AuthMethod, Purpose, RunOptions, StepContext, etc.)
+- `src/types.ts` — Public TypeScript types only
+- `src/core/internal-types.ts` — Internal legacy step contracts
 
 ## Testing
 
@@ -59,7 +62,7 @@ Tests verify step detection against sanitized HTML fixtures. Each fixture in `te
 
 ## Key Types
 
-- `AuthMethod`: union of passport / nationalId / brc / ukvi (each with different ID fields)
+- `Applicant`: identity document plus date of birth for `EVisaClient.createShareCode`
 - `Purpose`: `"right_to_work" | "right_to_rent" | "immigration_status_other"`
 - `TwoFactorMethod`: `"sms" | "email"`
 - PDF filename default: `EVISA_{Surname}_{Name}_{YYYY-MM-DD}.pdf`

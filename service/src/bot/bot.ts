@@ -1,17 +1,17 @@
-import { Bot, session } from "grammy";
 import { conversations } from "@grammyjs/conversations";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MyContext, SessionData } from "./context.js";
-import type { Logger } from "../utils/logger.js";
+import { Bot, session } from "grammy";
 import type { Env } from "../env.js";
+import type { Logger } from "../utils/logger.js";
 import { registerCommands } from "./commands/index.js";
+import type { MyContext, SessionData } from "./context.js";
 import { twoFactorMiddleware } from "./middleware/two-factor.js";
 
 export function createBot(
   token: string,
   db: SupabaseClient,
   env: Env,
-  log: Logger,
+  log: Logger
 ): Bot<MyContext> {
   const bot = new Bot<MyContext>(token);
 
@@ -27,7 +27,7 @@ export function createBot(
   bot.use(
     session<SessionData, MyContext>({
       initial: () => ({}),
-    }),
+    })
   );
 
   // Conversations plugin

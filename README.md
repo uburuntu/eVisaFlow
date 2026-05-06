@@ -1,14 +1,15 @@
 # evisa-flow
 
-Automate the GOV.UK eVisa flow to download the PDF and extract the share code.
+Automate the GOV.UK eVisa flow to create a share code and optionally download the PDF.
 
 **[Try the Telegram Bot](https://t.me/eVisaFlowBot)** — manage share codes for your whole family, no setup required. Add up to 6 family members, get share codes on demand or on a 30-day schedule, with PDFs delivered straight to Telegram.
 
 ## Install
 
 ```bash
-npm install
-npx playwright install
+corepack enable
+pnpm install
+pnpm exec playwright install chromium
 ```
 
 ## CLI
@@ -19,12 +20,15 @@ npx evisa-flow
 
 # Options
 npx evisa-flow \
-  --auth-type passport \
-  --passport-number 123456789 \
-  --dob 31-03-1980 \
+  --document-type passport \
+  --document-number 123456789 \
+  --dob 1980-03-31 \
   --two-factor sms \
   --output ./evisa.pdf \
   --verbose
+
+# Share-code only
+npx evisa-flow --no-pdf
 
 # Config file
 npx evisa-flow --config ./config.json
@@ -33,39 +37,43 @@ npx evisa-flow --config ./config.json
 ## Library
 
 ```typescript
-import { EVisaFlow } from "evisa-flow";
+import { EVisaClient } from "evisa-flow";
 
-const flow = new EVisaFlow({
-  credentials: {
-    auth: { type: "passport", passportNumber: "123456789" },
-    dateOfBirth: { day: 31, month: 3, year: 1980 },
-    preferredTwoFactorMethod: "sms",
-  },
-  onTwoFactorRequired: async () => "123456",
-  options: {
-    headless: true,
-    verbose: true,
-    screenshotOnError: true,
-    outputDir: "./downloads",
+const client = new EVisaClient({
+  browser: { headless: true },
+  artifacts: {
+    pdf: { directory: "./downloads" },
+    diagnostics: { mode: "off" },
   },
 });
 
-const result = await flow.run();
-// { pdfPath: string, shareCode: string, validUntil?: Date }
+const result = await client.createShareCode({
+  applicant: {
+    identityDocument: { type: "passport", number: "123456789" },
+    dateOfBirth: "1980-03-31",
+  },
+  purpose: "immigration_status_other",
+  challengePreference: { deliveryMethod: "sms" },
+  onChallenge: async (_challenge, _ctx) => ({ code: "123456" }),
+});
+
+// { shareCode: string, validUntil?: "YYYY-MM-DD", pdf?: { path, filename } }
 ```
 
-## Parallel usage
+PDF output is enabled by default. Set `artifacts.pdf` to `false` to stop after the share code is parsed.
 
-This library is safe to run in parallel as long as each run writes to its own
-output location. The default PDF name is deterministic, so concurrent runs for the same person and date can overwrite each other.
+## Parallel Usage
 
-- Use a unique `options.outputDir` per run, or set `options.outputFile`.
-- Avoid sharing `options.userDataDir` across concurrent runs.
+This library is safe to run in parallel as long as each run writes to its own output location.
 
-## Privacy & security
+- Use a unique `artifacts.pdf.directory` per run, or set `artifacts.pdf.path`.
+- Avoid sharing `browser.userDataDir` across concurrent runs.
 
-- No data is persisted beyond the output PDF and optional debug artifacts.
-- Do not commit real credentials or downloaded files.
+## Privacy & Security
+
+- No personal data is persisted beyond requested PDF artifacts by default.
+- Diagnostics are off by default. `diagnostics.mode: "raw"` may write personal data and session HTML.
+- Do not commit real credentials, diagnostics, or downloaded files.
 - For security reporting, see `SECURITY.md`.
 
 ## Config
@@ -74,17 +82,16 @@ Create `config.json`:
 
 ```json
 {
-  "credentials": {
-    "auth": { "type": "passport", "passportNumber": "123456789" },
-    "dateOfBirth": { "day": 31, "month": 3, "year": 1980 },
-    "preferredTwoFactorMethod": "sms"
+  "applicant": {
+    "identityDocument": { "type": "passport", "number": "123456789" },
+    "dateOfBirth": "1980-03-31"
   },
   "purpose": "immigration_status_other",
-  "options": {
-    "headless": true,
-    "verbose": false,
-    "screenshotOnError": true,
-    "outputDir": "./downloads"
+  "challengePreference": { "deliveryMethod": "sms" },
+  "browser": { "headless": true },
+  "artifacts": {
+    "pdf": { "directory": "./downloads" },
+    "diagnostics": { "mode": "off" }
   }
 }
 ```
@@ -92,9 +99,10 @@ Create `config.json`:
 ## Dev
 
 ```bash
+make validate
 make build
 make debug-flow
+make smoke
 make snapshots
-make sanitize
-make test-steps
+make fixtures
 ```

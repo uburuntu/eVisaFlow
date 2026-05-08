@@ -16,6 +16,8 @@ export type {
   EVisaEvent,
   EVisaPhase,
   IdentityDocument,
+  PdfOutputMode,
+  PdfResult,
   Purpose,
   TwoFactorMethod,
 } from "./types.js";

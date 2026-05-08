@@ -41,6 +41,7 @@ export const ConfigSchema = z.object({
         .union([
           z.boolean(),
           z.object({
+            mode: z.enum(["file", "bytes"]).optional(),
             directory: z.string().optional(),
             path: z.string().optional(),
           }),

@@ -54,6 +54,7 @@ const baseContext = {
     verbose: false,
     screenshotOnError: false,
     pdfEnabled: true,
+    pdfOutput: "file",
     outputDir: "/tmp/test",
     outputFile: "",
     userDataDir: "",
@@ -378,6 +379,52 @@ describe("DownloadPdfStep", () => {
     assert.equal(result.validUntil.toISOString().slice(0, 10), "2030-01-01");
     assert.equal(result.pdfPath.endsWith("EVISA_Sample_Alex_2030-01-01.pdf"), true);
     assert.equal(await readFile(result.pdfPath, "utf-8"), "%PDF-1.4\n% test pdf\n");
+    await page.close();
+  });
+
+  test("extracts share code and returns PDF bytes without saving a file", async () => {
+    const page = await context.newPage();
+    const rawHtml = await readFile(`./tests/fixtures/step-download-pdf.html`, "utf-8");
+    const html = rawHtml.replace(
+      /<head([^>]*)>/,
+      '<head$1><base href="https://view-immigration-status.service.gov.uk/">'
+    );
+    await page.setContent(html);
+    await page.route("**/share/someone-else/code/pdf", (route) => {
+      route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": 'attachment; filename="evisa.pdf"',
+        },
+        body: "%PDF-1.4\n% bytes pdf\n",
+      });
+    });
+
+    let result;
+    const step = new DownloadPdfStep();
+    await step.execute({
+      ...baseContext,
+      page,
+      options: {
+        ...baseContext.options,
+        pdfOutput: "bytes",
+      },
+      extractedData: {
+        name: "Alex Sample",
+      },
+      setResult(value) {
+        result = value;
+      },
+    });
+
+    assert.equal(result.shareCode, "SGN CH2 7PL");
+    assert.equal(result.pdfPath, undefined);
+    assert.equal(result.pdfFilename, "EVISA_Sample_Alex_2030-01-01.pdf");
+    assert.equal(
+      Buffer.from(result.pdfBytes).toString("utf-8"),
+      "%PDF-1.4\n% bytes pdf\n"
+    );
     await page.close();
   });
 

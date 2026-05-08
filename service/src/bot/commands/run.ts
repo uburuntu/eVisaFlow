@@ -1,5 +1,3 @@
-import { readFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
 import type {
   Applicant,
   CreateShareCodeResult,
@@ -105,7 +103,6 @@ async function runForMember(
       applicant,
       purpose: member.purpose as Purpose,
       twoFactorMethod: member.preferred_2fa_method as TwoFactorMethod,
-      outputDir: join(ctx.env.EVISA_OUTPUT_DIR, runRecord.id),
       headless: ctx.env.EVISA_HEADLESS,
       telegramId,
       memberName: member.display_name,
@@ -140,15 +137,15 @@ async function runForMember(
     const caption = `${member.display_name} — ${result.shareCode}${validStr}`;
 
     try {
-      if (!result.pdf) {
-        throw new Error("PDF artifact was not produced");
+      if (result.pdf?.kind !== "bytes") {
+        throw new Error("PDF bytes were not produced");
       }
-      const pdfData = await readFile(result.pdf.path);
-      const filename = result.pdf.filename;
-      await ctx.replyWithDocument(new InputFile(pdfData, filename), {
-        caption,
-      });
-      await unlink(result.pdf.path).catch(() => {});
+      await ctx.replyWithDocument(
+        new InputFile(Buffer.from(result.pdf.bytes), result.pdf.filename),
+        {
+          caption,
+        }
+      );
     } catch {
       // If PDF send fails, still show the share code as formatted text
       await ctx.reply(

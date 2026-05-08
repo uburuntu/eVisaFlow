@@ -15,6 +15,7 @@
   },
   "artifacts": {
     "pdf": {
+      "mode": "file",
       "directory": "./downloads"
     },
     "diagnostics": {

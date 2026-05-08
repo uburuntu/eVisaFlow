@@ -4,6 +4,7 @@ import type {
   DiagnosticsMode,
   EVisaEvent,
   EVisaPhase,
+  PdfOutputMode,
   Purpose,
   TwoFactorMethod,
 } from "../types.js";
@@ -29,6 +30,7 @@ export interface InternalRunOptions {
   headless: boolean;
   verbose: boolean;
   pdfEnabled: boolean;
+  pdfOutput: PdfOutputMode;
   outputDir: string;
   outputFile: string;
   userDataDir: string;
@@ -45,6 +47,8 @@ export interface InternalRunResult {
   shareCode: string;
   validUntil?: Date;
   pdfPath?: string;
+  pdfBytes?: Uint8Array;
+  pdfFilename?: string;
   summary?: {
     name?: string;
     nationality?: string;

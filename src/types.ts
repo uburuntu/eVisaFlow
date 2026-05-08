@@ -22,12 +22,28 @@ export interface Applicant {
 }
 
 export type DiagnosticsMode = "off" | "sanitized" | "raw";
+export type PdfOutputMode = "file" | "bytes";
 
 export interface ArtifactRef {
   kind: "pdf" | "snapshot" | "html" | "screenshot";
   path: string;
   sanitized: boolean;
 }
+
+export type PdfResult =
+  | {
+      kind: "file";
+      path: string;
+      filename: string;
+      contentType: "application/pdf";
+    }
+  | {
+      kind: "bytes";
+      bytes: Uint8Array;
+      filename: string;
+      contentType: "application/pdf";
+      byteLength: number;
+    };
 
 export interface EVisaClientOptions {
   browser?: {
@@ -38,6 +54,7 @@ export interface EVisaClientOptions {
     pdf?:
       | boolean
       | {
+          mode?: PdfOutputMode;
           directory?: string;
           path?: string;
         };
@@ -85,10 +102,7 @@ export interface CreateShareCodeRequest {
 export interface CreateShareCodeResult {
   shareCode: string;
   validUntil?: string;
-  pdf?: {
-    path: string;
-    filename: string;
-  };
+  pdf?: PdfResult;
   summary?: {
     name?: string;
     nationality?: string;

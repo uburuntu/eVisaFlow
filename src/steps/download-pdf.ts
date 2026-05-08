@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import type { Download } from "playwright";
 import type { StepContext } from "../core/internal-types.js";
 import { SelectorNotFoundError } from "../errors/index.js";
 import { BaseStep } from "./base-step.js";
@@ -118,6 +119,17 @@ const resolveOutputPath = (
   return resolvedFilename;
 };
 
+const readDownloadBytes = async (download: Download): Promise<Uint8Array> => {
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+};
+
 export class DownloadPdfStep extends BaseStep {
   id = "download-pdf";
 
@@ -174,12 +186,6 @@ export class DownloadPdfStep extends BaseStep {
       givenName
     )}_${expirySegment}.pdf`;
 
-    const filename = resolveOutputPath(
-      options.outputDir,
-      options.outputFile,
-      defaultFilename
-    );
-
     const summary = {
       name: context.extractedData.name,
       nationality: context.extractedData.nationality,
@@ -190,8 +196,6 @@ export class DownloadPdfStep extends BaseStep {
       context.setResult({ shareCode, validUntil, summary });
       return;
     }
-
-    await mkdir(dirname(filename), { recursive: true });
 
     const downloadPromise = page.waitForEvent("download");
     const downloadLink = await this.findFirst(
@@ -210,9 +214,35 @@ export class DownloadPdfStep extends BaseStep {
     );
     await downloadLink.click();
     const download = await downloadPromise;
+
+    if (options.pdfOutput === "bytes") {
+      const pdfBytes = await readDownloadBytes(download);
+      await download.delete().catch(() => {});
+      context.setResult({
+        pdfBytes,
+        pdfFilename: defaultFilename,
+        shareCode,
+        validUntil,
+        summary,
+      });
+      return;
+    }
+
+    const filename = resolveOutputPath(
+      options.outputDir,
+      options.outputFile,
+      defaultFilename
+    );
+    await mkdir(dirname(filename), { recursive: true });
     await download.saveAs(filename);
     context.addArtifacts([{ kind: "pdf", path: filename, sanitized: false }]);
 
-    context.setResult({ pdfPath: filename, shareCode, validUntil, summary });
+    context.setResult({
+      pdfPath: filename,
+      pdfFilename: basename(filename),
+      shareCode,
+      validUntil,
+      summary,
+    });
   }
 }

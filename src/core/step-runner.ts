@@ -58,7 +58,9 @@ export class StepRunner {
 
   async run(startUrl: string): Promise<InternalRunResult> {
     const { page, logger } = this.context;
-    await mkdir(this.context.options.outputDir, { recursive: true });
+    if (this.context.options.pdfEnabled && this.context.options.pdfOutput === "file") {
+      await mkdir(this.context.options.outputDir, { recursive: true });
+    }
 
     logger.info("Navigating to start URL", { startUrl });
     await page.goto(startUrl, { waitUntil: "domcontentloaded" });

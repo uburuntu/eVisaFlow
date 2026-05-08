@@ -3,7 +3,12 @@ import { Command } from "commander";
 import prompts from "prompts";
 import { type ConfigFile, ConfigSchema } from "./config.js";
 import { EVisaClient } from "./evisa-client.js";
-import type { Applicant, EVisaClientOptions, IdentityDocument } from "./types.js";
+import type {
+  Applicant,
+  CreateShareCodeResult,
+  EVisaClientOptions,
+  IdentityDocument,
+} from "./types.js";
 
 const program = new Command();
 
@@ -143,6 +148,26 @@ const resolvePdfConfig = (
   };
 };
 
+const serializeResult = (
+  result: CreateShareCodeResult
+): Omit<CreateShareCodeResult, "pdf"> & {
+  pdf?:
+    | Exclude<CreateShareCodeResult["pdf"], { kind: "bytes" }>
+    | {
+        kind: "bytes";
+        filename: string;
+        contentType: "application/pdf";
+        byteLength: number;
+      };
+} => {
+  if (result.pdf?.kind !== "bytes") {
+    return result;
+  }
+
+  const { bytes: _bytes, ...pdf } = result.pdf;
+  return { ...result, pdf };
+};
+
 export const runCli = async (): Promise<void> => {
   program
     .name("evisa-flow")
@@ -245,5 +270,5 @@ export const runCli = async (): Promise<void> => {
     },
     onChallenge,
   });
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(serializeResult(result), null, 2)}\n`);
 };

@@ -57,16 +57,30 @@ const result = await client.createShareCode({
   onChallenge: async (_challenge, _ctx) => ({ code: "123456" }),
 });
 
-// { shareCode: string, validUntil?: "YYYY-MM-DD", pdf?: { path, filename } }
+// { shareCode: string, validUntil?: "YYYY-MM-DD", pdf?: { kind, ... } }
 ```
 
-PDF output is enabled by default. Set `artifacts.pdf` to `false` to stop after the share code is parsed.
+PDF output is enabled by default and saved to disk. Set `artifacts.pdf` to `false` to stop after the share code is parsed, or use in-memory bytes when you do not need a file:
+
+```typescript
+const client = new EVisaClient({
+  artifacts: {
+    pdf: { mode: "bytes" },
+  },
+});
+
+const result = await client.createShareCode(request);
+if (result.pdf?.kind === "bytes") {
+  await sendSomewhere(result.pdf.bytes, result.pdf.filename);
+}
+```
 
 ## Parallel Usage
 
 This library is safe to run in parallel as long as each run writes to its own output location.
 
 - Use a unique `artifacts.pdf.directory` per run, or set `artifacts.pdf.path`.
+- Use `artifacts.pdf.mode: "bytes"` when the caller can consume the PDF directly.
 - Avoid sharing `browser.userDataDir` across concurrent runs.
 
 ## Privacy & Security

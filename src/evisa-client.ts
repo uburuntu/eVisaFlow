@@ -126,6 +126,7 @@ const resolveOptions = (options: EVisaClientOptions): InternalRunOptions => {
     headless: options.browser?.headless ?? true,
     verbose: options.verbose ?? false,
     pdfEnabled,
+    pdfOutput: pdfObject?.mode ?? "file",
     outputDir,
     outputFile: pdfObject?.path ?? "",
     userDataDir: options.browser?.userDataDir ?? "",
@@ -203,10 +204,20 @@ export class EVisaClient {
           : undefined,
       };
 
-      if (internalResult.pdfPath) {
+      if (internalResult.pdfBytes) {
         result.pdf = {
+          kind: "bytes",
+          bytes: internalResult.pdfBytes,
+          filename: internalResult.pdfFilename ?? "evisa.pdf",
+          contentType: "application/pdf",
+          byteLength: internalResult.pdfBytes.byteLength,
+        };
+      } else if (internalResult.pdfPath) {
+        result.pdf = {
+          kind: "file",
           path: internalResult.pdfPath,
-          filename: basename(internalResult.pdfPath),
+          filename: internalResult.pdfFilename ?? basename(internalResult.pdfPath),
+          contentType: "application/pdf",
         };
       }
 

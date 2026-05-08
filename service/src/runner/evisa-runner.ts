@@ -12,7 +12,6 @@ export interface RunRequest {
   applicant: Applicant;
   purpose: Purpose;
   twoFactorMethod?: TwoFactorMethod;
-  outputDir: string;
   headless: boolean;
   telegramId: number;
   memberName: string;
@@ -24,7 +23,7 @@ export async function executeRun(request: RunRequest): Promise<CreateShareCodeRe
   const client = new EVisaClient({
     browser: { headless: request.headless },
     artifacts: {
-      pdf: { directory: request.outputDir },
+      pdf: { mode: "bytes" },
       diagnostics: { mode: "off" },
     },
   });

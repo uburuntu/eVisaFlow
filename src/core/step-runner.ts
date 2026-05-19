@@ -9,7 +9,10 @@ import {
 import type { ArtifactRef, EVisaEvent } from "../types.js";
 import type { InternalRunResult, Step, StepContext } from "./internal-types.js";
 import { classifyPage, type PageKind } from "./page-classifier.js";
-import { createPageSnapshot } from "./page-snapshot.js";
+import {
+  createPageSnapshot,
+  createSanitizedDiagnosticSnapshot,
+} from "./page-snapshot.js";
 
 export interface StepRunnerOptions {
   steps: Step[];
@@ -169,25 +172,7 @@ export class StepRunner {
         const snapshotPath = join(options.diagnosticsDir, `${safeLabel}.snapshot.json`);
         await writeFile(
           snapshotPath,
-          JSON.stringify(
-            {
-              url: snapshot.url,
-              title: snapshot.title,
-              headings: snapshot.headings,
-              buttons: snapshot.buttons,
-              links: snapshot.links,
-              controls: snapshot.controls.map((control) => ({
-                tag: control.tag,
-                type: control.type,
-                id: control.id,
-                name: control.name,
-                autocomplete: control.autocomplete,
-              })),
-              errors: snapshot.errors,
-            },
-            null,
-            2
-          ),
+          JSON.stringify(createSanitizedDiagnosticSnapshot(snapshot), null, 2),
           "utf-8"
         );
         refs.push({ kind: "snapshot", path: snapshotPath, sanitized: true });

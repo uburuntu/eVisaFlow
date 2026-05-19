@@ -48,6 +48,46 @@ export interface PageSnapshot {
   errors: string[];
 }
 
+export interface SanitizedDiagnosticSnapshot {
+  url?: string;
+  title: string;
+  headings: string[];
+  buttons: string[];
+  links: LinkSnapshot[];
+  controls: Array<Pick<ControlSnapshot, "tag" | "type" | "id" | "name" | "autocomplete">>;
+  errors: string[];
+}
+
+const sanitizeHref = (href: string | undefined): string | undefined => {
+  const value = href?.trim();
+  if (!value) {
+    return undefined;
+  }
+
+  return value.split(/[?#]/, 1)[0] || undefined;
+};
+
+export const createSanitizedDiagnosticSnapshot = (
+  snapshot: PageSnapshot
+): SanitizedDiagnosticSnapshot => ({
+  url: sanitizeHref(snapshot.url),
+  title: snapshot.title,
+  headings: snapshot.headings,
+  buttons: snapshot.buttons,
+  links: snapshot.links.map((link) => ({
+    text: link.text,
+    href: sanitizeHref(link.href),
+  })),
+  controls: snapshot.controls.map((control) => ({
+    tag: control.tag,
+    type: control.type,
+    id: control.id,
+    name: control.name,
+    autocomplete: control.autocomplete,
+  })),
+  errors: snapshot.errors,
+});
+
 export const createPageSnapshot = async (page: Page): Promise<PageSnapshot> => {
   const controls = await page
     .locator("main input, main select, main textarea")

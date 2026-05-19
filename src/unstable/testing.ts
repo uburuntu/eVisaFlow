@@ -1,10 +1,15 @@
+export { ConfigSchema } from "../config.js";
 export type { StepContext } from "../core/internal-types.js";
 export {
   classifyPage,
   type PageClassification,
   type PageKind,
 } from "../core/page-classifier.js";
-export { createPageSnapshot, type PageSnapshot } from "../core/page-snapshot.js";
+export {
+  createPageSnapshot,
+  createSanitizedDiagnosticSnapshot,
+  type PageSnapshot,
+} from "../core/page-snapshot.js";
 export { ConfirmationStep } from "../steps/confirmation.js";
 export { DateOfBirthStep } from "../steps/date-of-birth.js";
 export { DocumentNumberStep } from "../steps/document-number.js";

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as api from "../dist/index.js";
+import {
+  ConfigSchema,
+  createSanitizedDiagnosticSnapshot,
+} from "../dist/unstable/testing.js";
 
 test("root package exposes the v2 client API without step internals", () => {
   assert.equal(typeof api.EVisaClient, "function");
@@ -51,4 +55,53 @@ test("EVisaClient rejects filesystem PDF options in bytes mode", async () => {
       error.code === "CONFIG_INVALID" &&
       error.message.includes("only valid in file mode")
   );
+});
+
+test("ConfigSchema accepts diagnostics mode alias on as sanitized", () => {
+  const config = ConfigSchema.parse({
+    artifacts: {
+      diagnostics: { mode: "on" },
+    },
+  });
+
+  assert.equal(config.artifacts?.diagnostics?.mode, "sanitized");
+});
+
+test("sanitized diagnostics strip query strings and fragments from hrefs", () => {
+  const snapshot = createSanitizedDiagnosticSnapshot({
+    url: "https://example.com/auth?tab_id=secret#frag",
+    title: "Title",
+    text: "ignored text",
+    headings: ["Heading"],
+    buttons: ["Continue"],
+    links: [
+      {
+        text: "Recover account",
+        href: "https://example.com/recover?euaId=secret#frag",
+      },
+      { text: "Anchor", href: "#content" },
+    ],
+    controls: [
+      {
+        tag: "input",
+        type: "text",
+        id: "verificationCode",
+        name: "verificationCode",
+        value: "secret",
+        label: "Secret code",
+      },
+    ],
+    errors: [],
+  });
+
+  assert.equal(snapshot.url, "https://example.com/auth");
+  assert.equal(snapshot.links[0].href, "https://example.com/recover");
+  assert.equal(snapshot.links[1].href, undefined);
+  assert.deepEqual(snapshot.controls[0], {
+    tag: "input",
+    type: "text",
+    id: "verificationCode",
+    name: "verificationCode",
+    autocomplete: undefined,
+  });
 });

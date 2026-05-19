@@ -15,6 +15,11 @@ const PdfBytesArtifactSchema = z
   })
   .strict();
 
+const DiagnosticsModeSchema = z.preprocess(
+  (value) => (value === "on" ? "sanitized" : value),
+  z.enum(["off", "sanitized", "raw"])
+);
+
 const IdentityDocumentSchema = z.object({
   type: z.enum(["passport", "nationalId", "brc", "ukvi"]),
   number: z.string().min(3),
@@ -57,7 +62,7 @@ export const ConfigSchema = z.object({
         .optional(),
       diagnostics: z
         .object({
-          mode: z.enum(["off", "sanitized", "raw"]).optional(),
+          mode: DiagnosticsModeSchema.optional(),
           directory: z.string().optional(),
         })
         .optional(),

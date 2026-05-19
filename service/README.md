@@ -44,7 +44,7 @@ Fill in the values:
 | `SUPABASE_SERVICE_ROLE_KEY` | From Supabase project settings |
 | `ENCRYPTION_KEY` | Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `QUEUE_CONCURRENCY` | Max parallel browsers (default: 2) |
-| `EVISA_OUTPUT_DIR` | PDF output directory (default: ./downloads) |
+| `EVISA_HEADLESS` | Run browser automation headlessly (default: true) |
 | `SCHEDULER_CRON` | Cron expression for daily check (default: `0 9 * * *`) |
 | `SCHEDULE_INTERVAL_DAYS` | Days between scheduled runs per user (default: 30) |
 

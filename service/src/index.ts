@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
 import { getSupabase } from "./db/client.js";
@@ -12,9 +11,6 @@ const log = createLogger({ verbose: true });
 const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 setConcurrency(env.QUEUE_CONCURRENCY);
-
-// Ensure output directory exists
-await mkdir(env.EVISA_OUTPUT_DIR, { recursive: true });
 
 const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log);
 const scheduler = startScheduler(bot, db, env, log);

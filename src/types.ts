@@ -24,6 +24,20 @@ export interface Applicant {
 export type DiagnosticsMode = "off" | "sanitized" | "raw";
 export type PdfOutputMode = "file" | "bytes";
 
+export type PdfArtifactOptions =
+  | boolean
+  | {
+      mode?: "file";
+      directory?: string;
+      path?: string;
+    }
+  | {
+      mode: "bytes";
+      maxBytes?: number;
+      directory?: never;
+      path?: never;
+    };
+
 export interface ArtifactRef {
   kind: "pdf" | "snapshot" | "html" | "screenshot";
   path: string;
@@ -51,13 +65,7 @@ export interface EVisaClientOptions {
     userDataDir?: string;
   };
   artifacts?: {
-    pdf?:
-      | boolean
-      | {
-          mode?: PdfOutputMode;
-          directory?: string;
-          path?: string;
-        };
+    pdf?: PdfArtifactOptions;
     diagnostics?: {
       mode?: DiagnosticsMode;
       directory?: string;

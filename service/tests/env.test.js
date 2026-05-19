@@ -7,7 +7,6 @@ const ENV_KEYS = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "ENCRYPTION_KEY",
   "QUEUE_CONCURRENCY",
-  "EVISA_OUTPUT_DIR",
   "EVISA_HEADLESS",
   "SCHEDULER_CRON",
   "SCHEDULE_INTERVAL_DAYS",
@@ -49,7 +48,6 @@ test("loadEnv parses required values and applies defaults", async () => {
       const env = loadEnv();
 
       assert.equal(env.QUEUE_CONCURRENCY, 2);
-      assert.equal(env.EVISA_OUTPUT_DIR, "./downloads");
       assert.equal(env.EVISA_HEADLESS, true);
       assert.equal(env.SCHEDULE_INTERVAL_DAYS, 30);
     }

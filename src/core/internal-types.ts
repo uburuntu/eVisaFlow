@@ -31,6 +31,7 @@ export interface InternalRunOptions {
   verbose: boolean;
   pdfEnabled: boolean;
   pdfOutput: PdfOutputMode;
+  pdfMaxBytes: number;
   outputDir: string;
   outputFile: string;
   userDataDir: string;

@@ -35,6 +35,7 @@ const START_URL =
   "https://www.gov.uk/evisa/view-evisa-get-share-code-prove-immigration-status";
 
 const DEFAULT_PURPOSE: Purpose = "immigration_status_other";
+const DEFAULT_MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 const defaultSteps = (): Step[] => [
   new EntryPageStep(),
@@ -119,6 +120,22 @@ const resolveOptions = (options: EVisaClientOptions): InternalRunOptions => {
   const pdf = options.artifacts?.pdf;
   const pdfEnabled = pdf !== false;
   const pdfObject = typeof pdf === "object" ? pdf : undefined;
+  if (pdfObject?.mode === "bytes" && ("path" in pdfObject || "directory" in pdfObject)) {
+    throw new ConfigError(
+      "artifacts.pdf.path and artifacts.pdf.directory are only valid in file mode"
+    );
+  }
+  const pdfMaxBytes =
+    pdfObject?.mode === "bytes" && pdfObject.maxBytes !== undefined
+      ? pdfObject.maxBytes
+      : DEFAULT_MAX_PDF_BYTES;
+  if (
+    !Number.isFinite(pdfMaxBytes) ||
+    !Number.isInteger(pdfMaxBytes) ||
+    pdfMaxBytes < 1
+  ) {
+    throw new ConfigError("artifacts.pdf.maxBytes must be a positive integer");
+  }
   const outputDir = pdfObject?.directory ?? "downloads";
   const diagnostics = options.artifacts?.diagnostics;
 
@@ -127,6 +144,7 @@ const resolveOptions = (options: EVisaClientOptions): InternalRunOptions => {
     verbose: options.verbose ?? false,
     pdfEnabled,
     pdfOutput: pdfObject?.mode ?? "file",
+    pdfMaxBytes,
     outputDir,
     outputFile: pdfObject?.path ?? "",
     userDataDir: options.browser?.userDataDir ?? "",

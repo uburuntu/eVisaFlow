@@ -130,9 +130,10 @@ const resolvePdfConfig = (
     pdf = cliPdf === false ? false : typeof pdf === "object" ? pdf : {};
   }
   if (typeof output === "string" || typeof outputDir === "string") {
-    const current = typeof pdf === "object" ? pdf : {};
+    const current = typeof pdf === "object" && pdf.mode !== "bytes" ? pdf : {};
     pdf = {
       ...current,
+      mode: "file",
       path: typeof output === "string" ? output : current.path,
       directory: typeof outputDir === "string" ? outputDir : current.directory,
     };

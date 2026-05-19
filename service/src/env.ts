@@ -9,7 +9,6 @@ const envSchema = z.object({
     .length(64)
     .regex(/^[0-9a-f]+$/i, "Must be 64 hex characters (32 bytes)"),
   QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
-  EVISA_OUTPUT_DIR: z.string().default("./downloads"),
   EVISA_HEADLESS: z.coerce.boolean().default(true),
   SCHEDULER_CRON: z.string().default("0 9 * * *"),
   SCHEDULE_INTERVAL_DAYS: z.coerce.number().int().min(1).default(30),

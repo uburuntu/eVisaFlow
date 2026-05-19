@@ -8,6 +8,7 @@ import { BaseStep } from "./base-step.js";
 const shareCodeRegex = /\b([A-Z0-9]{3}\s+[A-Z0-9]{3}\s+[A-Z0-9]{3})\b/i;
 const validUntilRegex =
   /valid until\s+(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})/i;
+const PDF_MAGIC = Buffer.from("%PDF-", "ascii");
 
 const MONTHS = new Map(
   [
@@ -119,15 +120,31 @@ const resolveOutputPath = (
   return resolvedFilename;
 };
 
-const readDownloadBytes = async (download: Download): Promise<Uint8Array> => {
+const readDownloadBytes = async (
+  download: Download,
+  maxBytes: number
+): Promise<Uint8Array> => {
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
 
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > maxBytes) {
+      throw new Error(`Downloaded PDF exceeded configured max size of ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
   }
 
-  return Buffer.concat(chunks);
+  const bytes = Buffer.concat(chunks, totalBytes);
+  if (bytes.byteLength === 0) {
+    throw new Error("Downloaded PDF was empty");
+  }
+  if (!Buffer.from(bytes.subarray(0, PDF_MAGIC.byteLength)).equals(PDF_MAGIC)) {
+    throw new Error("Downloaded file did not look like a PDF");
+  }
+  return bytes;
 };
 
 export class DownloadPdfStep extends BaseStep {
@@ -197,7 +214,6 @@ export class DownloadPdfStep extends BaseStep {
       return;
     }
 
-    const downloadPromise = page.waitForEvent("download");
     const downloadLink = await this.findFirst(
       [
         {
@@ -212,12 +228,18 @@ export class DownloadPdfStep extends BaseStep {
       ],
       "Download PDF link"
     );
-    await downloadLink.click();
-    const download = await downloadPromise;
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      downloadLink.click(),
+    ]);
 
     if (options.pdfOutput === "bytes") {
-      const pdfBytes = await readDownloadBytes(download);
-      await download.delete().catch(() => {});
+      let pdfBytes: Uint8Array;
+      try {
+        pdfBytes = await readDownloadBytes(download, options.pdfMaxBytes);
+      } finally {
+        await download.delete().catch(() => {});
+      }
       context.setResult({
         pdfBytes,
         pdfFilename: defaultFilename,

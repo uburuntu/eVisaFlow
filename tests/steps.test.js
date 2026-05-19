@@ -63,6 +63,7 @@ const baseContext = {
     navigationTimeoutMs: 60000,
     actionTimeoutMs: 30000,
     twoFactorTimeoutMs: 600000,
+    pdfMaxBytes: 10 * 1024 * 1024,
   },
   logger: noopLogger,
   extractedData: {},
@@ -402,6 +403,7 @@ describe("DownloadPdfStep", () => {
     });
 
     let result;
+    const artifacts = [];
     const step = new DownloadPdfStep();
     await step.execute({
       ...baseContext,
@@ -416,14 +418,97 @@ describe("DownloadPdfStep", () => {
       setResult(value) {
         result = value;
       },
+      addArtifacts(value) {
+        artifacts.push(...value);
+      },
     });
 
     assert.equal(result.shareCode, "SGN CH2 7PL");
     assert.equal(result.pdfPath, undefined);
     assert.equal(result.pdfFilename, "EVISA_Sample_Alex_2030-01-01.pdf");
     assert.equal(
+      result.pdfBytes.byteLength,
+      Buffer.byteLength("%PDF-1.4\n% bytes pdf\n")
+    );
+    assert.equal(
       Buffer.from(result.pdfBytes).toString("utf-8"),
       "%PDF-1.4\n% bytes pdf\n"
+    );
+    assert.deepEqual(artifacts, []);
+    await page.close();
+  });
+
+  test("rejects bytes mode when the download is not a PDF", async () => {
+    const page = await context.newPage();
+    const rawHtml = await readFile(`./tests/fixtures/step-download-pdf.html`, "utf-8");
+    const html = rawHtml.replace(
+      /<head([^>]*)>/,
+      '<head$1><base href="https://view-immigration-status.service.gov.uk/">'
+    );
+    await page.setContent(html);
+    await page.route("**/share/someone-else/code/pdf", (route) => {
+      route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "text/plain",
+          "content-disposition": 'attachment; filename="evisa.txt"',
+        },
+        body: "not a pdf",
+      });
+    });
+
+    const step = new DownloadPdfStep();
+    await assert.rejects(
+      step.execute({
+        ...baseContext,
+        page,
+        options: {
+          ...baseContext.options,
+          pdfOutput: "bytes",
+        },
+        extractedData: {
+          name: "Alex Sample",
+        },
+      }),
+      /Downloaded file did not look like a PDF/
+    );
+    await page.close();
+  });
+
+  test("rejects bytes mode when the download exceeds the memory cap", async () => {
+    const page = await context.newPage();
+    const rawHtml = await readFile(`./tests/fixtures/step-download-pdf.html`, "utf-8");
+    const html = rawHtml.replace(
+      /<head([^>]*)>/,
+      '<head$1><base href="https://view-immigration-status.service.gov.uk/">'
+    );
+    await page.setContent(html);
+    await page.route("**/share/someone-else/code/pdf", (route) => {
+      route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": 'attachment; filename="evisa.pdf"',
+        },
+        body: `%PDF-1.4\n${"x".repeat(64)}`,
+      });
+    });
+
+    const step = new DownloadPdfStep();
+    await assert.rejects(
+      step.execute({
+        ...baseContext,
+        page,
+        options: {
+          ...baseContext.options,
+          pdfOutput: "bytes",
+          pdfMaxBytes: 8,
+        },
+        extractedData: {
+          name: "Alex Sample",
+        },
+      }),
+      /Downloaded PDF exceeded configured max size/
     );
     await page.close();
   });

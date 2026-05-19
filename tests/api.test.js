@@ -32,3 +32,23 @@ test("EVisaClient validates request shape before launching a browser", async () 
       error.message.includes("valid calendar date")
   );
 });
+
+test("EVisaClient rejects filesystem PDF options in bytes mode", async () => {
+  const client = new api.EVisaClient({
+    artifacts: { pdf: { mode: "bytes", path: "ignored.pdf" } },
+  });
+
+  await assert.rejects(
+    client.createShareCode({
+      applicant: {
+        identityDocument: { type: "passport", number: "123456789" },
+        dateOfBirth: "1980-03-31",
+      },
+      onChallenge: async () => ({ code: "123456" }),
+    }),
+    (error) =>
+      error instanceof api.ConfigError &&
+      error.code === "CONFIG_INVALID" &&
+      error.message.includes("only valid in file mode")
+  );
+});

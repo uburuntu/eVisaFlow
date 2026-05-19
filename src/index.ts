@@ -16,6 +16,7 @@ export type {
   EVisaEvent,
   EVisaPhase,
   IdentityDocument,
+  PdfArtifactOptions,
   PdfOutputMode,
   PdfResult,
   Purpose,

@@ -65,7 +65,7 @@ PDF output is enabled by default and saved to disk. Set `artifacts.pdf` to `fals
 ```typescript
 const client = new EVisaClient({
   artifacts: {
-    pdf: { mode: "bytes" },
+    pdf: { mode: "bytes", maxBytes: 10 * 1024 * 1024 },
   },
 });
 
@@ -75,12 +75,14 @@ if (result.pdf?.kind === "bytes") {
 }
 ```
 
+`maxBytes` defaults to 10 MiB in bytes mode.
+
 ## Parallel Usage
 
 This library is safe to run in parallel as long as each run writes to its own output location.
 
 - Use a unique `artifacts.pdf.directory` per run, or set `artifacts.pdf.path`.
-- Use `artifacts.pdf.mode: "bytes"` when the caller can consume the PDF directly.
+- Use `artifacts.pdf.mode: "bytes"` when the caller can consume the PDF directly; `path` and `directory` only apply to file mode.
 - Avoid sharing `browser.userDataDir` across concurrent runs.
 
 ## Privacy & Security

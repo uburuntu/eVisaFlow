@@ -1,5 +1,20 @@
 import { z } from "zod";
 
+const PdfFileArtifactSchema = z
+  .object({
+    mode: z.literal("file").optional(),
+    directory: z.string().optional(),
+    path: z.string().optional(),
+  })
+  .strict();
+
+const PdfBytesArtifactSchema = z
+  .object({
+    mode: z.literal("bytes"),
+    maxBytes: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const IdentityDocumentSchema = z.object({
   type: z.enum(["passport", "nationalId", "brc", "ukvi"]),
   number: z.string().min(3),
@@ -38,14 +53,7 @@ export const ConfigSchema = z.object({
   artifacts: z
     .object({
       pdf: z
-        .union([
-          z.boolean(),
-          z.object({
-            mode: z.enum(["file", "bytes"]).optional(),
-            directory: z.string().optional(),
-            path: z.string().optional(),
-          }),
-        ])
+        .union([z.boolean(), PdfFileArtifactSchema, PdfBytesArtifactSchema])
         .optional(),
       diagnostics: z
         .object({

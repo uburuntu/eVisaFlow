@@ -37,8 +37,8 @@
 
 ## PDF filename format
 - Default output: `EVISA_{Surname}_{Name}_{YYYY-MM-DD}.pdf`
-- `artifacts.pdf.path` overrides the output path as a literal string (no templating).
-- `artifacts.pdf.mode: "bytes"` returns the PDF in memory without writing a caller-visible file.
+- In file mode, `artifacts.pdf.path` overrides the output path as a literal string (no templating).
+- `artifacts.pdf.mode: "bytes"` returns the PDF in memory without writing a caller-visible file; `maxBytes` defaults to 10 MiB.
 
 ## HTTP-only feasibility (no Playwright)
 - Feasible but high-risk: the flow relies on session cookies, CSRF tokens, and dynamic JavaScript.

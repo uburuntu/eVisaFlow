@@ -1,0 +1,9 @@
+packages:
+  - .
+  - service
+
+minimumReleaseAge: 4320
+blockExoticSubdeps: true
+
+overrides:
+  "@supabase/realtime-js>ws": "8.20.1"

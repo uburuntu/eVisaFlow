@@ -15,7 +15,7 @@ export async function upsertUser(
   telegramId: number,
   firstName: string,
   handle: string | null,
-  scheduleIntervalDays: number,
+  scheduleIntervalDays: number
 ): Promise<DbUser> {
   const { data, error } = await db
     .from("users")
@@ -25,10 +25,10 @@ export async function upsertUser(
         first_name: firstName,
         telegram_handle: handle,
         next_scheduled_at: new Date(
-          Date.now() + scheduleIntervalDays * 86_400_000,
+          Date.now() + scheduleIntervalDays * 86_400_000
         ).toISOString(),
       },
-      { onConflict: "telegram_id" },
+      { onConflict: "telegram_id" }
     )
     .select()
     .single();
@@ -38,7 +38,7 @@ export async function upsertUser(
 
 export async function getUserByTelegramId(
   db: SupabaseClient,
-  telegramId: number,
+  telegramId: number
 ): Promise<DbUser | null> {
   const { data, error } = await db
     .from("users")
@@ -49,26 +49,22 @@ export async function getUserByTelegramId(
   return data;
 }
 
-export async function getUsersDueForSchedule(
-  db: SupabaseClient,
-): Promise<DbUser[]> {
+export async function getUsersDueForSchedule(db: SupabaseClient): Promise<DbUser[]> {
   const { data, error } = await db
     .from("users")
     .select()
     .lte("next_scheduled_at", new Date().toISOString())
     .not("next_scheduled_at", "is", null);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as DbUser[];
 }
 
 export async function advanceSchedule(
   db: SupabaseClient,
   userId: string,
-  intervalDays: number,
+  intervalDays: number
 ): Promise<void> {
-  const nextDate = new Date(
-    Date.now() + intervalDays * 86_400_000,
-  ).toISOString();
+  const nextDate = new Date(Date.now() + intervalDays * 86_400_000).toISOString();
   const { error } = await db
     .from("users")
     .update({ next_scheduled_at: nextDate })

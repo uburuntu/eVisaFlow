@@ -1,54 +1,140 @@
 import type { TwoFactorMethod } from "evisa-flow";
 
 interface PendingRequest {
+  requestId: string;
+  telegramId: number;
+  chatId: number;
   resolve: (code: string) => void;
   reject: (err: Error) => void;
   method: TwoFactorMethod;
   memberName: string;
+  promptMessageId?: number;
   timeoutHandle: ReturnType<typeof setTimeout>;
+  signal?: AbortSignal;
+  onAbort: () => void;
 }
 
-const pending = new Map<number, PendingRequest>();
+const pending = new Map<string, PendingRequest>();
 
-export function hasPending(telegramId: number): boolean {
-  return pending.has(telegramId);
+export function hasPending(telegramId: number, chatId?: number): boolean {
+  return Array.from(pending.values()).some(
+    (req) =>
+      req.telegramId === telegramId && (chatId === undefined || req.chatId === chatId)
+  );
 }
 
-export function submitCode(telegramId: number, code: string): boolean {
-  const req = pending.get(telegramId);
-  if (!req) return false;
-  clearTimeout(req.timeoutHandle);
-  pending.delete(telegramId);
-  req.resolve(code);
+export function setPromptMessageId(requestId: string, promptMessageId: number): boolean {
+  const req = pending.get(requestId);
+  if (!req) {
+    return false;
+  }
+  req.promptMessageId = promptMessageId;
   return true;
 }
 
-export function requestCode(
-  telegramId: number,
-  method: TwoFactorMethod,
-  memberName: string,
-  deadlineMs: number,
-): Promise<string> {
-  // Supersede any existing request
-  const existing = pending.get(telegramId);
+export function submitCode(options: {
+  telegramId: number;
+  chatId: number;
+  code: string;
+  replyToMessageId?: number;
+}): boolean {
+  const candidates = Array.from(pending.values()).filter(
+    (item) => item.telegramId === options.telegramId && item.chatId === options.chatId
+  );
+  const req =
+    candidates.find(
+      (item) =>
+        item.promptMessageId !== undefined &&
+        item.promptMessageId === options.replyToMessageId
+    ) ?? (candidates.length === 1 ? candidates[0] : undefined);
+  if (!req) return false;
+
+  clearTimeout(req.timeoutHandle);
+  cleanup(req);
+  req.resolve(options.code);
+  return true;
+}
+
+export function cancelRequest(requestId: string, reason = "2FA cancelled"): boolean {
+  const req = pending.get(requestId);
+  if (!req) {
+    return false;
+  }
+  clearTimeout(req.timeoutHandle);
+  cleanup(req);
+  req.reject(new Error(reason));
+  return true;
+}
+
+export function requestCode(options: {
+  requestId: string;
+  telegramId: number;
+  chatId: number;
+  method: TwoFactorMethod;
+  memberName: string;
+  deadlineMs: number;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const existing = pending.get(options.requestId);
   if (existing) {
     clearTimeout(existing.timeoutHandle);
+    cleanup(existing);
     existing.reject(new Error("Superseded by new request"));
-    pending.delete(telegramId);
   }
 
   return new Promise<string>((resolve, reject) => {
-    const timeoutHandle = setTimeout(() => {
-      pending.delete(telegramId);
-      reject(new Error(`2FA timeout for ${memberName}`));
-    }, Math.max(0, deadlineMs - Date.now()));
+    if (options.signal?.aborted) {
+      reject(new Error(`2FA cancelled for ${options.memberName}`));
+      return;
+    }
 
-    pending.set(telegramId, {
-      resolve,
-      reject,
-      method,
-      memberName,
+    let req!: PendingRequest;
+    const onAbort = () => {
+      clearTimeout(req.timeoutHandle);
+      cleanup(req);
+      reject(new Error(`2FA cancelled for ${options.memberName}`));
+    };
+    const timeoutHandle = setTimeout(
+      () => {
+        cleanup(req);
+        reject(new Error(`2FA timeout for ${options.memberName}`));
+      },
+      Math.max(0, options.deadlineMs - Date.now())
+    );
+
+    req = {
+      requestId: options.requestId,
+      telegramId: options.telegramId,
+      chatId: options.chatId,
+      resolve: (code) => {
+        cleanup(req);
+        resolve(code);
+      },
+      reject: (error) => {
+        cleanup(req);
+        reject(error);
+      },
+      method: options.method,
+      memberName: options.memberName,
       timeoutHandle,
-    });
+      signal: options.signal,
+      onAbort,
+    };
+
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    pending.set(options.requestId, req);
   });
+}
+
+function cleanup(req: PendingRequest): void {
+  pending.delete(req.requestId);
+  req.signal?.removeEventListener("abort", req.onAbort);
+}
+
+export function resetPendingForTests(): void {
+  for (const req of pending.values()) {
+    clearTimeout(req.timeoutHandle);
+    req.reject(new Error("Reset"));
+  }
+  pending.clear();
 }

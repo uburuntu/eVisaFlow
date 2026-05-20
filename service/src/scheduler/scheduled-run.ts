@@ -1,20 +1,21 @@
-import { InlineKeyboard } from "grammy";
-import type { Bot } from "grammy";
-import type { MyContext } from "../bot/context.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Bot } from "grammy";
+import { InlineKeyboard } from "grammy";
+import type { MyContext } from "../bot/context.js";
+import { getActiveFamilyMembers } from "../db/family-members.js";
+import { advanceSchedule, getUsersDueForSchedule } from "../db/users.js";
 import type { Env } from "../env.js";
 import type { Logger } from "../utils/logger.js";
-import {
-  getUsersDueForSchedule,
-  advanceSchedule,
-} from "../db/users.js";
-import { getActiveFamilyMembers } from "../db/family-members.js";
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export async function runScheduledChecks(
   bot: Bot<MyContext>,
   db: SupabaseClient,
   env: Env,
-  log: Logger,
+  log: Logger
 ): Promise<void> {
   const dueUsers = await getUsersDueForSchedule(db);
   log.info({ count: dueUsers.length }, "Users due for scheduled refresh");
@@ -26,7 +27,7 @@ export async function runScheduledChecks(
       continue;
     }
 
-    const names = members.map((m) => m.display_name).join(", ");
+    const names = members.map((m) => escapeHtml(m.display_name)).join(", ");
 
     try {
       await bot.api.sendMessage(
@@ -41,18 +42,17 @@ export async function runScheduledChecks(
         {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
-            .text("I'm Ready", "schedule_ready")
-            .text("Skip This Time", "schedule_skip"),
-        },
+            .text("I'm Ready", `schedule_ready:${user.telegram_id}`)
+            .text("Skip This Time", `schedule_skip:${user.telegram_id}`),
+        }
       );
 
       await advanceSchedule(db, user.id, env.SCHEDULE_INTERVAL_DAYS);
     } catch (err) {
       log.warn(
         { err, telegramId: user.telegram_id },
-        "Failed to send scheduled notification",
+        "Failed to send scheduled notification"
       );
-      await advanceSchedule(db, user.id, env.SCHEDULE_INTERVAL_DAYS);
     }
   }
 }

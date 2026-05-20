@@ -1,6 +1,6 @@
-import { BaseStep } from "./base-step.js";
-import { HEADINGS, PURPOSE_LABELS } from "../utils/selectors.js";
-import type { StepContext } from "../types.js";
+import type { StepContext } from "../core/internal-types.js";
+import { PURPOSE_LABELS } from "../utils/selectors.js";
+import { BaseStep, escapeRegExp } from "./base-step.js";
 
 export class PurposeSelectionStep extends BaseStep {
   id = "purpose-selection";
@@ -11,12 +11,12 @@ export class PurposeSelectionStep extends BaseStep {
     immigration_status_other: "somethingElse",
   } as const;
 
-  private static escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
   async detect(page: import("playwright").Page): Promise<boolean> {
-    return this.hasHeading(page, HEADINGS.purpose);
+    if (await this.hasLocator(page.locator('input[name="listedPurpose"]'))) {
+      return true;
+    }
+
+    return this.hasHeading(page, /Why do you need a share code\?/i);
   }
 
   async execute(context: StepContext): Promise<void> {
@@ -24,25 +24,29 @@ export class PurposeSelectionStep extends BaseStep {
     const label = PURPOSE_LABELS[purpose];
     logger.action("check", label);
 
-    const labelRegex = new RegExp(
-      `^${PurposeSelectionStep.escapeRegExp(label)}\\s*$`
-    );
-    const byRole = page.getByRole("radio", { name: labelRegex });
-    const byId = page.locator(
-      `input[name="listedPurpose"]#${PurposeSelectionStep.PURPOSE_IDS[purpose]}`
-    );
-    const byValue = page.locator(
-      `input[name="listedPurpose"][value^="${label}"]`
-    );
+    const labelRegex = new RegExp(`^${escapeRegExp(label)}\\s*$`, "i");
 
-    if ((await byRole.count()) > 0) {
-      await byRole.first().check();
-    } else if ((await byId.count()) > 0) {
-      await byId.first().check();
-    } else {
-      await byValue.first().check();
-    }
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.waitForLoadState("domcontentloaded");
+    await this.checkFirst(
+      [
+        {
+          name: `listedPurpose id ${PurposeSelectionStep.PURPOSE_IDS[purpose]}`,
+          locator: page.locator(
+            `input[name="listedPurpose"]#${PurposeSelectionStep.PURPOSE_IDS[purpose]}`
+          ),
+        },
+        {
+          name: `listedPurpose value ${label}`,
+          locator: page.locator(
+            `input[name="listedPurpose"][value^="${label.replace(/"/g, '\\"')}"]`
+          ),
+        },
+        {
+          name: `radio label ${label}`,
+          locator: page.getByRole("radio", { name: labelRegex }),
+        },
+      ],
+      `${label} radio`
+    );
+    await this.submitContinue(context);
   }
 }

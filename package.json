@@ -1,8 +1,12 @@
 {
   "name": "evisa-flow",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Automated UK eVisa share code + PDF retrieval via Playwright.",
   "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -12,6 +16,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./unstable/testing": {
+      "types": "./dist/unstable/testing.d.ts",
+      "import": "./dist/unstable/testing.js"
     }
   },
   "files": [
@@ -22,15 +30,27 @@
     "config.sample.json"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap",
-    "dev": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --watch",
-    "lint": "eslint . --max-warnings=0",
+    "audit": "node ./scripts/audit.js",
+    "build": "pnpm run build:service",
+    "build:lib": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --dts --sourcemap --clean",
+    "build:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot build",
+    "dev": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --dts --sourcemap --clean --watch",
+    "format": "biome check --write .",
+    "format:check": "biome ci . --reporter=summary --error-on-warnings",
+    "lint": "biome ci . --reporter=summary --error-on-warnings",
+    "pack:dry": "pnpm pack --dry-run",
     "start": "node ./bin/evisa-flow.js",
-    "prepack": "npm run build",
+    "prepack": "pnpm run build:lib",
     "snapshots": "node ./scripts/snapshot.js",
+    "smoke:live": "pnpm run build:lib && node ./scripts/live-smoke.js",
     "fixtures": "node ./scripts/refresh-fixtures.js",
-    "test": "npm run build && node --test",
-    "typecheck": "tsc --noEmit"
+    "test": "pnpm run test:lib && pnpm run test:service",
+    "test:lib": "pnpm run build:lib && node --test tests/*.test.js",
+    "test:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot build && node --test service/tests/*.test.js",
+    "typecheck": "pnpm run typecheck:lib && pnpm run typecheck:service",
+    "typecheck:lib": "tsc --noEmit",
+    "typecheck:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot typecheck",
+    "validate": "pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run pack:dry && pnpm run audit"
   },
   "keywords": [
     "evisa",
@@ -53,19 +73,17 @@
   "homepage": "https://github.com/uburuntu/eVisaFlow#readme",
   "license": "MIT",
   "dependencies": {
-    "commander": "^14.0.2",
-    "pino": "^10.3.0",
-    "playwright": "^1.58.0",
+    "commander": "^14.0.3",
+    "pino": "^10.3.1",
+    "playwright": "1.59.1",
     "prompts": "^2.4.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.0.10",
+    "@biomejs/biome": "^2.4.13",
+    "@types/node": "^25.6.0",
     "@types/prompts": "^2.4.9",
-    "@typescript-eslint/eslint-plugin": "^8.54.0",
-    "@typescript-eslint/parser": "^8.54.0",
-    "eslint": "^9.39.2",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

@@ -28,8 +28,6 @@ export class MessageTracker {
   /** Delete all tracked transient messages. Call in finally block. */
   async cleanup(): Promise<void> {
     const ids = this.transient.splice(0);
-    await Promise.allSettled(
-      ids.map((id) => this.api.deleteMessage(this.chatId, id)),
-    );
+    await Promise.allSettled(ids.map((id) => this.api.deleteMessage(this.chatId, id)));
   }
 }

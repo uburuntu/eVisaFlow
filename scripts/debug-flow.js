@@ -1,61 +1,75 @@
 #!/usr/bin/env node
-import { EVisaFlow } from "../dist/index.js";
+import { EVisaClient } from "../dist/index.js";
 
-// ⚠️  IMPORTANT: Replace these with your actual credentials for testing
+// ⚠️  IMPORTANT: Replace these with your actual details for testing
 // This file is gitignored to prevent committing personal data
 // Sample data format:
-const credentials = {
-  auth: { type: "passport", passportNumber: "123456789" },
-  dateOfBirth: { day: 7, month: 6, year: 1998 },
-  preferredTwoFactorMethod: "sms",
+const applicant = {
+  identityDocument: { type: "passport", number: "123456789" },
+  dateOfBirth: "1998-06-07",
 };
 
-const flow = new EVisaFlow({
-  credentials,
-  purpose: "immigration_status_other",
-  onTwoFactorRequired: async (method) => {
-    console.log(`\n⚠️  Two-factor authentication required via ${method.toUpperCase()}`);
-    console.log("Please check your phone/email and enter the 6-digit code:");
-    
-    const readline = await import("readline");
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+const askForCode = async (method) => {
+  console.log(`\n⚠️  Two-factor authentication required via ${method.toUpperCase()}`);
+  console.log("Please check your phone/email and enter the 6-digit code:");
 
-    return new Promise((resolve) => {
-      rl.question("Code: ", (code) => {
-        rl.close();
-        resolve(code.trim());
-      });
+  const readline = await import("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question("Code: ", (code) => {
+      rl.close();
+      resolve(code.trim());
     });
-  },
-  options: {
+  });
+};
+
+const client = new EVisaClient({
+  browser: {
     headless: false, // Run headed for debugging
-    verbose: true,
-    screenshotOnError: true,
-    outputDir: "./downloads",
-    navigationTimeoutMs: 120_000, // 2 minutes
-    actionTimeoutMs: 60_000, // 1 minute
   },
+  artifacts: {
+    pdf: {
+      directory: "./downloads",
+    },
+    diagnostics: {
+      mode: "raw",
+      directory: "./downloads/debug",
+    },
+  },
+  timeouts: {
+    navigationMs: 120_000, // 2 minutes
+    actionMs: 60_000, // 1 minute
+  },
+  verbose: true,
 });
 
 console.log("🚀 Starting eVisa flow...");
-console.log("📋 Credentials:", {
-  ...credentials,
-  auth: { ...credentials.auth, passportNumber: "***" },
+console.log("📋 Applicant:", {
+  ...applicant,
+  identityDocument: { ...applicant.identityDocument, number: "***" },
 });
 console.log("📁 Output directory: ./downloads");
 console.log("📸 Debug screenshots: ./downloads/debug\n");
 
-flow
-  .run()
+client
+  .createShareCode({
+    applicant,
+    purpose: "immigration_status_other",
+    challengePreference: { deliveryMethod: "sms" },
+    onChallenge: async (challenge) => ({
+      code: await askForCode(challenge.deliveryMethod),
+    }),
+  })
   .then((result) => {
     console.log("\n✅ Success! Flow completed.");
-    console.log("📄 PDF saved to:", result.pdfPath);
+    console.log("📄 PDF saved to:", result.pdf?.path ?? "(PDF disabled)");
     console.log("🔑 Share code:", result.shareCode);
     if (result.validUntil) {
-      console.log("⏰ Valid until:", result.validUntil.toISOString());
+      console.log("⏰ Valid until:", result.validUntil);
     }
     process.exit(0);
   })

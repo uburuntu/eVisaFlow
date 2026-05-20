@@ -29,7 +29,7 @@ export async function addFamilyMember(
     dob_year: number;
     preferred_2fa_method: string;
     purpose: string;
-  },
+  }
 ): Promise<DbFamilyMember> {
   const { data, error } = await db
     .from("family_members")
@@ -42,7 +42,7 @@ export async function addFamilyMember(
 
 export async function getActiveFamilyMembers(
   db: SupabaseClient,
-  userId: string,
+  userId: string
 ): Promise<DbFamilyMember[]> {
   const { data, error } = await db
     .from("family_members")
@@ -57,7 +57,7 @@ export async function getActiveFamilyMembers(
 export async function getFamilyMemberById(
   db: SupabaseClient,
   memberId: string,
-  userId: string,
+  userId: string
 ): Promise<DbFamilyMember | null> {
   const { data, error } = await db
     .from("family_members")
@@ -72,7 +72,7 @@ export async function getFamilyMemberById(
 export async function deactivateFamilyMember(
   db: SupabaseClient,
   memberId: string,
-  userId: string,
+  userId: string
 ): Promise<void> {
   const { error } = await db
     .from("family_members")
@@ -84,7 +84,7 @@ export async function deactivateFamilyMember(
 
 export async function countActiveFamilyMembers(
   db: SupabaseClient,
-  userId: string,
+  userId: string
 ): Promise<number> {
   const { count, error } = await db
     .from("family_members")

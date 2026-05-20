@@ -1,30 +1,40 @@
+import type { StepContext } from "../core/internal-types.js";
 import { BaseStep } from "./base-step.js";
-import { HEADINGS } from "../utils/selectors.js";
-import type { StepContext } from "../types.js";
 
 export class ConfirmationStep extends BaseStep {
   id = "confirmation";
 
   async detect(page: import("playwright").Page): Promise<boolean> {
-    return this.hasHeading(page, HEADINGS.confirmation);
+    const hasShareLink =
+      (await page.getByRole("link", { name: /^Get share code$/i }).count()) > 0 ||
+      (await page.locator('a[href="/share"]').count()) > 0;
+
+    return (
+      hasShareLink &&
+      (await this.hasHeading(page, /Get a share code to prove your status/i))
+    );
   }
 
   async execute(context: StepContext): Promise<void> {
-    const { page, logger } = context;
+    const { page, logger, options } = context;
     await this.dismissStaySignedIn(context);
 
     logger.action("click", "get-share-code");
-    const linkByRole = page.getByRole("link", { name: /Get share code/i });
-    const linkBySelector = page.locator('a.govuk-button:has-text("Get share code")');
-    const linkByHref = page.locator('a[href="/share"]');
-
-    if ((await linkByRole.count()) > 0) {
-      await linkByRole.first().click();
-    } else if ((await linkBySelector.count()) > 0) {
-      await linkBySelector.first().click();
-    } else {
-      await linkByHref.first().click();
-    }
-    await page.waitForLoadState("domcontentloaded");
+    await this.clickFirstAndWait(
+      page,
+      [
+        {
+          name: "Get share code link",
+          locator: page.getByRole("link", { name: /^Get share code$/i }),
+        },
+        {
+          name: "Get share code button link",
+          locator: page.locator('a.govuk-button:has-text("Get share code")'),
+        },
+        { name: "share href", locator: page.locator('a[href="/share"]') },
+      ],
+      "Get share code link",
+      options.navigationTimeoutMs
+    );
   }
 }

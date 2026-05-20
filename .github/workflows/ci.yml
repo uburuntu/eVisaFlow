@@ -2,59 +2,92 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+    branches: [main]
+  merge_group:
   workflow_call:
 
-jobs:
-  lib:
-    name: Library
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+permissions:
+  contents: read
 
-      - uses: actions/setup-node@v4
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: "24"
-          cache: npm
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Lint
-        run: npm run lint
+      - name: Biome
+        run: pnpm run lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Test
-        run: npm run test
+        run: pnpm run test
 
-  service:
-    name: Service
+      - name: Package dry-run
+        run: pnpm run pack:dry
+
+      - name: Audit production dependencies
+        run: pnpm run audit
+
+  docker:
+    name: Docker
+    needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build CLI image
+        uses: docker/build-push-action@v6
         with:
-          node-version: "24"
-          cache: npm
+          context: .
+          file: Dockerfile
+          push: false
+          tags: evisa-flow:ci
 
-      - name: Install root dependencies
-        run: npm ci
+      - name: Build service image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: service/Dockerfile
+          push: false
+          load: true
+          tags: evisa-flow-bot:ci
 
-      - name: Build root (service depends on evisa-flow)
-        run: npm run build
+      - name: Verify service image healthcheck
+        run: docker image inspect evisa-flow-bot:ci --format '{{json .Config.Healthcheck}}' | grep /ready
 
-      - name: Install service dependencies
-        run: cd service && npm ci
-
-      - name: Typecheck service
-        run: cd service && npx tsc --noEmit
+      - name: Smoke service health server in image
+        run: |
+          docker run --rm evisa-flow-bot:ci node -e "const log={info(){},warn(){},error(){}}; import('./dist/health.js').then(async ({startHealthServer})=>{const server=startHealthServer(0,log,()=>({ready:true,shuttingDown:false,startedAt:new Date().toISOString(),telegram:{ready:true,runnerRunning:true},supabase:{ready:true},queue:{active:0,waiting:0}})); await new Promise((resolve)=>setTimeout(resolve,100)); const port=server.port(); const res=await fetch('http://127.0.0.1:'+port+'/ready'); await server.close(); process.exit(res.ok?0:1);}).catch((err)=>{console.error(err); process.exit(1);})"

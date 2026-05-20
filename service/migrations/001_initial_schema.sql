@@ -66,9 +66,10 @@ CREATE TABLE runs (
   family_member_id  UUID NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
   trigger           TEXT NOT NULL DEFAULT 'manual' CHECK (trigger IN ('manual', 'scheduled')),
   status            TEXT NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending', 'running', 'awaiting_2fa', 'success', 'failed')),
-  share_code        TEXT,
+                    CHECK (status IN ('pending', 'running', 'awaiting_2fa', 'success', 'failed', 'cancelled', 'interrupted')),
+  encrypted_share_code TEXT,
   valid_until       TIMESTAMPTZ,
+  error_code        TEXT,
   error_message     TEXT,
   started_at        TIMESTAMPTZ,
   completed_at      TIMESTAMPTZ,
@@ -78,6 +79,26 @@ CREATE TABLE runs (
 CREATE INDEX idx_runs_user ON runs(user_id);
 CREATE INDEX idx_runs_member ON runs(family_member_id);
 CREATE INDEX idx_runs_created ON runs(created_at DESC);
+CREATE UNIQUE INDEX idx_runs_one_active_per_member
+  ON runs(user_id, family_member_id)
+  WHERE status IN ('pending', 'running', 'awaiting_2fa');
+
+CREATE TABLE run_events (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id      UUID NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  event_type  TEXT NOT NULL,
+  phase       TEXT,
+  page_kind   TEXT,
+  operation   TEXT,
+  duration_ms DOUBLE PRECISION,
+  step_id     TEXT,
+  error_code  TEXT,
+  message     TEXT,
+  metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_run_events_run_created ON run_events(run_id, created_at);
 
 -- ============================================================
 -- Auto-update updated_at
@@ -104,3 +125,4 @@ CREATE TRIGGER trg_family_members_updated_at
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE family_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE run_events ENABLE ROW LEVEL SECURITY;

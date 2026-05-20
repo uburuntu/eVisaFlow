@@ -1,6 +1,6 @@
-import { BaseStep } from "./base-step.js";
-import { DOC_NUMBER_LABELS, HEADINGS } from "../utils/selectors.js";
-import type { StepContext, AuthMethod } from "../types.js";
+import type { AuthMethod, StepContext } from "../core/internal-types.js";
+import { DOC_NUMBER_LABELS } from "../utils/selectors.js";
+import { BaseStep, escapeRegExp } from "./base-step.js";
 
 const numberLabel = (auth: AuthMethod): string => {
   switch (auth.type) {
@@ -12,19 +12,6 @@ const numberLabel = (auth: AuthMethod): string => {
       return DOC_NUMBER_LABELS.brc;
     case "ukvi":
       return DOC_NUMBER_LABELS.ukvi;
-  }
-};
-
-const pageHeading = (auth: AuthMethod): string => {
-  switch (auth.type) {
-    case "passport":
-      return HEADINGS.passportNumber;
-    case "nationalId":
-      return HEADINGS.nationalIdNumber;
-    case "brc":
-      return HEADINGS.brcNumber;
-    case "ukvi":
-      return HEADINGS.ukviNumber;
   }
 };
 
@@ -45,32 +32,44 @@ export class DocumentNumberStep extends BaseStep {
   id = "document-number";
 
   async detect(page: import("playwright").Page): Promise<boolean> {
-    const headings = [
-      HEADINGS.passportNumber,
-      HEADINGS.nationalIdNumber,
-      HEADINGS.brcNumber,
-      HEADINGS.ukviNumber,
-    ];
-
-    for (const heading of headings) {
-      if (await this.hasHeading(page, heading)) {
-        return true;
-      }
+    if (await this.hasLocator(page.locator('input[name="documentNumber"]'))) {
+      return true;
     }
-    return false;
+
+    return (
+      (await this.hasHeading(
+        page,
+        /What is your (passport|national identity card|biometric residence card or permit|UKVI customer) number\?/i
+      )) ||
+      (await this.hasVisible(
+        page.getByLabel(
+          /Passport number|National identity card number|Biometric residence card or permit number|UKVI customer number/i
+        )
+      ))
+    );
   }
 
   async execute(context: StepContext): Promise<void> {
     const { page, credentials, logger } = context;
     const auth = credentials.auth;
-    const heading = pageHeading(auth);
     const label = numberLabel(auth);
     const value = authValue(auth);
 
     logger.action("fill", label);
-    await page.getByRole("heading", { name: heading }).waitFor();
-    await page.getByLabel(label).fill(value);
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.waitForLoadState("domcontentloaded");
+    await this.fillFirst(
+      [
+        {
+          name: "documentNumber input",
+          locator: page.locator('input[name="documentNumber"], input#documentNumber'),
+        },
+        {
+          name: `${label} label`,
+          locator: page.getByLabel(new RegExp(escapeRegExp(label), "i")),
+        },
+      ],
+      value,
+      label
+    );
+    await this.submitContinue(context);
   }
 }

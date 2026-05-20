@@ -1,4 +1,4 @@
-import type { Step } from "../types.js";
+import type { Step } from "./internal-types.js";
 
 const MAX_RETRIES = 2;
 

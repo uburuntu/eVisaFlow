@@ -21,8 +21,9 @@ export interface Applicant {
   dateOfBirth: DateOfBirth;
 }
 
-export type DiagnosticsMode = "off" | "sanitized" | "raw";
+export type DiagnosticsMode = "off" | "sanitized" | "raw" | "sanitized_on_failure";
 export type PdfOutputMode = "file" | "bytes";
+export type HtmlOutputMode = "file" | "bytes";
 
 export type PdfArtifactOptions =
   | boolean
@@ -36,6 +37,32 @@ export type PdfArtifactOptions =
       maxBytes?: number;
       directory?: never;
       path?: never;
+    };
+
+export type HtmlArtifactOptions =
+  | boolean
+  | {
+      mode?: "file";
+      directory?: string;
+      path?: string;
+      maxBytes?: number;
+      inlineImages?: boolean;
+      inlineStyles?: boolean;
+    }
+  | {
+      mode: "bytes";
+      maxBytes?: number;
+      inlineImages?: boolean;
+      inlineStyles?: boolean;
+      directory?: never;
+      path?: never;
+    };
+
+export type CheckerArtifactOptions =
+  | boolean
+  | {
+      html?: HtmlArtifactOptions;
+      pdf?: PdfArtifactOptions;
     };
 
 export interface ArtifactRef {
@@ -59,6 +86,23 @@ export type PdfResult =
       byteLength: number;
     };
 
+export type HtmlResult =
+  | {
+      kind: "file";
+      path: string;
+      filename: string;
+      contentType: "text/html";
+      standalone: boolean;
+    }
+  | {
+      kind: "bytes";
+      bytes: Uint8Array;
+      filename: string;
+      contentType: "text/html";
+      byteLength: number;
+      standalone: boolean;
+    };
+
 export interface EVisaClientOptions {
   browser?: {
     headless?: boolean;
@@ -66,6 +110,7 @@ export interface EVisaClientOptions {
   };
   artifacts?: {
     pdf?: PdfArtifactOptions;
+    checker?: CheckerArtifactOptions;
     diagnostics?: {
       mode?: DiagnosticsMode;
       directory?: string;
@@ -97,10 +142,60 @@ export interface EVisaChallengeContext {
 
 export type EVisaChallengeResponse = { code: string };
 
+export type ShareCodeCheckPurpose =
+  | "driving_licence"
+  | "student_loan"
+  | "education_or_training"
+  | "travel"
+  | "health_insurance_card"
+  | "personal_finance"
+  | "homelessness_or_council_housing"
+  | "other";
+
+export interface ShareCodeCheckDetails {
+  jobTitle?: string;
+  organisation?: string;
+  purpose?: ShareCodeCheckPurpose;
+  otherPurpose?: string;
+}
+
+export interface VerifyShareCodeRequest {
+  shareCode: string;
+  dateOfBirth: DateOfBirth;
+  checkDetails?: ShareCodeCheckDetails;
+  signal?: AbortSignal;
+}
+
+export interface VerifiedStatusSummary {
+  name?: string;
+  dateOfBirth?: string;
+  nationality?: string;
+  status?: string;
+  validFrom?: string;
+  validUntil?: string;
+  checkDate?: string;
+  checkReferenceNumber?: string;
+  checkPurpose?: string;
+  checkerJobTitle?: string;
+  checkerOrganisation?: string;
+  can?: string[];
+  cannot?: string[];
+}
+
+export interface VerifyShareCodeResult {
+  shareCode: string;
+  summary?: VerifiedStatusSummary;
+  html?: HtmlResult;
+  pdf?: PdfResult;
+  artifacts?: ArtifactRef[];
+}
+
 export interface CreateShareCodeRequest {
   applicant: Applicant;
   purpose?: Purpose;
   challengePreference?: ChallengePreference;
+  checkDetails?: ShareCodeCheckDetails;
+  signal?: AbortSignal;
   onChallenge: (
     challenge: EVisaChallenge,
     context: EVisaChallengeContext
@@ -116,6 +211,7 @@ export interface CreateShareCodeResult {
     nationality?: string;
     status?: string;
   };
+  checker?: VerifyShareCodeResult;
   artifacts?: ArtifactRef[];
 }
 
@@ -127,12 +223,36 @@ export type EVisaPhase =
   | "viewing_status"
   | "creating_share_code"
   | "downloading_pdf"
+  | "checking_status"
+  | "capturing_checker_html"
+  | "downloading_checker_pdf"
   | "completed"
   | "failed";
+
+export type EVisaTimingOperation =
+  | "browser_launch"
+  | "navigate"
+  | "page_snapshot"
+  | "step"
+  | "diagnostic_capture"
+  | "checker"
+  | "artifact"
+  | "run";
+
+export type EVisaCompletedResult = CreateShareCodeResult | VerifyShareCodeResult;
 
 export type EVisaEvent =
   | { type: "run_started"; phase: "launching" }
   | { type: "phase_changed"; phase: EVisaPhase }
+  | {
+      type: "timing";
+      phase: EVisaPhase;
+      operation: EVisaTimingOperation;
+      durationMs: number;
+      stepId?: string;
+      pageKind?: string;
+      url?: string;
+    }
   | {
       type: "page_classified";
       phase: EVisaPhase;
@@ -146,7 +266,7 @@ export type EVisaEvent =
       challenge: EVisaChallenge;
     }
   | { type: "artifact_saved"; phase: EVisaPhase; artifact: ArtifactRef }
-  | { type: "completed"; phase: "completed"; result: CreateShareCodeResult }
+  | { type: "completed"; phase: "completed"; result: EVisaCompletedResult }
   | {
       type: "failed";
       phase: "failed";

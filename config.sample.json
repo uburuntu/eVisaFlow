@@ -10,6 +10,11 @@
   "challengePreference": {
     "deliveryMethod": "sms"
   },
+  "checkDetails": {
+    "jobTitle": "Traveller",
+    "organisation": "Self",
+    "purpose": "travel"
+  },
   "browser": {
     "headless": true
   },
@@ -17,6 +22,18 @@
     "pdf": {
       "mode": "file",
       "directory": "./downloads"
+    },
+    "checker": {
+      "html": {
+        "mode": "file",
+        "directory": "./downloads",
+        "inlineImages": true,
+        "inlineStyles": true
+      },
+      "pdf": {
+        "mode": "file",
+        "directory": "./downloads"
+      }
     },
     "diagnostics": {
       "mode": "off"

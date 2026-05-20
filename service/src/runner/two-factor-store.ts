@@ -3,84 +3,132 @@ import type { TwoFactorMethod } from "evisa-flow";
 interface PendingRequest {
   requestId: string;
   telegramId: number;
+  chatId: number;
   resolve: (code: string) => void;
   reject: (err: Error) => void;
   method: TwoFactorMethod;
   memberName: string;
-  sequence: number;
+  promptMessageId?: number;
   timeoutHandle: ReturnType<typeof setTimeout>;
+  signal?: AbortSignal;
+  onAbort: () => void;
 }
 
 const pending = new Map<string, PendingRequest>();
-let nextSequence = 0;
 
-export function hasPending(telegramId: number): boolean {
-  return Array.from(pending.values()).some((req) => req.telegramId === telegramId);
+export function hasPending(telegramId: number, chatId?: number): boolean {
+  return Array.from(pending.values()).some(
+    (req) =>
+      req.telegramId === telegramId && (chatId === undefined || req.chatId === chatId)
+  );
 }
 
-export function submitCode(telegramId: number, code: string): boolean {
-  const req = Array.from(pending.values())
-    .filter((item) => item.telegramId === telegramId)
-    .sort((a, b) => b.sequence - a.sequence)[0];
-  if (!req) return false;
-
-  clearTimeout(req.timeoutHandle);
-  pending.delete(req.requestId);
-  req.resolve(code);
+export function setPromptMessageId(requestId: string, promptMessageId: number): boolean {
+  const req = pending.get(requestId);
+  if (!req) {
+    return false;
+  }
+  req.promptMessageId = promptMessageId;
   return true;
 }
 
-export function requestCode(
-  requestId: string,
-  telegramId: number,
-  method: TwoFactorMethod,
-  memberName: string,
-  deadlineMs: number,
-  signal?: AbortSignal
-): Promise<string> {
-  const existing = pending.get(requestId);
+export function submitCode(options: {
+  telegramId: number;
+  chatId: number;
+  code: string;
+  replyToMessageId?: number;
+}): boolean {
+  const candidates = Array.from(pending.values()).filter(
+    (item) => item.telegramId === options.telegramId && item.chatId === options.chatId
+  );
+  const req =
+    candidates.find(
+      (item) =>
+        item.promptMessageId !== undefined &&
+        item.promptMessageId === options.replyToMessageId
+    ) ?? (candidates.length === 1 ? candidates[0] : undefined);
+  if (!req) return false;
+
+  clearTimeout(req.timeoutHandle);
+  cleanup(req);
+  req.resolve(options.code);
+  return true;
+}
+
+export function cancelRequest(requestId: string, reason = "2FA cancelled"): boolean {
+  const req = pending.get(requestId);
+  if (!req) {
+    return false;
+  }
+  clearTimeout(req.timeoutHandle);
+  cleanup(req);
+  req.reject(new Error(reason));
+  return true;
+}
+
+export function requestCode(options: {
+  requestId: string;
+  telegramId: number;
+  chatId: number;
+  method: TwoFactorMethod;
+  memberName: string;
+  deadlineMs: number;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const existing = pending.get(options.requestId);
   if (existing) {
     clearTimeout(existing.timeoutHandle);
+    cleanup(existing);
     existing.reject(new Error("Superseded by new request"));
-    pending.delete(requestId);
   }
 
   return new Promise<string>((resolve, reject) => {
-    const cleanup = () => {
-      pending.delete(requestId);
-      signal?.removeEventListener("abort", onAbort);
-    };
+    if (options.signal?.aborted) {
+      reject(new Error(`2FA cancelled for ${options.memberName}`));
+      return;
+    }
+
+    let req!: PendingRequest;
     const onAbort = () => {
-      clearTimeout(timeoutHandle);
-      cleanup();
-      reject(new Error(`2FA cancelled for ${memberName}`));
+      clearTimeout(req.timeoutHandle);
+      cleanup(req);
+      reject(new Error(`2FA cancelled for ${options.memberName}`));
     };
     const timeoutHandle = setTimeout(
       () => {
-        cleanup();
-        reject(new Error(`2FA timeout for ${memberName}`));
+        cleanup(req);
+        reject(new Error(`2FA timeout for ${options.memberName}`));
       },
-      Math.max(0, deadlineMs - Date.now())
+      Math.max(0, options.deadlineMs - Date.now())
     );
 
-    signal?.addEventListener("abort", onAbort, { once: true });
-    pending.set(requestId, {
-      requestId,
-      telegramId,
+    req = {
+      requestId: options.requestId,
+      telegramId: options.telegramId,
+      chatId: options.chatId,
       resolve: (code) => {
-        cleanup();
+        cleanup(req);
         resolve(code);
       },
       reject: (error) => {
-        cleanup();
+        cleanup(req);
         reject(error);
       },
-      method,
-      memberName,
-      sequence: ++nextSequence,
+      method: options.method,
+      memberName: options.memberName,
       timeoutHandle,
-    });
+      signal: options.signal,
+      onAbort,
+    };
+
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    pending.set(options.requestId, req);
   });
+}
+
+function cleanup(req: PendingRequest): void {
+  pending.delete(req.requestId);
+  req.signal?.removeEventListener("abort", req.onAbort);
 }
 
 export function resetPendingForTests(): void {
@@ -89,5 +137,4 @@ export function resetPendingForTests(): void {
     req.reject(new Error("Reset"));
   }
   pending.clear();
-  nextSequence = 0;
 }

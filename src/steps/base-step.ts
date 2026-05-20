@@ -63,19 +63,29 @@ export abstract class BaseStep implements Step {
     timeout = 30000
   ): Promise<void> {
     const locator = typeof selector === "string" ? page.locator(selector) : selector;
-    await locator.waitFor({ state: "visible", timeout });
-    await locator.click();
+    await locator.click({ timeout });
   }
 
   protected async findFirst(
     candidates: LocatorCandidate[],
-    purpose: string
+    purpose: string,
+    timeout = 5000
   ): Promise<Locator> {
-    for (const candidate of candidates) {
-      const count = await candidate.locator.count().catch(() => 0);
-      if (count > 0) {
-        return candidate.locator.first();
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() <= deadline) {
+      for (const candidate of candidates) {
+        const count = await candidate.locator.count().catch(() => 0);
+        if (count > 0) {
+          return candidate.locator.first();
+        }
       }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250, remaining)));
     }
 
     throw new SelectorNotFoundError(
@@ -88,19 +98,21 @@ export abstract class BaseStep implements Step {
   protected async fillFirst(
     candidates: LocatorCandidate[],
     value: string,
-    purpose: string
+    purpose: string,
+    timeout = 5000
   ): Promise<void> {
-    const locator = await this.findFirst(candidates, purpose);
-    await locator.waitFor({ state: "visible" });
+    const locator = await this.findFirst(candidates, purpose, timeout);
+    await locator.waitFor({ state: "visible", timeout });
     await locator.fill(value);
   }
 
   protected async checkFirst(
     candidates: LocatorCandidate[],
-    purpose: string
+    purpose: string,
+    timeout = 5000
   ): Promise<void> {
-    const locator = await this.findFirst(candidates, purpose);
-    await locator.check();
+    const locator = await this.findFirst(candidates, purpose, timeout);
+    await locator.check({ timeout });
   }
 
   protected async clickAndWait(
@@ -108,9 +120,11 @@ export abstract class BaseStep implements Step {
     locator: Locator,
     timeout = 30000
   ): Promise<void> {
-    await locator.waitFor({ state: "visible", timeout });
-    await locator.click();
-    await page.waitForLoadState("domcontentloaded", { timeout }).catch(() => {});
+    await locator.click({ timeout });
+    await page
+      .locator("body")
+      .waitFor({ state: "attached", timeout: Math.min(timeout, 5_000) })
+      .catch(() => {});
   }
 
   protected async clickFirstAndWait(
@@ -119,7 +133,7 @@ export abstract class BaseStep implements Step {
     purpose: string,
     timeout = 30000
   ): Promise<void> {
-    const locator = await this.findFirst(candidates, purpose);
+    const locator = await this.findFirst(candidates, purpose, timeout);
     await this.clickAndWait(page, locator, timeout);
   }
 

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   AuthenticationError,
+  EVisaError,
   PageDetectionError,
   ServiceUnavailableError,
   SessionExpiredError,
@@ -33,6 +34,20 @@ const stepIdByKind: Partial<Record<PageKind, string>> = {
   download_pdf: "download-pdf",
 };
 
+const durationMs = (startedAt: number): number =>
+  Math.round((Date.now() - startedAt) * 100) / 100;
+
+const sanitizeUrl = (value: string): string => {
+  try {
+    const url = new URL(value);
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value.split(/[?#]/, 1)[0] ?? value;
+  }
+};
+
 export class StepRunner {
   private readonly steps: Step[];
   private readonly context: StepContext;
@@ -59,101 +74,166 @@ export class StepRunner {
     };
   }
 
+  private emitTiming(
+    operation: Extract<EVisaEvent, { type: "timing" }>["operation"],
+    startedAt: number,
+    metadata: Omit<
+      Extract<EVisaEvent, { type: "timing" }>,
+      "type" | "operation" | "durationMs"
+    >
+  ): void {
+    this.context.emit({
+      type: "timing",
+      operation,
+      durationMs: durationMs(startedAt),
+      ...metadata,
+    });
+  }
+
   async run(startUrl: string): Promise<InternalRunResult> {
     const { page, logger } = this.context;
+    const runStartedAt = Date.now();
     if (this.context.options.pdfEnabled && this.context.options.pdfOutput === "file") {
       await mkdir(this.context.options.outputDir, { recursive: true });
     }
 
-    logger.info("Navigating to start URL", { startUrl });
-    await page.goto(startUrl, { waitUntil: "domcontentloaded" });
-    await page.locator("body").waitFor({ state: "attached" });
-
-    const maxSteps = 30;
-    for (let i = 0; i < maxSteps; i += 1) {
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
-
-      const snapshot = await createPageSnapshot(page);
-      const classification = classifyPage(snapshot);
-      this.context.classification = classification;
-      this.context.emit({
-        type: "page_classified",
-        phase: classification.phase,
-        pageKind: classification.kind,
-        confidence: classification.confidence,
-        evidence: classification.evidence,
+    try {
+      logger.info("Navigating to start URL", { startUrl });
+      const navigationStartedAt = Date.now();
+      await page.goto(startUrl, { waitUntil: "domcontentloaded" });
+      await page.locator("body").waitFor({ state: "attached" });
+      this.emitTiming("navigate", navigationStartedAt, {
+        phase: "launching",
+        url: page.url(),
       });
 
-      if (classification.kind === "session_expired") {
-        throw new SessionExpiredError(snapshot.errors.join(" ") || "Session expired", {
+      const maxSteps = 30;
+      for (let i = 0; i < maxSteps; i += 1) {
+        const snapshotStartedAt = Date.now();
+        const snapshot = await createPageSnapshot(page);
+        const classification = classifyPage(snapshot);
+        this.context.classification = classification;
+        this.emitTiming("page_snapshot", snapshotStartedAt, {
           phase: classification.phase,
           pageKind: classification.kind,
+          url: snapshot.url,
         });
-      }
-      if (classification.kind === "auth_error") {
-        throw new AuthenticationError(
-          snapshot.errors.join(" ") || "Authentication failed",
-          {
-            phase: classification.phase,
-            pageKind: classification.kind,
-          }
-        );
-      }
-      if (classification.kind === "service_unavailable") {
-        throw new ServiceUnavailableError("GOV.UK service is unavailable", {
+        this.context.emit({
+          type: "page_classified",
           phase: classification.phase,
           pageKind: classification.kind,
-          retryable: true,
+          confidence: classification.confidence,
+          evidence: classification.evidence,
         });
-      }
 
-      const stepId = stepIdByKind[classification.kind];
-      const step = stepId
-        ? this.steps.find((candidate) => candidate.id === stepId)
-        : undefined;
-      if (!step) {
-        const artifactRefs = await this.captureDebug("unknown-page");
-        throw new PageDetectionError(
-          [
-            "Unable to detect current page",
-            `url=${snapshot.url}`,
-            `title=${snapshot.title}`,
-            `headings=${snapshot.headings.join(" | ")}`,
-            `evidence=${classification.evidence.join(", ")}`,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-          {
+        if (classification.kind === "session_expired") {
+          throw new SessionExpiredError(snapshot.errors.join(" ") || "Session expired", {
             phase: classification.phase,
             pageKind: classification.kind,
-            artifactRefs,
+          });
+        }
+        if (classification.kind === "auth_error") {
+          throw new AuthenticationError(
+            snapshot.errors.join(" ") || "Authentication failed",
+            {
+              phase: classification.phase,
+              pageKind: classification.kind,
+            }
+          );
+        }
+        if (classification.kind === "service_unavailable") {
+          throw new ServiceUnavailableError("GOV.UK service is unavailable", {
+            phase: classification.phase,
+            pageKind: classification.kind,
+            retryable: true,
+          });
+        }
+
+        const stepId = stepIdByKind[classification.kind];
+        const step = stepId
+          ? this.steps.find((candidate) => candidate.id === stepId)
+          : undefined;
+        if (!step) {
+          const artifactRefs = await this.captureDebug("unknown-page");
+          throw new PageDetectionError(
+            [
+              "Unable to detect current page",
+              `url=${sanitizeUrl(snapshot.url)}`,
+              `title=${snapshot.title}`,
+              `headings=${snapshot.headings.join(" | ")}`,
+              `evidence=${classification.evidence.join(", ")}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            {
+              phase: classification.phase,
+              pageKind: classification.kind,
+              artifactRefs,
+            }
+          );
+        }
+
+        logger.step(step.id, "Executing step");
+        this.context.emit({ type: "phase_changed", phase: classification.phase });
+
+        if (
+          this.context.options.diagnosticsMode === "sanitized" ||
+          this.context.options.diagnosticsMode === "raw"
+        ) {
+          await this.captureDebug(`${String(i + 1).padStart(2, "0")}-${step.id}`);
+        }
+
+        const stepStartedAt = Date.now();
+        await step.execute(this.context);
+        this.emitTiming("step", stepStartedAt, {
+          phase: classification.phase,
+          stepId: step.id,
+          pageKind: classification.kind,
+          url: snapshot.url,
+        });
+
+        if (this.result) {
+          return {
+            ...this.result,
+            artifacts: this.artifacts.length
+              ? [...this.artifacts, ...(this.result.artifacts ?? [])]
+              : this.result.artifacts,
+          };
+        }
+      }
+
+      const artifactRefs = await this.captureDebug("max-steps");
+      throw new PageDetectionError(
+        "Exceeded maximum number of steps without completion",
+        {
+          artifactRefs,
+        }
+      );
+    } catch (error) {
+      if (
+        this.context.options.diagnosticsMode === "sanitized_on_failure" &&
+        !(error instanceof EVisaError && error.artifactRefs.length > 0)
+      ) {
+        const artifactRefs = await this.captureDebug("failure").catch(() => []);
+        if (artifactRefs.length > 0) {
+          if (error instanceof EVisaError) {
+            error.artifactRefs.push(...artifactRefs);
+          } else {
+            throw new EVisaError(error instanceof Error ? error.message : String(error), {
+              artifactRefs,
+              cause: error,
+            });
           }
-        );
+        }
       }
-
-      logger.step(step.id, "Executing step");
-      this.context.emit({ type: "phase_changed", phase: classification.phase });
-
-      if (this.context.options.diagnosticsMode !== "off") {
-        await this.captureDebug(`${String(i + 1).padStart(2, "0")}-${step.id}`);
-      }
-
-      await step.execute(this.context);
-
-      if (this.result) {
-        return {
-          ...this.result,
-          artifacts: this.artifacts.length
-            ? [...this.artifacts, ...(this.result.artifacts ?? [])]
-            : this.result.artifacts,
-        };
-      }
+      throw error;
+    } finally {
+      this.emitTiming("run", runStartedAt, {
+        phase: this.context.classification?.phase ?? "launching",
+        pageKind: this.context.classification?.kind,
+        url: page.url(),
+      });
     }
-
-    const artifactRefs = await this.captureDebug("max-steps");
-    throw new PageDetectionError("Exceeded maximum number of steps without completion", {
-      artifactRefs,
-    });
   }
 
   async captureDebug(label: string): Promise<ArtifactRef[]> {
@@ -162,11 +242,15 @@ export class StepRunner {
       return [];
     }
 
+    const captureStartedAt = Date.now();
     await mkdir(options.diagnosticsDir, { recursive: true });
     const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
     const refs: ArtifactRef[] = [];
 
-    if (options.diagnosticsMode === "sanitized") {
+    if (
+      options.diagnosticsMode === "sanitized" ||
+      options.diagnosticsMode === "sanitized_on_failure"
+    ) {
       try {
         const snapshot = await createPageSnapshot(page);
         const snapshotPath = join(options.diagnosticsDir, `${safeLabel}.snapshot.json`);
@@ -203,6 +287,11 @@ export class StepRunner {
     }
 
     this.context.addArtifacts(refs);
+    this.emitTiming("diagnostic_capture", captureStartedAt, {
+      phase: this.context.classification?.phase ?? "launching",
+      pageKind: this.context.classification?.kind,
+      url: page.url(),
+    });
     return refs;
   }
 }

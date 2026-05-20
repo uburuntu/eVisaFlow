@@ -10,6 +10,7 @@ test("root package exposes the v2 client API without step internals", () => {
   assert.equal(typeof api.EVisaClient, "function");
   assert.equal(typeof api.EVisaError, "function");
   assert.equal(typeof api.ConfigError, "function");
+  assert.equal(typeof new api.EVisaClient().verifyShareCode, "function");
 
   assert.equal(api.EVisaFlow, undefined);
   assert.equal(api.EntryPageStep, undefined);
@@ -27,6 +28,26 @@ test("EVisaClient validates request shape before launching a browser", async () 
       applicant: {
         identityDocument: { type: "passport", number: "123456789" },
         dateOfBirth: "1998-99-99",
+      },
+      onChallenge: async () => ({ code: "123456" }),
+    }),
+    (error) =>
+      error instanceof api.ConfigError &&
+      error.code === "CONFIG_INVALID" &&
+      error.message.includes("valid calendar date")
+  );
+});
+
+test("EVisaClient rejects impossible object dates before launching a browser", async () => {
+  const client = new api.EVisaClient({
+    artifacts: { pdf: false },
+  });
+
+  await assert.rejects(
+    client.createShareCode({
+      applicant: {
+        identityDocument: { type: "passport", number: "123456789" },
+        dateOfBirth: { day: 31, month: 2, year: 1980 },
       },
       onChallenge: async () => ({ code: "123456" }),
     }),
@@ -57,6 +78,23 @@ test("EVisaClient rejects filesystem PDF options in bytes mode", async () => {
   );
 });
 
+test("EVisaClient validates checker requests before launching a browser", async () => {
+  const client = new api.EVisaClient({
+    artifacts: { checker: false },
+  });
+
+  await assert.rejects(
+    client.verifyShareCode({
+      shareCode: "too-short",
+      dateOfBirth: "1980-03-31",
+    }),
+    (error) =>
+      error instanceof api.ConfigError &&
+      error.code === "CONFIG_INVALID" &&
+      error.message.includes("shareCode")
+  );
+});
+
 test("ConfigSchema accepts diagnostics mode alias on as sanitized", () => {
   const config = ConfigSchema.parse({
     artifacts: {
@@ -65,6 +103,34 @@ test("ConfigSchema accepts diagnostics mode alias on as sanitized", () => {
   });
 
   assert.equal(config.artifacts?.diagnostics?.mode, "sanitized");
+});
+
+test("ConfigSchema accepts checker artifact options", () => {
+  const config = ConfigSchema.parse({
+    checkDetails: {
+      jobTitle: "Traveller",
+      organisation: "Self",
+      purpose: "travel",
+    },
+    artifacts: {
+      checker: {
+        html: {
+          mode: "bytes",
+          maxBytes: 20 * 1024 * 1024,
+          inlineImages: true,
+          inlineStyles: true,
+        },
+        pdf: { mode: "bytes" },
+      },
+    },
+  });
+
+  assert.equal(config.checkDetails?.purpose, "travel");
+  assert.equal(
+    typeof config.artifacts?.checker === "object" &&
+      config.artifacts.checker.html !== false,
+    true
+  );
 });
 
 test("sanitized diagnostics strip query strings and fragments from hrefs", () => {

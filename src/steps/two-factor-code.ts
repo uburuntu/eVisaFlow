@@ -1,5 +1,5 @@
 import type { StepContext, TwoFactorMethod } from "../core/internal-types.js";
-import { TwoFactorTimeoutError } from "../errors/index.js";
+import { FlowCancelledError, TwoFactorTimeoutError } from "../errors/index.js";
 import { BaseStep } from "./base-step.js";
 
 const inferMethod = async (page: import("playwright").Page): Promise<TwoFactorMethod> => {
@@ -62,22 +62,48 @@ export class TwoFactorCodeStep extends BaseStep {
     logger.info("Awaiting two-factor code", { method });
 
     const abortController = new AbortController();
+    const challengeSignal = context.signal
+      ? AbortSignal.any([abortController.signal, context.signal])
+      : abortController.signal;
     const handlerPromise = context.onTwoFactorRequired(method, {
       deadlineMs,
-      signal: abortController.signal,
+      signal: challengeSignal,
     });
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let removeAbortListener: (() => void) | undefined;
     const timeoutPromise = new Promise<string>((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(new TwoFactorTimeoutError("Timed out waiting for 2FA code"));
       }, options.twoFactorTimeoutMs);
     });
+    const abortPromise = new Promise<string>((_, reject) => {
+      const rejectAborted = () => {
+        const reason = challengeSignal.reason;
+        reject(
+          reason instanceof Error
+            ? new FlowCancelledError(reason.message, { cause: reason })
+            : new FlowCancelledError(
+                typeof reason === "string" ? reason : "Flow cancelled"
+              )
+        );
+      };
+
+      if (challengeSignal.aborted) {
+        rejectAborted();
+        return;
+      }
+
+      challengeSignal.addEventListener("abort", rejectAborted, { once: true });
+      removeAbortListener = () =>
+        challengeSignal.removeEventListener("abort", rejectAborted);
+    });
 
     let code: string;
     try {
-      code = await Promise.race([handlerPromise, timeoutPromise]);
+      code = await Promise.race([handlerPromise, timeoutPromise, abortPromise]);
     } finally {
       abortController.abort();
+      removeAbortListener?.();
       if (timeoutId !== undefined) {
         clearTimeout(timeoutId);
       }

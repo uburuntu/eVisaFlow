@@ -10,6 +10,13 @@ export {
   createSanitizedDiagnosticSnapshot,
   type PageSnapshot,
 } from "../core/page-snapshot.js";
+export { captureStandaloneHtml } from "../core/standalone-html.js";
+export { StepRunner } from "../core/step-runner.js";
+export {
+  formatShareCode,
+  normalizeShareCode,
+  runShareCodeCheck,
+} from "../share-code-checker.js";
 export { ConfirmationStep } from "../steps/confirmation.js";
 export { DateOfBirthStep } from "../steps/date-of-birth.js";
 export { DocumentNumberStep } from "../steps/document-number.js";

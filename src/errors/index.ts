@@ -10,6 +10,7 @@ export type EVisaErrorCode =
   | "SERVICE_UNAVAILABLE"
   | "BROWSER_LAUNCH_FAILED"
   | "CONFIG_INVALID"
+  | "FLOW_CANCELLED"
   | "FLOW_FAILED";
 
 export interface EVisaErrorDetails {
@@ -115,6 +116,16 @@ export class ConfigError extends EVisaError {
     super(message, {
       code: "CONFIG_INVALID",
       retryable: false,
+      ...details,
+    });
+  }
+}
+
+export class FlowCancelledError extends EVisaError {
+  constructor(message = "Flow cancelled", details: EVisaErrorDetails = {}) {
+    super(message, {
+      code: "FLOW_CANCELLED",
+      retryable: true,
       ...details,
     });
   }

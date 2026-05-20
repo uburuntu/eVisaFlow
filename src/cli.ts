@@ -7,7 +7,10 @@ import type {
   Applicant,
   CreateShareCodeResult,
   EVisaClientOptions,
+  HtmlResult,
   IdentityDocument,
+  PdfResult,
+  VerifyShareCodeResult,
 } from "./types.js";
 
 const program = new Command();
@@ -15,7 +18,7 @@ const program = new Command();
 const identityDocumentTypes = ["passport", "nationalId", "brc", "ukvi"] as const;
 const twoFactorMethods = ["sms", "email"] as const;
 const purposes = ["right_to_work", "right_to_rent", "immigration_status_other"] as const;
-const diagnosticsModes = ["off", "sanitized", "raw"] as const;
+const diagnosticsModes = ["off", "sanitized", "raw", "sanitized_on_failure"] as const;
 
 const parseChoice = <T extends string>(
   value: unknown,
@@ -112,12 +115,14 @@ const ensureApplicant = async (seed?: Partial<Applicant>): Promise<Applicant> =>
   };
 };
 
-const resolvePdfConfig = (
+const resolveArtifactsConfig = (
   config: ConfigFile,
   options: Record<string, unknown>
 ): EVisaClientOptions["artifacts"] => {
   let pdf = config.artifacts?.pdf;
+  let checker = config.artifacts?.checker;
   const cliPdf = cliValue("pdf", options.pdf);
+  const cliChecker = cliValue("checker", options.checker);
   const output = cliValue("output", options.output);
   const outputDir = cliValue("outputDir", options.outputDir);
   const diagnostics = parseChoice(
@@ -128,6 +133,9 @@ const resolvePdfConfig = (
 
   if (cliPdf !== undefined) {
     pdf = cliPdf === false ? false : typeof pdf === "object" ? pdf : {};
+  }
+  if (cliChecker !== undefined) {
+    checker = cliChecker === false ? false : typeof checker === "object" ? checker : true;
   }
   if (typeof output === "string" || typeof outputDir === "string") {
     const current = typeof pdf === "object" && pdf.mode !== "bytes" ? pdf : {};
@@ -142,6 +150,7 @@ const resolvePdfConfig = (
   return {
     ...config.artifacts,
     pdf,
+    checker,
     diagnostics:
       diagnostics !== undefined
         ? { ...config.artifacts?.diagnostics, mode: diagnostics }
@@ -149,24 +158,80 @@ const resolvePdfConfig = (
   };
 };
 
-const serializeResult = (
-  result: CreateShareCodeResult
-): Omit<CreateShareCodeResult, "pdf"> & {
-  pdf?:
-    | Exclude<CreateShareCodeResult["pdf"], { kind: "bytes" }>
-    | {
-        kind: "bytes";
-        filename: string;
-        contentType: "application/pdf";
-        byteLength: number;
-      };
-} => {
-  if (result.pdf?.kind !== "bytes") {
-    return result;
+type SerializablePdfResult =
+  | Exclude<PdfResult, { kind: "bytes" }>
+  | {
+      kind: "bytes";
+      filename: string;
+      contentType: "application/pdf";
+      byteLength: number;
+    };
+
+type SerializableHtmlResult =
+  | Exclude<HtmlResult, { kind: "bytes" }>
+  | {
+      kind: "bytes";
+      filename: string;
+      contentType: "text/html";
+      byteLength: number;
+      standalone: boolean;
+    };
+
+type SerializableVerifyShareCodeResult = Omit<VerifyShareCodeResult, "html" | "pdf"> & {
+  html?: SerializableHtmlResult;
+  pdf?: SerializablePdfResult;
+};
+
+type SerializableCreateShareCodeResult = Omit<
+  CreateShareCodeResult,
+  "checker" | "pdf"
+> & {
+  checker?: SerializableVerifyShareCodeResult;
+  pdf?: SerializablePdfResult;
+};
+
+const serializePdf = (pdf: PdfResult | undefined): SerializablePdfResult | undefined => {
+  if (!pdf || pdf.kind === "file") {
+    return pdf;
   }
 
-  const { bytes: _bytes, ...pdf } = result.pdf;
-  return { ...result, pdf };
+  const { bytes: _bytes, ...metadata } = pdf;
+  return metadata;
+};
+
+const serializeHtml = (
+  html: HtmlResult | undefined
+): SerializableHtmlResult | undefined => {
+  if (!html || html.kind === "file") {
+    return html;
+  }
+
+  const { bytes: _bytes, ...metadata } = html;
+  return metadata;
+};
+
+const serializeChecker = (
+  checker: VerifyShareCodeResult | undefined
+): SerializableVerifyShareCodeResult | undefined => {
+  if (!checker) {
+    return undefined;
+  }
+
+  return {
+    ...checker,
+    html: serializeHtml(checker.html),
+    pdf: serializePdf(checker.pdf),
+  };
+};
+
+const serializeResult = (
+  result: CreateShareCodeResult
+): SerializableCreateShareCodeResult => {
+  return {
+    ...result,
+    pdf: serializePdf(result.pdf),
+    checker: serializeChecker(result.checker),
+  };
 };
 
 export const runCli = async (): Promise<void> => {
@@ -181,9 +246,11 @@ export const runCli = async (): Promise<void> => {
     .option("--purpose <purpose>", "right_to_work|right_to_rent|immigration_status_other")
     .option("--pdf", "Download PDF artifact")
     .option("--no-pdf", "Do not download PDF artifact")
+    .option("--checker", "Also verify the share code and capture checker artifacts")
+    .option("--no-checker", "Do not run the share-code checker artifact flow")
     .option("--output <path>", "PDF output path")
     .option("--output-dir <path>", "PDF output directory")
-    .option("--diagnostics <mode>", "off|sanitized|raw")
+    .option("--diagnostics <mode>", "off|sanitized|raw|sanitized_on_failure")
     .option("--headless", "Run headless")
     .option("--no-headless", "Run headed")
     .option("--verbose", "Verbose logging");
@@ -257,7 +324,7 @@ export const runCli = async (): Promise<void> => {
       ...configFile.browser,
       headless: cliHeadless ?? configFile.browser?.headless,
     },
-    artifacts: resolvePdfConfig(configFile, options),
+    artifacts: resolveArtifactsConfig(configFile, options),
     timeouts: configFile.timeouts,
     verbose: cliVerbose ?? configFile.verbose,
   });
@@ -269,6 +336,7 @@ export const runCli = async (): Promise<void> => {
       ...configFile.challengePreference,
       deliveryMethod: cliTwoFactor ?? configFile.challengePreference?.deliveryMethod,
     },
+    checkDetails: configFile.checkDetails,
     onChallenge,
   });
   process.stdout.write(`${JSON.stringify(serializeResult(result), null, 2)}\n`);

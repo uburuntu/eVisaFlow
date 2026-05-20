@@ -6,7 +6,7 @@ export async function helpCommand(ctx: MyContext): Promise<void> {
       "<b>eVisa Share Code Bot</b>",
       "",
       "/add — Add a family member (up to 6)",
-      "/members — View, edit, or remove members",
+      "/members — View or remove members",
       "/run — Get share codes for one or all members",
       "/help — Show this message",
       "",

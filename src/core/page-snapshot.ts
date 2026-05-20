@@ -1,26 +1,4 @@
-import type { Locator, Page } from "playwright";
-
-const normalizeText = (value: string | null | undefined): string =>
-  (value ?? "").replace(/\s+/g, " ").trim();
-
-const visibleTexts = async (locator: Locator, limit = 20): Promise<string[]> => {
-  const count = Math.min(await locator.count().catch(() => 0), limit);
-  const values: string[] = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const item = locator.nth(index);
-    if (!(await item.isVisible().catch(() => false))) {
-      continue;
-    }
-
-    const text = normalizeText(await item.innerText().catch(() => ""));
-    if (text) {
-      values.push(text);
-    }
-  }
-
-  return values;
-};
+import type { Page } from "playwright";
 
 export interface ControlSnapshot {
   tag: string;
@@ -89,69 +67,87 @@ export const createSanitizedDiagnosticSnapshot = (
 });
 
 export const createPageSnapshot = async (page: Page): Promise<PageSnapshot> => {
-  const controls = await page
-    .locator("main input, main select, main textarea")
-    .evaluateAll((elements): ControlSnapshot[] =>
-      elements
-        .map((element) => {
-          const control = element as HTMLInputElement;
-          const id = control.getAttribute("id") ?? undefined;
-          const label =
-            id === undefined
-              ? undefined
-              : (document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent ??
-                undefined);
-          return {
-            tag: control.tagName.toLowerCase(),
-            type: control.getAttribute("type") ?? undefined,
-            id,
-            name: control.getAttribute("name") ?? undefined,
-            value: control.getAttribute("value") ?? undefined,
-            autocomplete: control.getAttribute("autocomplete") ?? undefined,
-            label: label?.replace(/\s+/g, " ").trim(),
-          };
-        })
-        .filter((control) => control.type !== "hidden")
-    );
+  return page.evaluate((): PageSnapshot => {
+    const normalize = (value: string | null | undefined): string =>
+      (value ?? "").replace(/\s+/g, " ").trim();
 
-  const links = await page
-    .locator("main a, a.govuk-button")
-    .evaluateAll((elements): LinkSnapshot[] =>
-      elements
-        .map((element) => {
-          const anchor = element as HTMLAnchorElement;
-          return {
-            text: (anchor.textContent ?? "").replace(/\s+/g, " ").trim(),
-            href: anchor.getAttribute("href") ?? undefined,
-          };
-        })
-        .filter((link) => link.text || link.href)
-    );
+    const isVisible = (element: Element): boolean => {
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") {
+        return false;
+      }
 
-  const title = await page.title().catch(() => "");
-  const text = normalizeText(
-    await page
-      .locator("body")
-      .innerText()
-      .catch(() => "")
-  );
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
 
-  return {
-    url: page.url(),
-    title: normalizeText(title),
-    text,
-    headings: await visibleTexts(page.locator("main h1, main h2, h1, h2"), 20),
-    buttons: await visibleTexts(
-      page.locator('main button, main input[type="submit"], main input[type="button"]'),
-      20
-    ),
-    links,
-    controls,
-    errors: await visibleTexts(
-      page.locator(
-        ".govuk-error-summary, .govuk-error-message, [data-module='govuk-error-summary']"
+    const visibleTexts = (selector: string, limit: number): string[] => {
+      const values: string[] = [];
+      for (const element of Array.from(document.querySelectorAll(selector))) {
+        if (values.length >= limit) {
+          break;
+        }
+        if (!isVisible(element)) {
+          continue;
+        }
+        const text = normalize((element as HTMLElement).innerText);
+        if (text) {
+          values.push(text);
+        }
+      }
+      return values;
+    };
+
+    const controls = Array.from(
+      document.querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >("main input, main select, main textarea")
+    )
+      .map((control): ControlSnapshot => {
+        const id = control.getAttribute("id") ?? undefined;
+        const label =
+          id === undefined
+            ? undefined
+            : (document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent ??
+              undefined);
+        return {
+          tag: control.tagName.toLowerCase(),
+          type: control.getAttribute("type") ?? undefined,
+          id,
+          name: control.getAttribute("name") ?? undefined,
+          value: control.getAttribute("value") ?? undefined,
+          autocomplete: control.getAttribute("autocomplete") ?? undefined,
+          label: normalize(label),
+        };
+      })
+      .filter((control) => control.type !== "hidden");
+
+    const links = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>("main a, a.govuk-button")
+    )
+      .map((anchor): LinkSnapshot => {
+        return {
+          text: normalize(anchor.textContent),
+          href: anchor.getAttribute("href") ?? undefined,
+        };
+      })
+      .filter((link) => link.text || link.href);
+
+    return {
+      url: window.location.href,
+      title: normalize(document.title),
+      text: normalize(document.body?.innerText),
+      headings: visibleTexts("main h1, main h2, h1, h2", 20),
+      buttons: visibleTexts(
+        'main button, main input[type="submit"], main input[type="button"]',
+        20
       ),
-      10
-    ),
-  };
+      links,
+      controls,
+      errors: visibleTexts(
+        ".govuk-error-summary, .govuk-error-message, [data-module='govuk-error-summary']",
+        10
+      ),
+    };
+  });
 };

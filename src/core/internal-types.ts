@@ -76,6 +76,7 @@ export interface StepContext {
   options: InternalRunOptions;
   logger: Logger;
   page: Page;
+  signal?: AbortSignal;
   extractedData: ExtractedData;
   classification?: PageClassification;
   setResult: (result: InternalRunResult) => void;

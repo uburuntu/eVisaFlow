@@ -15,9 +15,43 @@ const PdfBytesArtifactSchema = z
   })
   .strict();
 
+const HtmlFileArtifactSchema = z
+  .object({
+    mode: z.literal("file").optional(),
+    directory: z.string().optional(),
+    path: z.string().optional(),
+    maxBytes: z.number().int().positive().optional(),
+    inlineImages: z.boolean().optional(),
+    inlineStyles: z.boolean().optional(),
+  })
+  .strict();
+
+const HtmlBytesArtifactSchema = z
+  .object({
+    mode: z.literal("bytes"),
+    maxBytes: z.number().int().positive().optional(),
+    inlineImages: z.boolean().optional(),
+    inlineStyles: z.boolean().optional(),
+  })
+  .strict();
+
+const CheckerArtifactSchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      html: z
+        .union([z.boolean(), HtmlFileArtifactSchema, HtmlBytesArtifactSchema])
+        .optional(),
+      pdf: z
+        .union([z.boolean(), PdfFileArtifactSchema, PdfBytesArtifactSchema])
+        .optional(),
+    })
+    .strict(),
+]);
+
 const DiagnosticsModeSchema = z.preprocess(
   (value) => (value === "on" ? "sanitized" : value),
-  z.enum(["off", "sanitized", "raw"])
+  z.enum(["off", "sanitized", "raw", "sanitized_on_failure"])
 );
 
 const IdentityDocumentSchema = z.object({
@@ -25,14 +59,45 @@ const IdentityDocumentSchema = z.object({
   number: z.string().min(3),
 });
 
+const isCalendarDate = (value: { day: number; month: number; year: number }): boolean => {
+  const date = new Date(Date.UTC(value.year, value.month - 1, value.day));
+  return (
+    date.getUTCFullYear() === value.year &&
+    date.getUTCMonth() === value.month - 1 &&
+    date.getUTCDate() === value.day
+  );
+};
+
 const DateOfBirthSchema = z.union([
   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  z.object({
-    day: z.number().int().min(1).max(31),
-    month: z.number().int().min(1).max(12),
-    year: z.number().int().min(1900).max(2100),
-  }),
+  z
+    .object({
+      day: z.number().int().min(1).max(31),
+      month: z.number().int().min(1).max(12),
+      year: z.number().int().min(1900).max(2100),
+    })
+    .refine(isCalendarDate, "dateOfBirth must be a valid calendar date"),
 ]);
+
+const ShareCodeCheckDetailsSchema = z
+  .object({
+    jobTitle: z.string().min(1).optional(),
+    organisation: z.string().min(1).optional(),
+    purpose: z
+      .enum([
+        "driving_licence",
+        "student_loan",
+        "education_or_training",
+        "travel",
+        "health_insurance_card",
+        "personal_finance",
+        "homelessness_or_council_housing",
+        "other",
+      ])
+      .optional(),
+    otherPurpose: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const ApplicantSchema = z.object({
   identityDocument: IdentityDocumentSchema,
@@ -49,6 +114,7 @@ export const ConfigSchema = z.object({
       deliveryMethod: z.enum(["sms", "email"]).optional(),
     })
     .optional(),
+  checkDetails: ShareCodeCheckDetailsSchema.optional(),
   browser: z
     .object({
       headless: z.boolean().optional(),
@@ -60,6 +126,7 @@ export const ConfigSchema = z.object({
       pdf: z
         .union([z.boolean(), PdfFileArtifactSchema, PdfBytesArtifactSchema])
         .optional(),
+      checker: CheckerArtifactSchema.optional(),
       diagnostics: z
         .object({
           mode: DiagnosticsModeSchema.optional(),

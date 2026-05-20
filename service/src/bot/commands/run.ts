@@ -698,16 +698,20 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       return;
     }
 
-    void Promise.allSettled(handles.map((handle) => handle.done)).then(async () => {
-      await tracker.cleanup();
-      if (members.length > 1) {
-        await ctx.api.sendMessage(
-          chatId,
-          `<b>All done!</b> ${successCount}/${handles.length} run${handles.length > 1 ? "s" : ""} completed successfully.`,
-          { parse_mode: "HTML" }
-        );
-      }
-    });
+    void Promise.allSettled(handles.map((handle) => handle.done))
+      .then(async () => {
+        await tracker.cleanup();
+        if (members.length > 1) {
+          await ctx.api.sendMessage(
+            chatId,
+            `<b>All done!</b> ${successCount}/${handles.length} run${handles.length > 1 ? "s" : ""} completed successfully.`,
+            { parse_mode: "HTML" }
+          );
+        }
+      })
+      .catch((err) => {
+        ctx.log.warn({ err }, "Failed to send batch completion message");
+      });
   }
 
   bot.callbackQuery(/^cancel_run:/, async (ctx) => {

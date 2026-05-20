@@ -132,6 +132,62 @@ export const captureStandaloneHtml = async (
         }
       };
 
+      const fetchTextAsset = async (url: string): Promise<string | undefined> => {
+        const absoluteUrl = toAbsoluteUrl(url);
+        if (!absoluteUrl) {
+          return undefined;
+        }
+
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), maxAssetFetchMs);
+          try {
+            const response = await fetch(absoluteUrl, {
+              credentials: "include",
+              signal: controller.signal,
+            });
+            if (!response.ok) {
+              return undefined;
+            }
+            const contentLength = Number(response.headers.get("content-length"));
+            if (Number.isFinite(contentLength) && contentLength > maxAssetBytes) {
+              return undefined;
+            }
+
+            const decoder = new TextDecoder();
+            if (!response.body) {
+              const buffer = await response.arrayBuffer();
+              if (buffer.byteLength > maxAssetBytes) {
+                return undefined;
+              }
+              return decoder.decode(buffer);
+            }
+
+            const reader = response.body.getReader();
+            const chunks: string[] = [];
+            let bytesRead = 0;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                break;
+              }
+              bytesRead += value.byteLength;
+              if (bytesRead > maxAssetBytes) {
+                await reader.cancel().catch(() => {});
+                return undefined;
+              }
+              chunks.push(decoder.decode(value, { stream: true }));
+            }
+            chunks.push(decoder.decode());
+            return chunks.join("");
+          } finally {
+            clearTimeout(timeout);
+          }
+        } catch {
+          return undefined;
+        }
+      };
+
       const inlineCssUrls = async (
         cssText: string,
         cssBaseUrl: string
@@ -241,11 +297,10 @@ export const captureStandaloneHtml = async (
             continue;
           }
           try {
-            const response = await fetch(absoluteUrl, { credentials: "include" });
-            if (!response.ok) {
+            const css = await fetchTextAsset(absoluteUrl);
+            if (css === undefined) {
               continue;
             }
-            const css = await response.text();
             const inlinedCss = await inlineCssUrls(css, absoluteUrl);
             const style = document.createElement("style");
             style.setAttribute("data-inlined-from", absoluteUrl);

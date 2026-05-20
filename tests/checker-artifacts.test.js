@@ -101,6 +101,84 @@ describe("standalone checker HTML", () => {
     assert.equal(html.includes("https://example.test/inline-bg.png"), false);
     assert.equal((html.match(/data:image\/png;base64,/g) ?? []).length >= 5, true);
   });
+
+  test("skips stylesheet inlining when the stylesheet is over the asset byte limit", async () => {
+    const page = await context.newPage();
+    const largeCss = "body { color: #123456; background: #abcdef; }";
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/status") {
+        await route.fulfill({
+          contentType: "text/html",
+          body: [
+            "<!doctype html>",
+            "<html><head>",
+            '<link rel="stylesheet" href="/large.css" disabled>',
+            "</head><body>Ready</body></html>",
+          ].join(""),
+        });
+        return;
+      }
+      if (url.pathname === "/large.css") {
+        await route.fulfill({
+          headers: {
+            "content-length": String(Buffer.byteLength(largeCss)),
+            "content-type": "text/css",
+          },
+          body: largeCss,
+        });
+        return;
+      }
+      await route.fulfill({ status: 404, body: "not found" });
+    });
+
+    await page.goto("https://example.test/status");
+    const html = await captureStandaloneHtml(page, { assetMaxBytes: 8 });
+    await page.close();
+
+    assert.equal(html.includes("<style"), false);
+    assert.match(html, /href="https:\/\/example\.test\/large\.css"/);
+  });
+
+  test("applies the asset timeout to stylesheet fetches", async () => {
+    const page = await context.newPage();
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/status") {
+        await route.fulfill({
+          contentType: "text/html",
+          body: [
+            "<!doctype html>",
+            "<html><head>",
+            '<link rel="stylesheet" href="/slow.css" disabled>',
+            "</head><body>Ready</body></html>",
+          ].join(""),
+        });
+        return;
+      }
+      if (url.pathname === "/slow.css") {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        await route
+          .fulfill({
+            contentType: "text/css",
+            body: "body { color: #654321; }",
+          })
+          .catch(() => {});
+        return;
+      }
+      await route.fulfill({ status: 404, body: "not found" });
+    });
+
+    await page.goto("https://example.test/status");
+    const startedAt = Date.now();
+    const html = await captureStandaloneHtml(page, { assetTimeoutMs: 50 });
+    const elapsedMs = Date.now() - startedAt;
+    await page.close();
+
+    assert.equal(html.includes("#654321"), false);
+    assert.match(html, /href="https:\/\/example\.test\/slow\.css"/);
+    assert.equal(elapsedMs < 800, true);
+  });
 });
 
 describe("share-code checker flow", () => {

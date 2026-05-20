@@ -15,7 +15,6 @@ import { startScheduler } from "./scheduler/cron.js";
 import { createLogger } from "./utils/logger.js";
 
 const SHUTDOWN_DRAIN_MS = 15_000;
-const STALE_ACTIVE_RUN_MS = 2 * 60 * 60 * 1000;
 
 interface RuntimeState {
   ready: boolean;
@@ -81,8 +80,7 @@ async function main(): Promise<void> {
     state.supabaseReady = true;
     await markNonTerminalRunsInterrupted(
       db,
-      "Service restarted before the run completed",
-      { staleBefore: new Date(Date.now() - STALE_ACTIVE_RUN_MS) }
+      "Service restarted before the run completed"
     );
   } catch (err) {
     log.fatal({ err }, "Startup readiness check failed");

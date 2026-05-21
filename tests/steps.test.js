@@ -183,6 +183,37 @@ describe("step detection", () => {
       );
     }
   });
+
+  test("classifies GOV.UK auth page from title while body is still settling", () => {
+    const classification = classifyPage({
+      url: "https://user-auth.apply-to-visit-or-stay-in-the-uk.homeoffice.gov.uk/auth/realms/AUK/protocol/openid-connect/auth",
+      title: "Which identity document do you use to sign in to your UKVI account?",
+      text: "",
+      headings: [],
+      buttons: [],
+      links: [],
+      controls: [],
+      errors: [],
+    });
+
+    assert.equal(classification.kind, "document_type");
+    assert.equal(classification.evidence.includes("title:identity-document"), true);
+  });
+
+  test("snapshots form controls outside main content", async () => {
+    const page = await context.newPage();
+    await page.setContent(
+      '<form><input type="radio" name="documentType" value="PASSPORT"></form>'
+    );
+
+    const snapshot = await createPageSnapshot(page);
+    await page.close();
+
+    assert.equal(
+      snapshot.controls.some((control) => control.name === "documentType"),
+      true
+    );
+  });
 });
 
 // ──────────────────────────────────────────────

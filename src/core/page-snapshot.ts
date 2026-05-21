@@ -101,7 +101,7 @@ export const createPageSnapshot = async (page: Page): Promise<PageSnapshot> => {
     const controls = Array.from(
       document.querySelectorAll<
         HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >("main input, main select, main textarea")
+      >("input, select, textarea")
     )
       .map((control): ControlSnapshot => {
         const id = control.getAttribute("id") ?? undefined;

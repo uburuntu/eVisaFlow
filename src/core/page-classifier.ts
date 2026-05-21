@@ -59,6 +59,12 @@ const hasLink = (
 const hasHeading = (snapshot: PageSnapshot, pattern: RegExp): boolean =>
   snapshot.headings.some((heading) => pattern.test(heading));
 
+const hasTitle = (snapshot: PageSnapshot, pattern: RegExp): boolean =>
+  pattern.test(snapshot.title);
+
+const hasPageText = (snapshot: PageSnapshot, pattern: RegExp): boolean =>
+  pattern.test(snapshot.text) || pattern.test(snapshot.title);
+
 const push = (
   scores: Score[],
   kind: PageKind,
@@ -100,16 +106,25 @@ export const classifyPage = (snapshot: PageSnapshot): PageClassification => {
   ) {
     push(scores, "entry_page", 90, "link:view-immigration-status");
   } else if (
-    hasHeading(snapshot, /View your eVisa.*share code/i) &&
-    /UKVI account/i.test(text)
+    (hasHeading(snapshot, /View your eVisa.*share code/i) ||
+      hasTitle(snapshot, /View your eVisa.*share code/i)) &&
+    hasPageText(snapshot, /UKVI account/i)
   ) {
     push(scores, "entry_page", 75, "heading:view-evisa", "body:ukvi-account");
   }
 
   if (hasControl(snapshot, (control) => control.name === "documentType")) {
     push(scores, "document_type", 100, "input[name=documentType]");
-  } else if (hasHeading(snapshot, /identity document/i) && /UKVI account/i.test(text)) {
+  } else if (
+    hasHeading(snapshot, /identity document/i) &&
+    hasPageText(snapshot, /UKVI account/i)
+  ) {
     push(scores, "document_type", 75, "heading:identity-document", "body:ukvi-account");
+  } else if (
+    hasTitle(snapshot, /Which identity document do you use to sign in/i) &&
+    hasPageText(snapshot, /UKVI account/i)
+  ) {
+    push(scores, "document_type", 70, "title:identity-document", "title:ukvi-account");
   }
 
   if (hasControl(snapshot, (control) => control.name === "documentNumber")) {

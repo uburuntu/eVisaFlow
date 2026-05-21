@@ -2,25 +2,140 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags:
       - "v*"
+    paths:
+      - package.json
   workflow_dispatch:
 
 jobs:
+  tag:
+    name: Tag Package Version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect package version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "package.json version is not semver-like: $version"
+            exit 1
+          fi
+
+          before_version=""
+          if [ -n "${{ github.event.before || '' }}" ] &&
+             git cat-file -e "${{ github.event.before }}:package.json" 2>/dev/null; then
+            before_version="$(
+              git show "${{ github.event.before }}:package.json" |
+                node -e "let input=''; process.stdin.on('data', c => input += c); process.stdin.on('end', () => console.log(JSON.parse(input).version));"
+            )"
+          fi
+
+          tag_exists=false
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            tag_exists=true
+          fi
+
+          release_exists=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_exists=true
+          fi
+
+          should_release=false
+          if [ "$tag_exists" = true ] && [ "$release_exists" = false ]; then
+            echo "Tag ${tag} exists without a GitHub release; dispatching release workflow"
+            should_release=true
+          elif [ "$tag_exists" = false ] &&
+               { [ "$before_version" != "$version" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; }; then
+            echo "Creating release tag ${tag}"
+            should_release=true
+          else
+            echo "No release needed for package version ${version}"
+          fi
+
+          echo "tag_exists=${tag_exists}" >> "$GITHUB_OUTPUT"
+          echo "should_release=${should_release}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create version tag
+        if: steps.version.outputs.should_release == 'true' && steps.version.outputs.tag_exists != 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "refs/tags/${TAG}"
+
+      - name: Dispatch tagged release
+        if: steps.version.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 10); do
+            if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+              gh workflow run release.yml --ref "$TAG"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Tag ${TAG} did not become visible on origin"
+          exit 1
+
   ci:
     name: CI Checks
+    if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/ci.yml
 
   publish:
     needs: ci
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: release
     permissions:
       id-token: write
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *)
+              echo "Release workflow must run on a v* tag, got $GITHUB_REF"
+              exit 1
+              ;;
+          esac
+
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(node -p "require('./package.json').version")"
+          expected="v${version}"
+          if [ "$tag" != "$expected" ]; then
+            echo "Tag $tag does not match package.json version $expected"
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v6
         with:
@@ -71,3 +186,19 @@ jobs:
           file: service/Dockerfile
           push: true
           tags: ghcr.io/uburuntu/evisaflow:service-${{ github.ref_name }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub release $GITHUB_REF_NAME already exists"
+            exit 0
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes \
+            --latest \
+            --fail-on-no-commits

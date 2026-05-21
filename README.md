@@ -1,42 +1,91 @@
-# evisa-flow
+# eVisaFlow
 
-Automate the GOV.UK eVisa flow to create a share code, download the source PDF,
-and optionally capture the public status-check artifacts that border or travel staff often ask to see.
+Automate the GOV.UK eVisa journey to create a share code, download the eVisa
+PDF, and optionally capture the public checker page/PDF that staff may ask to
+see.
 
-**[Try the Telegram Bot](https://t.me/eVisaFlowBot)** — manage share codes for your whole family, no setup required. Add up to 6 family members, get share codes on demand or on a 30-day schedule, with PDFs and status-check artifacts delivered straight to Telegram.
+This is an unofficial tool for people who already have permission to access the
+immigration record they are using.
 
-## Install
+**Want no setup?** Try the Telegram bot: [@eVisaFlowBot](https://t.me/eVisaFlowBot).
+It can manage up to 6 family members, refresh share codes on demand or on a
+schedule, and send PDFs/checker artifacts back in Telegram.
+
+## Quick Start
+
+Requirements: Node.js 22+ and Playwright Chromium.
 
 ```bash
-corepack enable
-pnpm install
-pnpm exec playwright install chromium
+npx evisa-flow
+```
+
+If Chromium is not installed yet:
+
+```bash
+npx playwright install chromium
+```
+
+For repeated use or library integration:
+
+```bash
+npm install evisa-flow
+npx playwright install chromium
 ```
 
 ## CLI
 
-```bash
-# Interactive
-npx evisa-flow
+Interactive mode is the safest default because your document number does not end
+up in shell history:
 
-# Options
+```bash
+npx evisa-flow
+```
+
+Common options:
+
+```bash
 npx evisa-flow \
   --document-type passport \
   --document-number 123456789 \
   --dob 1980-03-31 \
   --two-factor sms \
-  --output ./evisa.pdf \
-  --verbose
+  --output ./downloads/evisa.pdf
 
-# Share-code only
+# Create the share code without downloading the eVisa PDF
 npx evisa-flow --no-pdf
 
-# Also capture the public status-check HTML page and PDF
+# Also capture the public checker HTML/PDF artifacts
 npx evisa-flow --checker --config ./config.json
-
-# Config file
-npx evisa-flow --config ./config.json
 ```
+
+The CLI prints a JSON result. File artifacts are written to `downloads/` unless
+you pass `--output`, `--output-dir`, or configure artifact paths.
+
+## Config File
+
+Create `config.json` when you do not want to repeat flags:
+
+```json
+{
+  "applicant": {
+    "identityDocument": { "type": "passport", "number": "123456789" },
+    "dateOfBirth": "1980-03-31"
+  },
+  "purpose": "immigration_status_other",
+  "challengePreference": { "deliveryMethod": "sms" },
+  "artifacts": {
+    "pdf": { "mode": "file", "directory": "./downloads" },
+    "checker": {
+      "html": { "mode": "file", "directory": "./downloads" },
+      "pdf": { "mode": "file", "directory": "./downloads" }
+    },
+    "diagnostics": { "mode": "off" }
+  }
+}
+```
+
+See [config.sample.json](./config.sample.json) for the full shape, including
+checker details and debug diagnostics.
 
 ## Library
 
@@ -51,7 +100,6 @@ const client = new EVisaClient({
       html: { directory: "./downloads" },
       pdf: { directory: "./downloads" },
     },
-    diagnostics: { mode: "off" },
   },
 });
 
@@ -62,45 +110,11 @@ const result = await client.createShareCode({
   },
   purpose: "immigration_status_other",
   challengePreference: { deliveryMethod: "sms" },
-  onChallenge: async (_challenge, _ctx) => ({ code: "123456" }),
+  onChallenge: async () => ({ code: "123456" }),
 });
 
-// {
-//   shareCode: string,
-//   validUntil?: "YYYY-MM-DD",
-//   pdf?: { kind, ... },
-//   checker?: { html?: { kind, ... }, pdf?: { kind, ... }, summary?: ... }
-// }
+console.log(result.shareCode, result.validUntil, result.pdf);
 ```
-
-PDF output is enabled by default and saved to disk. Set `artifacts.pdf` to
-`false` to stop after the share code is parsed, or use in-memory bytes when you
-do not need a file. Checker artifacts can use bytes too; the checker HTML is
-standalone and inlines images/styles by default.
-
-```typescript
-const client = new EVisaClient({
-  artifacts: {
-    pdf: { mode: "bytes", maxBytes: 10 * 1024 * 1024 },
-    checker: {
-      html: { mode: "bytes", maxBytes: 20 * 1024 * 1024 },
-      pdf: { mode: "bytes", maxBytes: 10 * 1024 * 1024 },
-    },
-  },
-});
-
-const result = await client.createShareCode(request);
-if (result.pdf?.kind === "bytes") {
-  await sendSomewhere(result.pdf.bytes, result.pdf.filename);
-}
-if (result.checker?.html?.kind === "bytes") {
-  await sendSomewhere(result.checker.html.bytes, result.checker.html.filename);
-}
-```
-
-PDF `maxBytes` defaults to 10 MiB in bytes mode. Checker HTML defaults to 20 MiB.
-Downloaded PDFs are validated before they are returned or written, so an HTML
-error page cannot silently become a `.pdf` artifact.
 
 You can also verify an existing share code without creating a new one:
 
@@ -116,70 +130,55 @@ const result = await client.verifyShareCode({
 });
 ```
 
-## Parallel Usage
+For integrations that should not write temporary files, use bytes mode:
 
-This library is safe to run in parallel as long as each run writes to its own output location.
-
-- Use a unique `artifacts.pdf.directory` per run, or set `artifacts.pdf.path`.
-- Use `artifacts.pdf.mode: "bytes"` when the caller can consume the PDF directly; `path` and `directory` only apply to file mode.
-- Use `artifacts.checker.html.mode: "bytes"` and
-  `artifacts.checker.pdf.mode: "bytes"` for Telegram/email integrations that do
-  not need temporary files.
-- Avoid sharing `browser.userDataDir` across concurrent runs.
-
-## Privacy & Security
-
-- No personal data is persisted beyond requested artifacts by default.
-- Checker HTML/PDF artifacts can include the profile photo and immigration status
-  summary. Treat them like the original eVisa PDF.
-- Standalone checker HTML strips scripts, form actions, hidden/session fields, and
-  sensitive auth query parameters, but it still contains the visible status data.
-- Diagnostics are off by default. `diagnostics.mode: "sanitized_on_failure"`
-  captures sanitized page snapshots only when a run fails. `diagnostics.mode:
-  "raw"` may write personal data and session HTML.
-- Do not commit real credentials, diagnostics, or downloaded files.
-- For security reporting, see `SECURITY.md`.
-
-## Config
-
-Create `config.json`:
-
-```json
-{
-  "applicant": {
-    "identityDocument": { "type": "passport", "number": "123456789" },
-    "dateOfBirth": "1980-03-31"
-  },
-  "purpose": "immigration_status_other",
-  "challengePreference": { "deliveryMethod": "sms" },
-  "checkDetails": {
-    "jobTitle": "Traveller",
-    "organisation": "Self",
-    "purpose": "travel"
-  },
-  "browser": { "headless": true },
-  "artifacts": {
-    "pdf": { "directory": "./downloads" },
-    "checker": {
-      "html": {
-        "directory": "./downloads",
-        "inlineImages": true,
-        "inlineStyles": true
-      },
-      "pdf": { "directory": "./downloads" }
+```typescript
+const client = new EVisaClient({
+  artifacts: {
+    pdf: { mode: "bytes" },
+    checker: {
+      html: { mode: "bytes" },
+      pdf: { mode: "bytes" },
     },
-    "diagnostics": { "mode": "off" }
-  }
-}
+  },
+});
 ```
 
-## Dev
+PDF downloads are validated before they are returned or written, so an HTML error
+page cannot silently become a `.pdf` artifact.
+
+## Privacy And Safety
+
+- eVisa PDFs, checker PDFs, and checker HTML can contain personal data, profile
+  photos, and immigration status details. Treat them as sensitive documents.
+- Standalone checker HTML removes scripts, form actions, hidden/session fields,
+  and sensitive auth query parameters, but it still contains visible status data.
+- Diagnostics are off by default. `sanitized_on_failure` captures sanitized
+  snapshots only when a run fails. `raw` may write personal data and session HTML.
+- Do not commit real credentials, diagnostics, downloaded PDFs, or checker
+  artifacts.
+- Security reports should use GitHub Security Advisories. See
+  [SECURITY.md](./SECURITY.md).
+
+## Parallel Usage
+
+Parallel runs are supported when each run has its own output location.
+
+- Use a unique artifact directory or explicit artifact path per run.
+- Use bytes mode when the caller can consume files directly.
+- Do not share `browser.userDataDir` across concurrent runs.
+
+## Development
 
 ```bash
+corepack enable
+pnpm install
+pnpm exec playwright install chromium
+
 make validate
-make build
-make debug-flow
 make smoke
 make snapshots
 make fixtures
 ```
+
+The Telegram bot service lives in [service/](./service).

@@ -256,6 +256,70 @@ describe("non-passport document number detection", () => {
   }
 });
 
+describe("ProveStatusStep execute", () => {
+  test("captures rich authenticated status HTML before leaving the page", async () => {
+    const page = await context.newPage();
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/dist/assets/app-3cff3275.css") {
+        await route.fulfill({
+          contentType: "text/css",
+          body: ".govuk-summary-list__row{display:block}",
+        });
+        return;
+      }
+      if (url.pathname === "/get-share-code") {
+        await route.fulfill({
+          contentType: "text/html",
+          body: "<h1>Get a share code to prove your status</h1>",
+        });
+        return;
+      }
+      await route.fulfill({ status: 404, body: "not found" });
+    });
+    const rawHtml = await readFile(`./tests/fixtures/step-prove-status.html`, "utf-8");
+    const html = rawHtml.replace(
+      /<head([^>]*)>/,
+      '<head$1><base href="https://view-immigration-status.service.gov.uk/">'
+    );
+    await page.setContent(html);
+
+    const extractedData = {};
+    const step = new ProveStatusStep();
+    await step.execute({
+      ...baseContext,
+      page,
+      options: {
+        ...baseContext.options,
+        navigationTimeoutMs: 500,
+        actionTimeoutMs: 500,
+        checker: {
+          enabled: true,
+          html: {
+            enabled: true,
+            mode: "bytes",
+            directory: "",
+            maxBytes: 2 * 1024 * 1024,
+            inlineImages: true,
+            inlineStyles: true,
+          },
+        },
+      },
+      extractedData,
+    });
+
+    assert.equal(extractedData.checkerHtml?.kind, "bytes");
+    const statusHtml = Buffer.from(extractedData.checkerHtml.bytes).toString("utf-8");
+    assert.match(statusHtml, /Your immigration status/);
+    assert.match(statusHtml, /What you can do in the UK/);
+    assert.match(statusHtml, /What you cannot do/);
+    assert.match(statusHtml, /<img[^>]+id="photo"/);
+    assert.match(statusHtml, /data:image\/gif;base64/);
+    assert.equal(statusHtml.includes("session-timeout-start"), false);
+    await page.close();
+  });
+});
+
 // ──────────────────────────────────────────────
 // 3. Document type execute — all 4 auth methods
 // ──────────────────────────────────────────────

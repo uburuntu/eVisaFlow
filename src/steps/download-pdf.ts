@@ -160,9 +160,16 @@ export class DownloadPdfStep extends BaseStep {
       nationality: context.extractedData.nationality,
       status: context.extractedData.status,
     };
+    const baseResult = {
+      shareCode,
+      validUntil,
+      summary,
+      checkerHtml: context.extractedData.checkerHtml,
+      checkerHtmlArtifact: context.extractedData.checkerHtmlArtifact,
+    };
 
     if (!options.pdfEnabled) {
-      context.setResult({ shareCode, validUntil, summary });
+      context.setResult(baseResult);
       return;
     }
 
@@ -193,11 +200,9 @@ export class DownloadPdfStep extends BaseStep {
         await download.delete().catch(() => {});
       }
       context.setResult({
+        ...baseResult,
         pdfBytes,
         pdfFilename: defaultFilename,
-        shareCode,
-        validUntil,
-        summary,
       });
       return;
     }
@@ -212,11 +217,9 @@ export class DownloadPdfStep extends BaseStep {
     context.addArtifacts([{ kind: "pdf", path: filename, sanitized: false }]);
 
     context.setResult({
+      ...baseResult,
       pdfPath: filename,
       pdfFilename: basename(filename),
-      shareCode,
-      validUntil,
-      summary,
     });
   }
 }

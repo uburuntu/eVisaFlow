@@ -204,6 +204,11 @@ describe("share-code checker flow", () => {
         await route.fulfill({
           contentType: "text/html",
           body: [
+            '<div class="govuk-cookie-banner">',
+            '<div class="govuk-cookie-banner__message" role="alert">',
+            "You have accepted analytics cookies. You can change your cookie settings at any time.",
+            "</div>",
+            "</div>",
             '<form action="/view/checker-details" method="get">',
             '<input id="dob-day" name="dob-day">',
             '<input id="dob-month" name="dob-month">',

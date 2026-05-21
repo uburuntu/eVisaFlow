@@ -96,6 +96,10 @@ export interface ShareCodeCheckRunOptions {
   logger: Logger;
   emit: (event: EVisaEvent) => void;
   startUrl?: string;
+  preCapturedHtml?: {
+    result: HtmlResult;
+    artifact?: ArtifactRef;
+  };
 }
 
 const DEFAULT_CHECK_DETAILS: Required<ShareCodeCheckDetails> = {
@@ -465,15 +469,25 @@ const readCheckerError = async (page: Page): Promise<string | undefined> => {
     ].join(",")
   );
   const count = await locator.count().catch(() => 0);
-  if (count === 0) {
-    return undefined;
+  for (let index = 0; index < count; index += 1) {
+    const candidate = locator.nth(index);
+    const isVisible = await candidate.isVisible().catch(() => false);
+    if (!isVisible) {
+      continue;
+    }
+    const isCookieBanner = await candidate
+      .evaluate((element) => Boolean(element.closest(".govuk-cookie-banner")))
+      .catch(() => false);
+    if (isCookieBanner) {
+      continue;
+    }
+    const text = await candidate.innerText().catch(() => "");
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (normalized) {
+      return normalized;
+    }
   }
-  const text = await locator
-    .first()
-    .innerText()
-    .catch(() => "");
-  const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized || undefined;
+  return undefined;
 };
 
 const throwIfCheckerError = async (page: Page): Promise<void> => {
@@ -789,13 +803,20 @@ export const runShareCodeCheck = async (
     };
 
     if (artifacts.enabled) {
-      result.html = await captureHtmlArtifact(
-        page,
-        artifacts.html,
-        filenameBase,
-        artifactRefs,
-        emit
-      );
+      if (options.preCapturedHtml) {
+        result.html = options.preCapturedHtml.result;
+        if (options.preCapturedHtml.artifact) {
+          artifactRefs.push(options.preCapturedHtml.artifact);
+        }
+      } else {
+        result.html = await captureHtmlArtifact(
+          page,
+          artifacts.html,
+          filenameBase,
+          artifactRefs,
+          emit
+        );
+      }
       result.pdf = await downloadPdfArtifact(
         page,
         artifacts.pdf,

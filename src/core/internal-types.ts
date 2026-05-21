@@ -4,6 +4,7 @@ import type {
   DiagnosticsMode,
   EVisaEvent,
   EVisaPhase,
+  HtmlResult,
   PdfOutputMode,
   Purpose,
   TwoFactorMethod,
@@ -50,6 +51,8 @@ export interface InternalRunResult {
   pdfPath?: string;
   pdfBytes?: Uint8Array;
   pdfFilename?: string;
+  checkerHtml?: HtmlResult;
+  checkerHtmlArtifact?: ArtifactRef;
   summary?: {
     name?: string;
     nationality?: string;
@@ -68,6 +71,8 @@ export interface ExtractedData {
   validFrom?: string;
   validUntilText?: string;
   summary?: Record<string, string>;
+  checkerHtml?: HtmlResult;
+  checkerHtmlArtifact?: ArtifactRef;
 }
 
 export interface StepContext {

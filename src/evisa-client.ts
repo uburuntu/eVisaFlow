@@ -450,6 +450,12 @@ export class EVisaClient {
           diagnosticsDir: options.diagnosticsDir,
           logger,
           emit: this.emit,
+          preCapturedHtml: internalResult.checkerHtml
+            ? {
+                result: internalResult.checkerHtml,
+                artifact: internalResult.checkerHtmlArtifact,
+              }
+            : undefined,
         });
         result.checker = checkerResult;
         if (checkerResult.artifacts?.length) {

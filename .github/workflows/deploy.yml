@@ -63,7 +63,11 @@ jobs:
             mkdir -p ~/eVisaFlowBot
             echo "$DOTENV_FILE" > ~/eVisaFlowBot/.env
             chmod 600 ~/eVisaFlowBot/.env
-            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u uburuntu --password-stdin
+            if [ -n "${DEPLOY_GHCR_TOKEN:-}" ]; then
+              printf '%s' "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u uburuntu --password-stdin
+            else
+              echo "DEPLOY_GHCR_TOKEN is empty; pulling from GHCR without login"
+            fi
             docker pull "$IMAGE_REF"
             docker run --rm --env-file ~/eVisaFlowBot/.env "$IMAGE_REF" node dist/preflight.js
 
@@ -107,5 +111,5 @@ jobs:
             exit 1
         env:
           DOTENV_FILE: ${{ secrets.DOTENV_FILE }}
-          DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN }}
+          DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN || github.token }}
           IMAGE_REF: ghcr.io/uburuntu/evisaflow:service-${{ github.sha }}

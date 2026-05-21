@@ -2,6 +2,21 @@ import type { NextFunction } from "grammy";
 import { hasPending, submitCode } from "../../runner/two-factor-store.js";
 import type { MyContext } from "../context.js";
 
+const CODE_ACK_DELETE_DELAY_MS = 30_000;
+
+function scheduleMessageDeletion(
+  ctx: MyContext,
+  chatId: number,
+  messageId: number
+): void {
+  const timer = setTimeout(() => {
+    void ctx.api.deleteMessage(chatId, messageId).catch(() => {
+      // Message may already be gone, or the bot may lack permission.
+    });
+  }, CODE_ACK_DELETE_DELAY_MS);
+  timer.unref?.();
+}
+
 export async function twoFactorMiddleware(
   ctx: MyContext,
   next: NextFunction
@@ -33,7 +48,8 @@ export async function twoFactorMiddleware(
       } catch {
         // May lack permissions
       }
-      await ctx.reply("Code received, processing...");
+      const ack = await ctx.reply("Code received, processing...");
+      scheduleMessageDeletion(ctx, chatId, ack.message_id);
       return;
     }
   }

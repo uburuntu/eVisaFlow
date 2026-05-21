@@ -9,7 +9,7 @@ import type {
 } from "evisa-flow";
 import { EVisaError } from "evisa-flow";
 import type { Bot } from "grammy";
-import { InlineKeyboard, InputFile } from "grammy";
+import { InlineKeyboard, InputFile, InputMediaBuilder } from "grammy";
 import { decrypt, encrypt } from "../../crypto/encryption.js";
 import { type DbFamilyMember, getActiveFamilyMembers } from "../../db/family-members.js";
 import { type DbRun, insertRun, insertRunEvent, updateRunStatus } from "../../db/runs.js";
@@ -316,29 +316,73 @@ async function sendBytesDocument(
   }
 }
 
-async function sendRunArtifacts(
+interface BytesDocumentArtifact {
+  label: string;
+  filename: string;
+  bytes: Uint8Array;
+  caption: string;
+}
+
+async function sendBytesDocumentGroup(
+  ctx: MyContext,
+  params: {
+    artifacts: BytesDocumentArtifact[];
+    caption: string;
+    runId: string;
+    signal: AbortSignal;
+  }
+): Promise<boolean> {
+  throwIfAborted(params.signal);
+  try {
+    const media = params.artifacts.map((artifact, index) =>
+      InputMediaBuilder.document(
+        new InputFile(Buffer.from(artifact.bytes), artifact.filename),
+        index === 0 ? { caption: params.caption } : undefined
+      )
+    );
+    await ctx.replyWithMediaGroup(media);
+    throwIfAborted(params.signal);
+    ctx.log.info(
+      {
+        runId: params.runId,
+        artifacts: params.artifacts.map((artifact) => artifact.label),
+        bytes: params.artifacts.reduce(
+          (total, artifact) => total + artifact.bytes.byteLength,
+          0
+        ),
+      },
+      "Sent artifact media group"
+    );
+    return true;
+  } catch (err) {
+    throwIfAborted(params.signal);
+    ctx.log.warn(
+      { err, runId: params.runId, artifacts: params.artifacts.map((a) => a.label) },
+      "Failed to send artifact media group"
+    );
+    return false;
+  }
+}
+
+async function sendIndividualArtifacts(
   ctx: MyContext,
   member: DbFamilyMember,
   result: CreateShareCodeResult,
+  artifacts: BytesDocumentArtifact[],
   runId: string,
   signal: AbortSignal
 ): Promise<void> {
-  const validStr = result.validUntil
-    ? `\nValid until: ${formatValidUntil(result.validUntil)}`
-    : "";
-  const caption = `${member.display_name} — ${result.shareCode}${validStr}`;
-
-  if (result.pdf?.kind === "bytes") {
+  for (const artifact of artifacts) {
     const sent = await sendBytesDocument(ctx, {
       member,
-      label: "eVisa PDF",
-      filename: result.pdf.filename,
-      bytes: result.pdf.bytes,
-      caption,
+      label: artifact.label,
+      filename: artifact.filename,
+      bytes: artifact.bytes,
+      caption: artifact.caption,
       runId,
       signal,
     });
-    if (!sent) {
+    if (!sent && artifact.label === "eVisa PDF") {
       await ctx.reply(
         [
           `<b>${escapeHtml(member.display_name)}</b>`,
@@ -351,6 +395,29 @@ async function sendRunArtifacts(
         { parse_mode: "HTML" }
       );
     }
+  }
+}
+
+async function sendRunArtifacts(
+  ctx: MyContext,
+  member: DbFamilyMember,
+  result: CreateShareCodeResult,
+  runId: string,
+  signal: AbortSignal
+): Promise<void> {
+  const validStr = result.validUntil
+    ? `\nValid until: ${formatValidUntil(result.validUntil)}`
+    : "";
+  const caption = `${member.display_name} — ${result.shareCode}${validStr}`;
+  const artifacts: BytesDocumentArtifact[] = [];
+
+  if (result.pdf?.kind === "bytes") {
+    artifacts.push({
+      label: "eVisa PDF",
+      filename: result.pdf.filename,
+      bytes: result.pdf.bytes,
+      caption,
+    });
   } else {
     await ctx.reply(
       [
@@ -369,14 +436,11 @@ async function sendRunArtifacts(
 
   throwIfAborted(signal);
   if (result.checker?.html?.kind === "bytes") {
-    await sendBytesDocument(ctx, {
-      member,
+    artifacts.push({
       label: "status check HTML",
       filename: result.checker.html.filename,
       bytes: result.checker.html.bytes,
       caption: `${member.display_name} — status check page HTML`,
-      runId,
-      signal,
     });
   } else {
     await ctx.reply(
@@ -387,14 +451,11 @@ async function sendRunArtifacts(
 
   throwIfAborted(signal);
   if (result.checker?.pdf?.kind === "bytes") {
-    await sendBytesDocument(ctx, {
-      member,
+    artifacts.push({
       label: "status check PDF",
       filename: result.checker.pdf.filename,
       bytes: result.checker.pdf.bytes,
       caption: `${member.display_name} — status check PDF`,
-      runId,
-      signal,
     });
   } else {
     await ctx.reply(
@@ -402,6 +463,24 @@ async function sendRunArtifacts(
       { parse_mode: "HTML" }
     );
   }
+
+  if (artifacts.length === 0) {
+    return;
+  }
+
+  if (artifacts.length >= 2) {
+    const sent = await sendBytesDocumentGroup(ctx, {
+      artifacts,
+      caption,
+      runId,
+      signal,
+    });
+    if (sent) {
+      return;
+    }
+  }
+
+  await sendIndividualArtifacts(ctx, member, result, artifacts, runId, signal);
 }
 
 async function runForMember(params: {

@@ -189,18 +189,23 @@ export const classifyPage = (snapshot: PageSnapshot): PageClassification => {
     push(scores, "purpose_selection", 80, "heading:share-code-purpose");
   }
 
-  if (
+  const isSummaryPreview =
+    hasHeading(snapshot, /This is what the checker will see/i) ||
+    hasHeading(snapshot, /Summary of what they can do in the UK/i) ||
+    hasTitle(snapshot, /Preview your information/i) ||
+    /Name\s+Date of birth|Valid from|Valid until/i.test(text);
+  const hasCreateShareCodeAction =
     hasLink(
       snapshot,
       (link) =>
-        /Create a share code/i.test(link.text) ||
+        /Create (a )?share code/i.test(link.text) ||
         /^\/share\/.*\/code$/.test(link.href ?? "")
-    ) &&
-    (hasHeading(snapshot, /This is what the checker will see/i) ||
-      hasHeading(snapshot, /Summary of what they can do in the UK/i) ||
-      /Name\s+Date of birth|Valid from|Valid until/i.test(text))
-  ) {
+    ) || snapshot.buttons.some((button) => /Create (a )?share code/i.test(button));
+
+  if (hasCreateShareCodeAction && isSummaryPreview) {
     push(scores, "summary", 95, "link:create-share-code", "summary:checker-view");
+  } else if (isSummaryPreview && /\/share\/[^/?#]+(?:$|[?#])/.test(snapshot.url)) {
+    push(scores, "summary", 85, "url:share-preview", "summary:checker-view");
   }
 
   if (

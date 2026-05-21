@@ -6,18 +6,21 @@ export class SummaryStep extends BaseStep {
 
   async detect(page: import("playwright").Page): Promise<boolean> {
     const hasCreateShareCode =
-      (await page.getByRole("link", { name: /Create a share code/i }).count()) > 0 ||
+      (await page.getByRole("link", { name: /Create (a )?share code/i }).count()) > 0 ||
+      (await page.getByRole("button", { name: /Create (a )?share code/i }).count()) > 0 ||
       (await page.locator('a[href^="/share/"][href$="/code"]').count()) > 0;
 
-    if (!hasCreateShareCode) {
+    const looksLikeSummary =
+      (await this.hasHeading(page, /This is what the checker will see/i)) ||
+      (await this.hasHeading(page, /Summary of what they can do in the UK/i)) ||
+      (await page.title()).match(/Preview your information/i) !== null ||
+      (await this.hasLocator(page.locator(".govuk-summary-list__row")));
+
+    if (!looksLikeSummary) {
       return false;
     }
 
-    return (
-      (await this.hasHeading(page, /This is what the checker will see/i)) ||
-      (await this.hasHeading(page, /Summary of what they can do in the UK/i)) ||
-      (await this.hasLocator(page.locator(".govuk-summary-list__row")))
-    );
+    return hasCreateShareCode || /\/share\/[^/?#]+(?:$|[?#])/.test(page.url());
   }
 
   async execute(context: StepContext): Promise<void> {
@@ -49,11 +52,17 @@ export class SummaryStep extends BaseStep {
       [
         {
           name: "Create a share code link",
-          locator: page.getByRole("link", { name: /Create a share code/i }),
+          locator: page.getByRole("link", { name: /Create (a )?share code/i }),
+        },
+        {
+          name: "Create a share code button",
+          locator: page.getByRole("button", { name: /Create (a )?share code/i }),
         },
         {
           name: "Create a share code button link",
-          locator: page.locator('a.govuk-button:has-text("Create a share code")'),
+          locator: page.locator(
+            'a.govuk-button:has-text("Create a share code"), a.govuk-button:has-text("Create share code")'
+          ),
         },
         {
           name: "share code href",

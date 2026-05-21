@@ -200,6 +200,22 @@ describe("step detection", () => {
     assert.equal(classification.evidence.includes("title:identity-document"), true);
   });
 
+  test("classifies share preview page while create action is still settling", () => {
+    const classification = classifyPage({
+      url: "https://view-immigration-status.service.gov.uk/share/someone-else",
+      title: "Preview your information - GOV.UK",
+      text: "",
+      headings: ["This is what the checker will see"],
+      buttons: [],
+      links: [],
+      controls: [],
+      errors: [],
+    });
+
+    assert.equal(classification.kind, "summary");
+    assert.equal(classification.evidence.includes("url:share-preview"), true);
+  });
+
   test("snapshots form controls outside main content", async () => {
     const page = await context.newPage();
     await page.setContent(
@@ -346,7 +362,37 @@ describe("DocumentNumberStep execute", () => {
 });
 
 // ──────────────────────────────────────────────
-// 5. Share code extraction (download-pdf detection)
+// 5. Summary execute
+// ──────────────────────────────────────────────
+
+describe("SummaryStep execute", () => {
+  test("clicks a create-share-code submit button", async () => {
+    const page = await context.newPage();
+    await page.setContent(`
+      <main>
+        <h1>This is what the checker will see</h1>
+        <dl class="govuk-summary-list">
+          <div class="govuk-summary-list__row">
+            <dt class="govuk-summary-list__key">Name</dt>
+            <dd class="govuk-summary-list__value">Alex Sample</dd>
+          </div>
+        </dl>
+        <form onsubmit="document.body.textContent = 'created'; return false;">
+          <button type="submit">Create share code</button>
+        </form>
+      </main>
+    `);
+
+    const step = new SummaryStep();
+    await step.execute({ ...baseContext, page });
+
+    assert.match(await page.locator("body").innerText(), /created/);
+    await page.close();
+  });
+});
+
+// ──────────────────────────────────────────────
+// 6. Share code extraction (download-pdf detection)
 // ──────────────────────────────────────────────
 
 describe("DownloadPdfStep", () => {

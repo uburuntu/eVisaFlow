@@ -41,7 +41,7 @@ jobs:
         run: pnpm run build:lib
 
       - name: Publish to npm (OIDC trusted publishing)
-        run: pnpm publish --provenance --access public --no-git-checks
+        run: npm publish --provenance --access public --no-git-checks
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

@@ -3,7 +3,7 @@ import type { Applicant, IdentityDocument, Purpose, TwoFactorMethod } from "evis
 import { decrypt } from "../crypto/encryption.js";
 import { type DbFamilyMember, getFamilyMemberById } from "../db/family-members.js";
 import type { Logger } from "../utils/logger.js";
-import type { RunApplicantInput } from "./run-engine.js";
+import type { RunApplicantInput } from "./run-types.js";
 
 /** Browser-ready, plaintext run inputs. Held only transiently in worker RAM. */
 export interface ResolvedSecret {

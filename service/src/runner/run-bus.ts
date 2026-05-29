@@ -1,4 +1,4 @@
-import type { RunEvent, RunSnapshot } from "./run-engine.js";
+import type { RunEvent, RunSnapshot } from "./run-types.js";
 
 /**
  * Channel-agnostic run event bus.

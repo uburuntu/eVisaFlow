@@ -15,6 +15,9 @@ export class QueueJobCancelledError extends Error {
 type QueueItem = {
   id: string;
   key: string;
+  /** Channel-agnostic serialization key (e.g. a user UUID or `String(telegramId)`). */
+  ownerKey: string;
+  /** Telegram user id when the job originates from the bot; derived otherwise. */
   telegramId: number;
   memberName: string;
   controller: AbortController;
@@ -30,6 +33,9 @@ type QueueItem = {
 export interface QueueJobHandle {
   id: string;
   key: string;
+  /** Channel-agnostic serialization key (e.g. a user UUID or `String(telegramId)`). */
+  ownerKey: string;
+  /** Telegram user id when the job originates from the bot; derived otherwise. */
   telegramId: number;
   memberName: string;
   signal: AbortSignal;
@@ -45,7 +51,7 @@ export type EnqueueResult =
 const queue: QueueItem[] = [];
 const jobsById = new Map<string, QueueItem>();
 const jobsByKey = new Map<string, QueueItem>();
-const activeTelegramIds = new Set<number>();
+const activeOwnerKeys = new Set<string>();
 let activeCount = 0;
 let concurrency = 2;
 
@@ -73,9 +79,15 @@ export function getActiveJobIds(): string[] {
     .map((job) => job.id);
 }
 
-export function getJobInfo(
-  id: string
-): { id: string; key: string; telegramId: number; state: QueueJobState } | undefined {
+export function getJobInfo(id: string):
+  | {
+      id: string;
+      key: string;
+      ownerKey: string;
+      telegramId: number;
+      state: QueueJobState;
+    }
+  | undefined {
   const item = jobsById.get(id);
   if (!item) {
     return undefined;
@@ -83,6 +95,7 @@ export function getJobInfo(
   return {
     id: item.id,
     key: item.key,
+    ownerKey: item.ownerKey,
     telegramId: item.telegramId,
     state: item.state,
   };
@@ -91,6 +104,7 @@ export function getJobInfo(
 const toHandle = (item: QueueItem): QueueJobHandle => ({
   id: item.id,
   key: item.key,
+  ownerKey: item.ownerKey,
   telegramId: item.telegramId,
   memberName: item.memberName,
   signal: item.controller.signal,
@@ -107,11 +121,28 @@ const waitingPosition = (item: QueueItem): number => {
 export function enqueue(options: {
   id: string;
   key: string;
-  telegramId: number;
+  /**
+   * Channel-agnostic serialization key. Optional for backward compatibility:
+   * when omitted it is derived from `String(telegramId)`.
+   */
+  ownerKey?: string;
+  /**
+   * Telegram user id (bot channel). Optional: web callers may pass only
+   * `ownerKey`. At least one of `ownerKey`/`telegramId` must be provided.
+   */
+  telegramId?: number;
   memberName: string;
   execute: (signal: AbortSignal) => Promise<void>;
   onPositionUpdate: (position: number) => void | Promise<void>;
 }): EnqueueResult {
+  const ownerKey =
+    options.ownerKey ??
+    (options.telegramId !== undefined ? String(options.telegramId) : undefined);
+  if (ownerKey === undefined) {
+    throw new TypeError("enqueue requires either ownerKey or telegramId");
+  }
+  const telegramId = options.telegramId ?? Number(ownerKey);
+
   const existing = jobsByKey.get(options.key);
   if (existing) {
     return {
@@ -132,7 +163,8 @@ export function enqueue(options: {
   const item: QueueItem = {
     id: options.id,
     key: options.key,
-    telegramId: options.telegramId,
+    ownerKey,
+    telegramId,
     memberName: options.memberName,
     controller: new AbortController(),
     execute: options.execute,
@@ -213,7 +245,7 @@ function notifyPositions(): void {
 
 function processQueue(): void {
   while (activeCount < concurrency) {
-    const nextIndex = queue.findIndex((item) => !activeTelegramIds.has(item.telegramId));
+    const nextIndex = queue.findIndex((item) => !activeOwnerKeys.has(item.ownerKey));
     if (nextIndex < 0) {
       break;
     }
@@ -225,7 +257,7 @@ function processQueue(): void {
 
     item.state = "running";
     activeCount += 1;
-    activeTelegramIds.add(item.telegramId);
+    activeOwnerKeys.add(item.ownerKey);
     void item.onPositionUpdate(0);
     notifyPositions();
 
@@ -260,7 +292,7 @@ function processQueue(): void {
       })
       .finally(() => {
         activeCount -= 1;
-        activeTelegramIds.delete(item.telegramId);
+        activeOwnerKeys.delete(item.ownerKey);
         jobsById.delete(item.id);
         jobsByKey.delete(item.key);
         if (item.state === "cancelled") {
@@ -283,7 +315,7 @@ export function resetQueueForTests(): void {
   queue.splice(0, queue.length);
   jobsById.clear();
   jobsByKey.clear();
-  activeTelegramIds.clear();
+  activeOwnerKeys.clear();
   activeCount = 0;
   concurrency = 2;
 }

@@ -5,6 +5,7 @@ import {
   hasPending,
   requestCode,
   resetPendingForTests,
+  resolveCode,
   setPromptMessageId,
   submitCode,
 } from "../dist/runner/two-factor-store.js";
@@ -138,4 +139,37 @@ test("cancelRequest rejects a pending request", async () => {
 
   assert.equal(cancelRequest("run-106", "No longer needed"), true);
   await assert.rejects(pending, /No longer needed/);
+});
+
+test("resolveCode resolves a request looked up directly by requestId", async () => {
+  resetPendingForTests();
+  const pending = requestCode({
+    requestId: "run-107",
+    method: "email",
+    memberName: "Alex",
+    deadlineMs: Date.now() + 1_000,
+  });
+
+  assert.equal(resolveCode("run-107", "424242"), true);
+  assert.equal(await pending, "424242");
+  assert.equal(hasPending(107), false);
+});
+
+test("resolveCode returns false for an unknown requestId", () => {
+  resetPendingForTests();
+  assert.equal(resolveCode("does-not-exist", "000000"), false);
+});
+
+test("resolveCode integrates with a web run that omits telegramId and chatId", async () => {
+  resetPendingForTests();
+  const pending = requestCode({
+    requestId: "run-108",
+    method: "sms",
+    memberName: "Web User",
+    deadlineMs: Date.now() + 1_000,
+  });
+
+  assert.equal(resolveCode("run-108", "999999"), true);
+  assert.equal(await pending, "999999");
+  assert.equal(resolveCode("run-108", "111111"), false);
 });

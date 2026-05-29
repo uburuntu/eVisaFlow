@@ -2,8 +2,8 @@ import type { TwoFactorMethod } from "evisa-flow";
 
 interface PendingRequest {
   requestId: string;
-  telegramId: number;
-  chatId: number;
+  telegramId?: number;
+  chatId?: number;
   resolve: (code: string) => void;
   reject: (err: Error) => void;
   method: TwoFactorMethod;
@@ -55,6 +55,16 @@ export function submitCode(options: {
   return true;
 }
 
+export function resolveCode(requestId: string, code: string): boolean {
+  const req = pending.get(requestId);
+  if (!req) return false;
+
+  clearTimeout(req.timeoutHandle);
+  cleanup(req);
+  req.resolve(code);
+  return true;
+}
+
 export function cancelRequest(requestId: string, reason = "2FA cancelled"): boolean {
   const req = pending.get(requestId);
   if (!req) {
@@ -68,8 +78,8 @@ export function cancelRequest(requestId: string, reason = "2FA cancelled"): bool
 
 export function requestCode(options: {
   requestId: string;
-  telegramId: number;
-  chatId: number;
+  telegramId?: number;
+  chatId?: number;
   method: TwoFactorMethod;
   memberName: string;
   deadlineMs: number;

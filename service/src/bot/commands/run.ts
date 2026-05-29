@@ -643,14 +643,11 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       return;
     }
 
+    // Do NOT persist the run status here. `engine.cancel` publishes a terminal
+    // `failed{cause:"cancelled"}` event and the engine's DB-persistence
+    // subscriber records it as `cancelled`. Writing it here too would race that
+    // subscriber and could leave the run as `failed`, breaking run dedup.
     const cancelled = ctx.engine.cancel(runId, "Cancelled by user");
-    if (cancelled) {
-      await updateRunStatus(ctx.db, runId, {
-        status: "cancelled",
-        error_code: "CANCELLED",
-        error_message: "Cancelled by user",
-      }).catch(() => {});
-    }
     await ctx.answerCallbackQuery({
       text: cancelled ? "Cancelling..." : "Already done.",
     });

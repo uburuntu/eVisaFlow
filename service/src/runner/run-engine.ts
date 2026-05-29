@@ -18,6 +18,8 @@ import {
   enqueue as defaultEnqueue,
   getQueueStats,
   type EnqueueResult as QueueEnqueueResult,
+  QueueJobCancelledError,
+  type QueueTerminalStatus,
 } from "./queue.js";
 import type { RunBus } from "./run-bus.js";
 import { createInMemoryRunBus } from "./run-bus.js";
@@ -89,6 +91,36 @@ const phaseLabels: Record<string, string> = {
   completed: "Completed",
   failed: "Failed",
 };
+
+/**
+ * Map a queue {@link QueueTerminalStatus} to the stable error `code` the bot's
+ * `friendlyErrorMessage` understands. Cancellation must surface as `CANCELLED`
+ * (→ "Cancelled for {memberName}.") and a shutdown interruption as
+ * `SERVICE_INTERRUPTED`; using `UNKNOWN` would regress those user-facing
+ * messages to the generic "Something went wrong" copy.
+ */
+function cancellationCode(status: QueueTerminalStatus): string {
+  return status === "interrupted" ? "SERVICE_INTERRUPTED" : "CANCELLED";
+}
+
+/**
+ * Build the terminal `failed` {@link RunEvent} for a cancelled/interrupted run.
+ * It carries the bot-facing `code` (for the rendered message) and `cause` (the
+ * terminal DB status the persistence subscriber records), keeping the two views
+ * consistent so a cancel never lands in the DB as `failed`.
+ */
+function cancellationEvent(
+  status: QueueTerminalStatus,
+  message: string
+): Extract<RunEvent, { type: "failed" }> {
+  return {
+    type: "failed",
+    code: cancellationCode(status),
+    message,
+    terminal: true,
+    cause: status,
+  };
+}
 
 /**
  * Translate a single core-library {@link EVisaEvent} into the engine's
@@ -279,8 +311,11 @@ async function persistRunEvents(
           });
           break;
         case "failed":
+          // A cancelled/interrupted run carries `cause`; persist the matching
+          // terminal status so run dedup sees it as cancelled/interrupted rather
+          // than a generic failure. Plain failures default to "failed".
           await deps.updateRunStatus(deps.db, runId, {
-            status: "failed",
+            status: event.cause ?? "failed",
             error_code: event.code,
             error_message: event.message,
           });
@@ -458,19 +493,21 @@ export function createRunEngine(deps: RunEngineDeps): RunEngine {
       result.handle.done
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
-          // Surface terminal failures the job did not already publish.
+          // Surface terminal failures the job did not already publish (e.g. a
+          // run cancelled while still queued never ran the job). A cancellation
+          // must keep its terminal status: publishing `UNKNOWN` here would make
+          // the bot render the generic error instead of "Cancelled for ...".
           const snapshot = bus.snapshot(input.runId);
           if (
             snapshot &&
             snapshot.status !== "failed" &&
             snapshot.status !== "completed"
           ) {
-            publish({
-              type: "failed",
-              code: "UNKNOWN",
-              message,
-              terminal: true,
-            });
+            publish(
+              err instanceof QueueJobCancelledError
+                ? cancellationEvent(err.terminalStatus, message)
+                : { type: "failed", code: "UNKNOWN", message, terminal: true }
+            );
           }
         })
         .finally(() => {
@@ -489,7 +526,20 @@ export function createRunEngine(deps: RunEngineDeps): RunEngine {
       if (!handle) {
         return false;
       }
-      return handle.cancel(reason);
+      const status: QueueTerminalStatus = "cancelled";
+      const cancelled = handle.cancel(reason, status);
+      if (cancelled) {
+        // The engine owns the terminal event so cancellation persists and
+        // renders consistently. Publishing synchronously here makes this the
+        // authoritative terminal event: it lands before the queue's async
+        // rejection (and any core-lib `failed` event the job would emit on
+        // abort), and the bus drops everything after it. The DB-persistence
+        // subscriber then records `cancelled` (via `cause`), so callers must NOT
+        // also write the run status themselves (that risks a `failed`/`cancelled`
+        // write race).
+        bus.publish(runId, cancellationEvent(status, reason));
+      }
+      return cancelled;
     },
 
     subscribe(runId) {

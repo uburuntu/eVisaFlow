@@ -96,7 +96,19 @@ export type RunEvent =
       /** Present only for trusted server-custody runs. */
       shareCode?: string;
     }
-  | { type: "failed"; code: string; message: string; terminal: boolean };
+  | {
+      type: "failed";
+      code: string;
+      message: string;
+      terminal: boolean;
+      /**
+       * The terminal DB status the persistence subscriber should record for this
+       * failure. Defaults to `"failed"`. Set to `"cancelled"` when the user
+       * cancels a run and `"interrupted"` when the service is shutting down, so
+       * the run lands in the matching terminal state (run dedup depends on this).
+       */
+      cause?: "cancelled" | "interrupted";
+    };
 
 export type RunStatus = "queued" | "running" | "awaiting_2fa" | "completed" | "failed";
 

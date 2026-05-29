@@ -164,8 +164,48 @@ test("cancel aborts an in-flight run and the stream ends with failure", async ()
   const failure = events.find((e) => e.type === "failed");
   assert.ok(failure, "a terminal failed event should be published on cancel");
   assert.equal(failure.terminal, true);
+  // The terminal event must carry the cancellation code (so the bot renders
+  // "Cancelled for ..." not the generic error) and the `cancelled` cause (so
+  // persistence records the run as cancelled, never failed).
+  assert.equal(failure.code, "CANCELLED");
+  assert.equal(failure.cause, "cancelled");
   // cancel on an unknown / finished run returns false.
   assert.equal(engine.cancel("run-cancel"), false);
+});
+
+test("cancel while still queued publishes a CANCELLED terminal event", async () => {
+  setConcurrency(1);
+  const bus = createInMemoryRunBus();
+  let releaseFirst;
+  const engine = createRunEngine({
+    bus,
+    runJob: async ({ input }) => {
+      if (input.runId === "run-busy") {
+        await new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+    },
+  });
+
+  // Same ownerKey forces the second run to wait (queued, never started).
+  const owner = "shared-owner";
+  engine.enqueueRun(inlineInput("run-busy", { ownerKey: owner }));
+  await flush();
+  engine.enqueueRun(inlineInput("run-queued", { ownerKey: owner }));
+  await flush();
+
+  // Cancel the waiting run before it ever runs: the queue rejects its handle and
+  // the engine's catch must still surface CANCELLED (not UNKNOWN).
+  assert.equal(engine.cancel("run-queued", "User cancelled"), true);
+
+  const events = await collect(engine.subscribe("run-queued"));
+  const failure = events.find((e) => e.type === "failed");
+  assert.ok(failure, "a terminal failed event should be published on cancel");
+  assert.equal(failure.code, "CANCELLED");
+  assert.equal(failure.cause, "cancelled");
+
+  releaseFirst?.();
 });
 
 test("a terminal event closes the topic after the grace window", async () => {

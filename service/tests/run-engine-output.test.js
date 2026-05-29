@@ -303,6 +303,60 @@ test("DB persistence subscriber records failures with code + message", async () 
   assert.ok(!recorder.statusCalls.some((c) => c.update.status === "success"));
 });
 
+test("cancellation persists as status 'cancelled', not 'failed'", async () => {
+  const recorder = makeDbRecorder();
+  const bus = createInMemoryRunBus();
+  const engine = createRunEngine({
+    bus,
+    serverKeyHex: SERVER_KEY_HEX,
+    db: recorder.db,
+    updateRunStatus: recorder.updateRunStatus,
+    insertRunEvent: recorder.insertRunEvent,
+    runJob: async ({ signal }) => {
+      await new Promise((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () =>
+            reject(signal.reason instanceof Error ? signal.reason : new Error("aborted")),
+          { once: true }
+        );
+      });
+      return fakeResult();
+    },
+  });
+
+  engine.enqueueRun(
+    serverInput("run-cancel-db", {
+      applicant: {
+        kind: "inline",
+        applicant: {
+          identityDocument: { type: "passport", number: "P1" },
+          dateOfBirth: "1990-01-01",
+        },
+        purpose: "right_to_work",
+        memberName: "Jane Doe",
+      },
+    })
+  );
+  await flush();
+  await flush();
+
+  assert.equal(engine.cancel("run-cancel-db", "Cancelled by user"), true);
+  await collect(engine.subscribe("run-cancel-db"));
+  await flush();
+  await flush();
+
+  // The run must land terminal as `cancelled` (run dedup depends on this) and
+  // never be recorded as a generic `failed`.
+  const terminal = recorder.statusCalls.find((c) =>
+    ["cancelled", "failed", "success"].includes(c.update.status)
+  );
+  assert.ok(terminal, "a terminal status transition is persisted");
+  assert.equal(terminal.update.status, "cancelled");
+  assert.equal(terminal.update.error_code, "CANCELLED");
+  assert.ok(!recorder.statusCalls.some((c) => c.update.status === "failed"));
+});
+
 test("persistence failures are swallowed and never break the live run", async () => {
   let calls = 0;
   const bus = createInMemoryRunBus();

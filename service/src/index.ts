@@ -1,5 +1,6 @@
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
+import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
 import { getSupabase } from "./db/client.js";
 import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
@@ -82,7 +83,12 @@ async function main(): Promise<void> {
     logger: log,
   });
 
-  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine);
+  // Telegram-specific 2FA reply matcher: maps incoming code messages back to the
+  // engine's runId-keyed gate. Shared between the run driver (registration) and
+  // the 2FA middleware (matching).
+  const twoFactor = createTwoFactorAdapter(engine);
+
+  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
 
   try {
     const username = await assertTelegramReady(bot);

@@ -1,14 +1,21 @@
 import type { TwoFactorMethod } from "evisa-flow";
 
+/**
+ * Channel-agnostic 2FA gate store.
+ *
+ * A pending request is keyed solely by `requestId` (the runId). Channels resolve
+ * it by that id: the web channel POSTs the runId; the Telegram channel maps an
+ * incoming reply to a runId in its own adapter
+ * ({@link file://./../bot/two-factor-adapter.ts}) before calling
+ * {@link resolveCode}. The store itself holds no channel-specific routing.
+ */
+
 interface PendingRequest {
   requestId: string;
-  telegramId?: number;
-  chatId?: number;
   resolve: (code: string) => void;
   reject: (err: Error) => void;
   method: TwoFactorMethod;
   memberName: string;
-  promptMessageId?: number;
   timeoutHandle: ReturnType<typeof setTimeout>;
   signal?: AbortSignal;
   onAbort: () => void;
@@ -16,67 +23,9 @@ interface PendingRequest {
 
 const pending = new Map<string, PendingRequest>();
 
-export function hasPending(telegramId: number, chatId?: number): boolean {
-  return Array.from(pending.values()).some(
-    (req) =>
-      req.telegramId === telegramId && (chatId === undefined || req.chatId === chatId)
-  );
-}
-
-export function setPromptMessageId(requestId: string, promptMessageId: number): boolean {
-  const req = pending.get(requestId);
-  if (!req) {
-    return false;
-  }
-  req.promptMessageId = promptMessageId;
-  return true;
-}
-
-/**
- * Attach the Telegram routing (chat + prompt message) to a pending request so
- * the bot's reply-matching middleware ({@link hasPending}/{@link submitCode})
- * can locate it.
- *
- * The engine creates the pending request keyed by `requestId` (runId) alone —
- * channel-agnostic. The Telegram channel binds its delivery context here, after
- * it has sent the 2FA prompt. Returns `false` if the request no longer exists
- * (e.g. it timed out or was cancelled before the prompt was sent).
- */
-export function bindTelegramRoute(
-  requestId: string,
-  route: { telegramId: number; chatId: number; promptMessageId: number }
-): boolean {
-  const req = pending.get(requestId);
-  if (!req) {
-    return false;
-  }
-  req.telegramId = route.telegramId;
-  req.chatId = route.chatId;
-  req.promptMessageId = route.promptMessageId;
-  return true;
-}
-
-export function submitCode(options: {
-  telegramId: number;
-  chatId: number;
-  code: string;
-  replyToMessageId?: number;
-}): boolean {
-  const candidates = Array.from(pending.values()).filter(
-    (item) => item.telegramId === options.telegramId && item.chatId === options.chatId
-  );
-  const req =
-    candidates.find(
-      (item) =>
-        item.promptMessageId !== undefined &&
-        item.promptMessageId === options.replyToMessageId
-    ) ?? (candidates.length === 1 ? candidates[0] : undefined);
-  if (!req) return false;
-
-  clearTimeout(req.timeoutHandle);
-  cleanup(req);
-  req.resolve(options.code);
-  return true;
+/** Whether a 2FA request is currently awaiting a code for this requestId. */
+export function hasPending(requestId: string): boolean {
+  return pending.has(requestId);
 }
 
 export function resolveCode(requestId: string, code: string): boolean {
@@ -102,8 +51,6 @@ export function cancelRequest(requestId: string, reason = "2FA cancelled"): bool
 
 export function requestCode(options: {
   requestId: string;
-  telegramId?: number;
-  chatId?: number;
   method: TwoFactorMethod;
   memberName: string;
   deadlineMs: number;
@@ -138,8 +85,6 @@ export function requestCode(options: {
 
     req = {
       requestId: options.requestId,
-      telegramId: options.telegramId,
-      chatId: options.chatId,
       resolve: (code) => {
         cleanup(req);
         resolve(code);

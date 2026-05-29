@@ -11,7 +11,6 @@ import { type DbRun, insertRun, updateRunStatus } from "../../db/runs.js";
 import { getUserByTelegramId } from "../../db/users.js";
 import { getJobInfo } from "../../runner/queue.js";
 import type { RunEvent, SealedArtifactRef } from "../../runner/run-types.js";
-import { bindTelegramRoute } from "../../runner/two-factor-store.js";
 import { MessageTracker } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
 
@@ -459,11 +458,13 @@ async function driveRun(params: {
             { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
           );
           tracker.track(promptMsg.message_id);
-          // Bind the Telegram delivery context so the reply-matching middleware
-          // can route the user's code back to this run's pending 2FA request.
-          bindTelegramRoute(runId, {
+          // Register the Telegram delivery context so the reply-matching
+          // middleware can route the user's code back to this run's pending 2FA
+          // gate via engine.submitCode(runId, code).
+          ctx.twoFactor.register({
             telegramId,
             chatId,
+            runId,
             promptMessageId: promptMsg.message_id,
           });
           break;
@@ -486,6 +487,9 @@ async function driveRun(params: {
     if (progressTimer) {
       clearInterval(progressTimer);
     }
+    // The run reached a terminal state (its event stream ended): drop any 2FA
+    // matcher entry so a resolved/failed/cancelled run never lingers there.
+    ctx.twoFactor.unregister(runId);
   }
 
   return result;

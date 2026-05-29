@@ -33,7 +33,8 @@ import { resolveCode as defaultResolveCode } from "./two-factor-store.js";
 
 /**
  * What a queued job receives. Tests inject a stub `runJob` so no Playwright is
- * launched; the real implementation will wrap {@link executeRun}.
+ * launched; the real implementation ({@link createEvisaRunJob}) drives the core
+ * eVisa flow.
  */
 export interface RunJobContext {
   input: EnqueueRunInput;

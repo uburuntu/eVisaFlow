@@ -1,4 +1,5 @@
 import { createBot } from "./bot/bot.js";
+import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
 import { getSupabase } from "./db/client.js";
 import { loadEnv, redactedEnvSummary } from "./env.js";
 import { assertSupabaseReady, assertTelegramReady } from "./readiness.js";
@@ -18,7 +19,8 @@ async function main(): Promise<void> {
     serverKeyHex: env.ENCRYPTION_KEY,
     logger: log,
   });
-  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine);
+  const twoFactor = createTwoFactorAdapter(engine);
+  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
 
   const username = await assertTelegramReady(bot);
   await assertSupabaseReady(db);

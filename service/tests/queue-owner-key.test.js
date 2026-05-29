@@ -11,31 +11,7 @@ import {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-test("enqueue derives ownerKey from telegramId when ownerKey is omitted", async () => {
-  resetQueueForTests();
-  setConcurrency(1);
-
-  const result = enqueue({
-    id: "run-owner-1",
-    key: "owner-1:member",
-    telegramId: 7777,
-    memberName: "Alex",
-    execute: async () => {},
-    onPositionUpdate: () => {},
-  });
-
-  assert.equal(result.accepted, true);
-  assert.equal(result.handle.ownerKey, "7777");
-  assert.equal(result.handle.telegramId, 7777);
-
-  const info = getJobInfo("run-owner-1");
-  assert.equal(info.ownerKey, "7777");
-  assert.equal(info.telegramId, 7777);
-
-  await result.handle.done;
-});
-
-test("enqueue accepts a string ownerKey without a telegramId", async () => {
+test("enqueue exposes the ownerKey on the handle and job info", async () => {
   resetQueueForTests();
   setConcurrency(1);
 
@@ -53,47 +29,8 @@ test("enqueue accepts a string ownerKey without a telegramId", async () => {
 
   const info = getJobInfo("run-owner-2");
   assert.equal(info.ownerKey, "user-uuid-abc");
-  // telegramId is derived for non-numeric owners and is not a usable id.
-  assert.ok(Number.isNaN(info.telegramId));
 
   await result.handle.done;
-});
-
-test("enqueue prefers an explicit ownerKey over the telegramId", async () => {
-  resetQueueForTests();
-  setConcurrency(1);
-
-  const result = enqueue({
-    id: "run-owner-3",
-    key: "owner-3:member",
-    ownerKey: "owner-explicit",
-    telegramId: 1234,
-    memberName: "Pat",
-    execute: async () => {},
-    onPositionUpdate: () => {},
-  });
-
-  assert.equal(result.handle.ownerKey, "owner-explicit");
-  assert.equal(result.handle.telegramId, 1234);
-
-  await result.handle.done;
-});
-
-test("enqueue throws when neither ownerKey nor telegramId is provided", () => {
-  resetQueueForTests();
-  setConcurrency(1);
-
-  assert.throws(
-    () =>
-      enqueue({
-        id: "run-owner-invalid",
-        key: "owner-invalid:member",
-        memberName: "Nobody",
-        execute: async () => {},
-        onPositionUpdate: () => {},
-      }),
-    TypeError
-  );
 });
 
 test("queue serializes jobs that share an ownerKey", async () => {
@@ -153,7 +90,7 @@ test("queue serializes jobs that share an ownerKey", async () => {
   assert.deepEqual(started, ["first", "other-owner", "same-owner"]);
 });
 
-test("ownerKey serialization treats a numeric telegramId and its string form as the same owner", async () => {
+test("ownerKey serialization is exact-string keyed", async () => {
   resetQueueForTests();
   setConcurrency(2);
 
@@ -163,7 +100,7 @@ test("ownerKey serialization treats a numeric telegramId and its string form as 
     enqueue({
       id: "run-mixed-a",
       key: "mixed:a",
-      telegramId: 909,
+      ownerKey: "909",
       memberName: "Alex",
       execute: async () => {
         started.push("first");
@@ -178,7 +115,7 @@ test("ownerKey serialization treats a numeric telegramId and its string form as 
 
   await firstStarted;
 
-  // Explicit ownerKey "909" must collide with telegramId 909 -> serialized.
+  // The same ownerKey string must serialize behind the running job.
   const sameOwnerByKey = enqueue({
     id: "run-mixed-b",
     key: "mixed:b",

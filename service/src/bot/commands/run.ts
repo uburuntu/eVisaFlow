@@ -638,7 +638,7 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       await ctx.answerCallbackQuery({ text: "This run is no longer active." });
       return;
     }
-    if (ctx.from?.id !== job.telegramId) {
+    if (String(ctx.from?.id) !== job.ownerKey) {
       await ctx.answerCallbackQuery({ text: "This run belongs to another user." });
       return;
     }

@@ -17,8 +17,6 @@ type QueueItem = {
   key: string;
   /** Channel-agnostic serialization key (e.g. a user UUID or `String(telegramId)`). */
   ownerKey: string;
-  /** Telegram user id when the job originates from the bot; derived otherwise. */
-  telegramId: number;
   memberName: string;
   controller: AbortController;
   execute: (signal: AbortSignal) => Promise<void>;
@@ -35,8 +33,6 @@ export interface QueueJobHandle {
   key: string;
   /** Channel-agnostic serialization key (e.g. a user UUID or `String(telegramId)`). */
   ownerKey: string;
-  /** Telegram user id when the job originates from the bot; derived otherwise. */
-  telegramId: number;
   memberName: string;
   signal: AbortSignal;
   done: Promise<void>;
@@ -84,7 +80,6 @@ export function getJobInfo(id: string):
       id: string;
       key: string;
       ownerKey: string;
-      telegramId: number;
       state: QueueJobState;
     }
   | undefined {
@@ -96,7 +91,6 @@ export function getJobInfo(id: string):
     id: item.id,
     key: item.key,
     ownerKey: item.ownerKey,
-    telegramId: item.telegramId,
     state: item.state,
   };
 }
@@ -105,7 +99,6 @@ const toHandle = (item: QueueItem): QueueJobHandle => ({
   id: item.id,
   key: item.key,
   ownerKey: item.ownerKey,
-  telegramId: item.telegramId,
   memberName: item.memberName,
   signal: item.controller.signal,
   done: item.done,
@@ -122,26 +115,15 @@ export function enqueue(options: {
   id: string;
   key: string;
   /**
-   * Channel-agnostic serialization key. Optional for backward compatibility:
-   * when omitted it is derived from `String(telegramId)`.
+   * Channel-agnostic serialization key used for per-owner serialization
+   * (e.g. a user UUID or `String(telegramId)` for the bot channel).
    */
-  ownerKey?: string;
-  /**
-   * Telegram user id (bot channel). Optional: web callers may pass only
-   * `ownerKey`. At least one of `ownerKey`/`telegramId` must be provided.
-   */
-  telegramId?: number;
+  ownerKey: string;
   memberName: string;
   execute: (signal: AbortSignal) => Promise<void>;
   onPositionUpdate: (position: number) => void | Promise<void>;
 }): EnqueueResult {
-  const ownerKey =
-    options.ownerKey ??
-    (options.telegramId !== undefined ? String(options.telegramId) : undefined);
-  if (ownerKey === undefined) {
-    throw new TypeError("enqueue requires either ownerKey or telegramId");
-  }
-  const telegramId = options.telegramId ?? Number(ownerKey);
+  const { ownerKey } = options;
 
   const existing = jobsByKey.get(options.key);
   if (existing) {
@@ -164,7 +146,6 @@ export function enqueue(options: {
     id: options.id,
     key: options.key,
     ownerKey,
-    telegramId,
     memberName: options.memberName,
     controller: new AbortController(),
     execute: options.execute,

@@ -32,6 +32,30 @@ export function setPromptMessageId(requestId: string, promptMessageId: number): 
   return true;
 }
 
+/**
+ * Attach the Telegram routing (chat + prompt message) to a pending request so
+ * the bot's reply-matching middleware ({@link hasPending}/{@link submitCode})
+ * can locate it.
+ *
+ * The engine creates the pending request keyed by `requestId` (runId) alone —
+ * channel-agnostic. The Telegram channel binds its delivery context here, after
+ * it has sent the 2FA prompt. Returns `false` if the request no longer exists
+ * (e.g. it timed out or was cancelled before the prompt was sent).
+ */
+export function bindTelegramRoute(
+  requestId: string,
+  route: { telegramId: number; chatId: number; promptMessageId: number }
+): boolean {
+  const req = pending.get(requestId);
+  if (!req) {
+    return false;
+  }
+  req.telegramId = route.telegramId;
+  req.chatId = route.chatId;
+  req.promptMessageId = route.promptMessageId;
+  return true;
+}
+
 export function submitCode(options: {
   telegramId: number;
   chatId: number;

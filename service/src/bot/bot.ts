@@ -3,6 +3,7 @@ import { sequentialize } from "@grammyjs/runner";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Bot, type Context, session } from "grammy";
 import type { Env } from "../env.js";
+import type { RunEngine } from "../runner/run-engine.js";
 import type { Logger } from "../utils/logger.js";
 import { registerCommands } from "./commands/index.js";
 import type { MyContext, SessionData } from "./context.js";
@@ -42,7 +43,8 @@ export function createBot(
   token: string,
   db: SupabaseClient,
   env: Env,
-  log: Logger
+  log: Logger,
+  engine: RunEngine
 ): Bot<MyContext> {
   const bot = new Bot<MyContext>(token);
 
@@ -53,6 +55,7 @@ export function createBot(
     ctx.db = db;
     ctx.env = env;
     ctx.log = log;
+    ctx.engine = engine;
     return next();
   });
 

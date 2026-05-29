@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  bindTelegramRoute,
   cancelRequest,
   hasPending,
   requestCode,
@@ -172,4 +173,52 @@ test("resolveCode integrates with a web run that omits telegramId and chatId", a
   assert.equal(resolveCode("run-108", "999999"), true);
   assert.equal(await pending, "999999");
   assert.equal(resolveCode("run-108", "111111"), false);
+});
+
+test("bindTelegramRoute lets the bot reply-matching middleware route a runId-keyed request", async () => {
+  resetPendingForTests();
+  // The engine's run-job creates the request keyed by runId alone (no Telegram
+  // routing), exactly as createEvisaRunJob does.
+  const pending = requestCode({
+    requestId: "run-109",
+    method: "sms",
+    memberName: "Alex",
+    deadlineMs: Date.now() + 1_000,
+  });
+
+  // Before binding, the Telegram reply-matching path cannot see the request.
+  assert.equal(hasPending(109, 1009), false);
+  assert.equal(submitCode({ telegramId: 109, chatId: 1009, code: "000000" }), false);
+
+  // The bot binds the delivery context after sending the 2FA prompt.
+  assert.equal(
+    bindTelegramRoute("run-109", {
+      telegramId: 109,
+      chatId: 1009,
+      promptMessageId: 7100,
+    }),
+    true
+  );
+
+  // Now hasPending + submitCode (the middleware path) resolve the same request.
+  assert.equal(hasPending(109, 1009), true);
+  assert.equal(
+    submitCode({
+      telegramId: 109,
+      chatId: 1009,
+      code: "424242",
+      replyToMessageId: 7100,
+    }),
+    true
+  );
+  assert.equal(await pending, "424242");
+  assert.equal(hasPending(109, 1009), false);
+});
+
+test("bindTelegramRoute returns false for an unknown requestId", () => {
+  resetPendingForTests();
+  assert.equal(
+    bindTelegramRoute("missing", { telegramId: 1, chatId: 2, promptMessageId: 3 }),
+    false
+  );
 });

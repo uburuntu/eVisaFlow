@@ -2,6 +2,8 @@ import { createBot } from "./bot/bot.js";
 import { getSupabase } from "./db/client.js";
 import { loadEnv, redactedEnvSummary } from "./env.js";
 import { assertSupabaseReady, assertTelegramReady } from "./readiness.js";
+import { createEvisaRunJob } from "./runner/evisa-run-job.js";
+import { createRunEngine } from "./runner/run-engine.js";
 import { createLogger } from "./utils/logger.js";
 
 async function main(): Promise<void> {
@@ -10,7 +12,13 @@ async function main(): Promise<void> {
   log.info({ env: redactedEnvSummary(env) }, "Loaded service configuration");
 
   const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log);
+  const engine = createRunEngine({
+    runJob: createEvisaRunJob(),
+    db,
+    serverKeyHex: env.ENCRYPTION_KEY,
+    logger: log,
+  });
+  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine);
 
   const username = await assertTelegramReady(bot);
   await assertSupabaseReady(db);

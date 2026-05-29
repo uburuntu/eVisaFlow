@@ -1,28 +1,17 @@
 import type {
-  Applicant,
   CreateShareCodeResult,
   EVisaErrorCode,
-  EVisaEvent,
-  EVisaPhase,
-  Purpose,
-  TwoFactorMethod,
+  HtmlResult,
+  PdfResult,
 } from "evisa-flow";
-import { EVisaError } from "evisa-flow";
 import type { Bot } from "grammy";
 import { InlineKeyboard, InputFile, InputMediaBuilder } from "grammy";
-import { decrypt, encrypt } from "../../crypto/encryption.js";
 import { type DbFamilyMember, getActiveFamilyMembers } from "../../db/family-members.js";
-import { type DbRun, insertRun, insertRunEvent, updateRunStatus } from "../../db/runs.js";
+import { type DbRun, insertRun, updateRunStatus } from "../../db/runs.js";
 import { getUserByTelegramId } from "../../db/users.js";
-import { executeRun } from "../../runner/evisa-runner.js";
-import {
-  cancelJob,
-  enqueue,
-  getJobInfo,
-  getQueueStats,
-  hasJob,
-  QueueJobCancelledError,
-} from "../../runner/queue.js";
+import { getJobInfo } from "../../runner/queue.js";
+import type { RunEvent, SealedArtifactRef } from "../../runner/run-types.js";
+import { bindTelegramRoute } from "../../runner/two-factor-store.js";
 import { MessageTracker } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
 
@@ -45,21 +34,6 @@ function formatValidUntil(date: string): string {
   });
 }
 
-const phaseLabels: Record<EVisaPhase, string> = {
-  launching: "Launching browser",
-  verifying_identity: "Verifying identity",
-  choosing_2fa: "Choosing 2FA method",
-  waiting_for_2fa: "Waiting for 2FA",
-  viewing_status: "Opening immigration status",
-  creating_share_code: "Creating share code",
-  downloading_pdf: "Downloading eVisa PDF",
-  checking_status: "Opening checker status page",
-  capturing_checker_html: "Capturing status check HTML page",
-  downloading_checker_pdf: "Downloading status check PDF",
-  completed: "Completed",
-  failed: "Failed",
-};
-
 function cancelKeyboard(runId: string): InlineKeyboard {
   return new InlineKeyboard().text("Cancel", `cancel_run:${runId}`);
 }
@@ -81,97 +55,15 @@ async function requireCallbackOwner(
   return false;
 }
 
-function abortReason(signal: AbortSignal): Error | undefined {
-  if (!signal.aborted) {
-    return undefined;
+function friendlyErrorMessage(memberName: string, code: string): string {
+  if (code === "SERVICE_INTERRUPTED") {
+    return `Interrupted while processing ${memberName}. I will not keep waiting for a code.`;
   }
-  if (signal.reason instanceof Error) {
-    return signal.reason;
-  }
-  return new QueueJobCancelledError(
-    typeof signal.reason === "string" ? signal.reason : "Run cancelled"
-  );
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  const reason = abortReason(signal);
-  if (reason) {
-    throw reason;
-  }
-}
-
-function buildApplicant(member: DbFamilyMember, encryptionKey: string): Applicant {
-  const docNumber = decrypt(member.encrypted_doc_number, encryptionKey);
-  if (
-    member.auth_type !== "passport" &&
-    member.auth_type !== "nationalId" &&
-    member.auth_type !== "brc" &&
-    member.auth_type !== "ukvi"
-  ) {
-    throw new Error(`Unknown auth type: ${member.auth_type}`);
+  if (code === "FLOW_CANCELLED" || code === "CANCELLED") {
+    return `Cancelled for ${memberName}.`;
   }
 
-  return {
-    identityDocument: {
-      type: member.auth_type,
-      number: docNumber,
-    },
-    dateOfBirth: `${String(member.dob_year).padStart(4, "0")}-${String(member.dob_month).padStart(2, "0")}-${String(member.dob_day).padStart(2, "0")}`,
-  };
-}
-
-function sanitizeUrl(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return value.split(/[?#]/, 1)[0] ?? value;
-  }
-}
-
-function sanitizeErrorMessage(message: string): string {
-  return message
-    .replace(/https?:\/\/\S+/g, (value) => sanitizeUrl(value) ?? value)
-    .slice(0, 500);
-}
-
-function queueCancellation(err: unknown): QueueJobCancelledError | undefined {
-  if (err instanceof QueueJobCancelledError) {
-    return err;
-  }
-  if (err instanceof Error && err.cause instanceof QueueJobCancelledError) {
-    return err.cause;
-  }
-  return undefined;
-}
-
-function errorCode(err: unknown): string {
-  const cancellation = queueCancellation(err);
-  if (cancellation) {
-    return cancellation.terminalStatus === "interrupted"
-      ? "SERVICE_INTERRUPTED"
-      : "CANCELLED";
-  }
-  if (err instanceof EVisaError) {
-    return err.code;
-  }
-  return "UNKNOWN";
-}
-
-function friendlyErrorMessage(memberName: string, err: unknown): string {
-  const cancellation = queueCancellation(err);
-  if (cancellation) {
-    return cancellation.terminalStatus === "interrupted"
-      ? `Interrupted while processing ${memberName}. I will not keep waiting for a code.`
-      : `Cancelled for ${memberName}.`;
-  }
-
-  const code = err instanceof EVisaError ? err.code : undefined;
   const messages: Partial<Record<EVisaErrorCode, string>> = {
-    FLOW_CANCELLED: `Cancelled for ${memberName}.`,
     TWO_FACTOR_TIMEOUT: `I did not receive the security code for ${memberName} in time. Run it again when the phone or email is nearby.`,
     AUTHENTICATION_FAILED: `GOV.UK rejected the saved details for ${memberName}. Check the document number, date of birth, and document type in /members.`,
     SESSION_EXPIRED: `The GOV.UK session expired for ${memberName}. Please run it again.`,
@@ -187,87 +79,9 @@ function friendlyErrorMessage(memberName: string, err: unknown): string {
   };
 
   return (
-    (code ? messages[code] : undefined) ??
-    `Something went wrong for ${memberName}. The run was logged with code ${errorCode(err)}.`
+    messages[code as EVisaErrorCode] ??
+    `Something went wrong for ${memberName}. The run was logged with code ${code}.`
   );
-}
-
-function eventRecord(event: EVisaEvent): {
-  event_type: string;
-  phase?: string;
-  page_kind?: string;
-  operation?: string;
-  duration_ms?: number;
-  step_id?: string;
-  error_code?: string;
-  message?: string;
-  metadata?: Record<string, unknown>;
-} {
-  switch (event.type) {
-    case "timing":
-      return {
-        event_type: event.type,
-        phase: event.phase,
-        page_kind: event.pageKind,
-        operation: event.operation,
-        duration_ms: event.durationMs,
-        step_id: event.stepId,
-        metadata: { url: sanitizeUrl(event.url) },
-      };
-    case "page_classified":
-      return {
-        event_type: event.type,
-        phase: event.phase,
-        page_kind: event.pageKind,
-        metadata: {
-          confidence: event.confidence,
-          evidence: event.evidence.slice(0, 10),
-        },
-      };
-    case "failed":
-      return {
-        event_type: event.type,
-        phase: event.phase,
-        error_code: event.error.code,
-        message: sanitizeErrorMessage(event.error.message),
-        metadata: {
-          name: event.error.name,
-          retryable: event.error.retryable,
-        },
-      };
-    case "artifact_saved":
-      return {
-        event_type: event.type,
-        phase: event.phase,
-        metadata: {
-          kind: event.artifact.kind,
-          sanitized: event.artifact.sanitized,
-        },
-      };
-    case "completed":
-      return { event_type: event.type, phase: event.phase };
-    case "challenge_required":
-      return {
-        event_type: event.type,
-        phase: event.phase,
-        metadata: {
-          deliveryMethod: event.challenge.deliveryMethod,
-          deadlineMs: event.challenge.deadlineMs,
-        },
-      };
-    default:
-      return { event_type: event.type, phase: event.phase };
-  }
-}
-
-function persistRunEvent(ctx: MyContext, runId: string, event: EVisaEvent): void {
-  const record = eventRecord(event);
-  void insertRunEvent(ctx.db, {
-    run_id: runId,
-    ...record,
-  }).catch((err) => {
-    ctx.log.warn({ err, runId, eventType: event.type }, "Failed to persist run event");
-  });
 }
 
 async function sendBytesDocument(
@@ -279,16 +93,13 @@ async function sendBytesDocument(
     bytes: Uint8Array;
     caption: string;
     runId: string;
-    signal: AbortSignal;
   }
 ): Promise<boolean> {
-  throwIfAborted(params.signal);
   try {
     await ctx.replyWithDocument(
       new InputFile(Buffer.from(params.bytes), params.filename),
       { caption: params.caption }
     );
-    throwIfAborted(params.signal);
     ctx.log.info(
       {
         runId: params.runId,
@@ -299,7 +110,6 @@ async function sendBytesDocument(
     );
     return true;
   } catch (err) {
-    throwIfAborted(params.signal);
     ctx.log.warn(
       { err, runId: params.runId, artifact: params.label },
       "Failed to send artifact"
@@ -329,10 +139,8 @@ async function sendBytesDocumentGroup(
     artifacts: BytesDocumentArtifact[];
     caption: string;
     runId: string;
-    signal: AbortSignal;
   }
 ): Promise<boolean> {
-  throwIfAborted(params.signal);
   try {
     const media = params.artifacts.map((artifact, index) =>
       InputMediaBuilder.document(
@@ -341,7 +149,6 @@ async function sendBytesDocumentGroup(
       )
     );
     await ctx.replyWithMediaGroup(media);
-    throwIfAborted(params.signal);
     ctx.log.info(
       {
         runId: params.runId,
@@ -355,7 +162,6 @@ async function sendBytesDocumentGroup(
     );
     return true;
   } catch (err) {
-    throwIfAborted(params.signal);
     ctx.log.warn(
       { err, runId: params.runId, artifacts: params.artifacts.map((a) => a.label) },
       "Failed to send artifact media group"
@@ -369,8 +175,7 @@ async function sendIndividualArtifacts(
   member: DbFamilyMember,
   result: CreateShareCodeResult,
   artifacts: BytesDocumentArtifact[],
-  runId: string,
-  signal: AbortSignal
+  runId: string
 ): Promise<void> {
   for (const artifact of artifacts) {
     const sent = await sendBytesDocument(ctx, {
@@ -380,7 +185,6 @@ async function sendIndividualArtifacts(
       bytes: artifact.bytes,
       caption: artifact.caption,
       runId,
-      signal,
     });
     if (!sent && artifact.label === "eVisa PDF") {
       await ctx.reply(
@@ -402,8 +206,7 @@ async function sendRunArtifacts(
   ctx: MyContext,
   member: DbFamilyMember,
   result: CreateShareCodeResult,
-  runId: string,
-  signal: AbortSignal
+  runId: string
 ): Promise<void> {
   const validStr = result.validUntil
     ? `\nValid until: ${formatValidUntil(result.validUntil)}`
@@ -434,7 +237,6 @@ async function sendRunArtifacts(
     );
   }
 
-  throwIfAborted(signal);
   if (result.checker?.html?.kind === "bytes") {
     artifacts.push({
       label: "status check HTML",
@@ -449,7 +251,6 @@ async function sendRunArtifacts(
     );
   }
 
-  throwIfAborted(signal);
   if (result.checker?.pdf?.kind === "bytes") {
     artifacts.push({
       label: "status check PDF",
@@ -473,161 +274,221 @@ async function sendRunArtifacts(
       artifacts,
       caption,
       runId,
-      signal,
     });
     if (sent) {
       return;
     }
   }
 
-  await sendIndividualArtifacts(ctx, member, result, artifacts, runId, signal);
+  await sendIndividualArtifacts(ctx, member, result, artifacts, runId);
 }
 
-async function runForMember(params: {
+/**
+ * Rebuild the {@link CreateShareCodeResult} shape `sendRunArtifacts` expects from
+ * the engine's terminal events: the share code/validity come from `completed`
+ * (the trusted server-custody bot receives the unsealed share code) and the
+ * byte artifacts from the `artifact_ready` events collected during the run.
+ *
+ * Only artifacts the engine actually emitted are populated; missing kinds stay
+ * undefined so `sendRunArtifacts` reports them as "not produced" exactly as the
+ * inline orchestration did.
+ */
+function resultFromEvents(
+  completed: Extract<RunEvent, { type: "completed" }>,
+  artifacts: Map<SealedArtifactRef["kind"], SealedArtifactRef>
+): CreateShareCodeResult {
+  const pdfRef = artifacts.get("pdf");
+  const pdf: PdfResult | undefined =
+    pdfRef?.sealed.bytes !== undefined
+      ? {
+          kind: "bytes",
+          bytes: pdfRef.sealed.bytes,
+          filename: pdfRef.filename,
+          contentType: "application/pdf",
+          byteLength: pdfRef.byteLength,
+        }
+      : undefined;
+
+  const htmlRef = artifacts.get("checker_html");
+  const html: HtmlResult | undefined =
+    htmlRef?.sealed.bytes !== undefined
+      ? {
+          kind: "bytes",
+          bytes: htmlRef.sealed.bytes,
+          filename: htmlRef.filename,
+          contentType: "text/html",
+          byteLength: htmlRef.byteLength,
+          standalone: true,
+        }
+      : undefined;
+
+  const checkerPdfRef = artifacts.get("checker_pdf");
+  const checkerPdf: PdfResult | undefined =
+    checkerPdfRef?.sealed.bytes !== undefined
+      ? {
+          kind: "bytes",
+          bytes: checkerPdfRef.sealed.bytes,
+          filename: checkerPdfRef.filename,
+          contentType: "application/pdf",
+          byteLength: checkerPdfRef.byteLength,
+        }
+      : undefined;
+
+  const shareCode = completed.shareCode ?? "";
+  return {
+    shareCode,
+    validUntil: completed.validUntil,
+    pdf,
+    checker: html || checkerPdf ? { shareCode, html, pdf: checkerPdf } : undefined,
+  };
+}
+
+/**
+ * Drives the Telegram UI for one run by subscribing to the engine's event
+ * stream. The engine owns applicant resolution, the queue slot, output sealing,
+ * status transitions, and event persistence; this only renders progress, sends
+ * the 2FA prompt, and delivers artifacts. Resolves with the run's
+ * {@link CreateShareCodeResult} on success, or `null` otherwise.
+ */
+async function driveRun(params: {
   ctx: MyContext;
-  user: { id: string };
   member: DbFamilyMember;
-  trigger: "manual" | "scheduled";
-  tracker: MessageTracker;
   runId: string;
-  signal: AbortSignal;
+  queueMessageId: number;
+  tracker: MessageTracker;
 }): Promise<CreateShareCodeResult | null> {
-  const { ctx, user, member, trigger, tracker, runId, signal } = params;
+  const { ctx, member, runId, queueMessageId, tracker } = params;
   const chatId = ctx.chat?.id;
   const telegramId = ctx.from?.id;
   if (chatId === undefined || telegramId === undefined) {
     return null;
   }
 
-  const log = ctx.log.child({
-    runId,
-    userId: user.id,
-    familyMemberId: member.id,
-    trigger,
-  });
-  const statusMsg = await ctx.reply(
-    `Running eVisa flow for <b>${escapeHtml(member.display_name)}</b>...\nProcessing`,
-    { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
-  );
-  tracker.track(statusMsg.message_id);
-
   const startTime = Date.now();
   let progressPhase = "Processing";
   let lastTiming = "";
-  const progressTimer = setInterval(async () => {
+  let statusMessageId: number | undefined;
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
+  const collectedArtifacts = new Map<SealedArtifactRef["kind"], SealedArtifactRef>();
+  let result: CreateShareCodeResult | null = null;
+
+  const renderStatus = async (): Promise<void> => {
+    if (statusMessageId === undefined) {
+      return;
+    }
     try {
       const timingLine = lastTiming ? `\n${lastTiming}` : "";
       await ctx.api.editMessageText(
         chatId,
-        statusMsg.message_id,
+        statusMessageId,
         `Running eVisa flow for <b>${escapeHtml(member.display_name)}</b>...\n${progressPhase} (${formatElapsed(Date.now() - startTime)})${timingLine}`,
         { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
       );
     } catch {
       // Message may be gone or unchanged
     }
-  }, 5000);
+  };
+
+  const startRunningStatus = async (): Promise<void> => {
+    if (statusMessageId !== undefined) {
+      return;
+    }
+    try {
+      await ctx.api.editMessageText(
+        chatId,
+        queueMessageId,
+        `<b>${escapeHtml(member.display_name)}</b> is starting now...`,
+        { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
+      );
+    } catch {
+      // Message may be gone
+    }
+    const statusMsg = await ctx.reply(
+      `Running eVisa flow for <b>${escapeHtml(member.display_name)}</b>...\nProcessing`,
+      { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
+    );
+    statusMessageId = statusMsg.message_id;
+    tracker.track(statusMessageId);
+    progressTimer = setInterval(() => {
+      void renderStatus();
+    }, 5000);
+  };
 
   try {
-    await updateRunStatus(
-      ctx.db,
-      runId,
-      { status: "running" },
-      { throwOnConflict: true }
-    );
-    const applicant = buildApplicant(member, ctx.env.ENCRYPTION_KEY);
-    const result = await executeRun({
-      requestId: runId,
-      applicant,
-      purpose: member.purpose as Purpose,
-      twoFactorMethod: member.preferred_2fa_method as TwoFactorMethod,
-      headless: ctx.env.EVISA_HEADLESS,
-      diagnosticsMode: ctx.env.EVISA_DIAGNOSTICS_MODE,
-      signal,
-      telegramId,
-      chatId,
-      memberName: member.display_name,
-      onEvent: (event: EVisaEvent) => {
-        persistRunEvent(ctx, runId, event);
-        log.info({ event: eventRecord(event) }, "eVisa event");
-        if (event.type === "phase_changed" || event.type === "page_classified") {
-          progressPhase = phaseLabels[event.phase] ?? progressPhase;
-          return;
+    for await (const ev of ctx.engine.subscribe(runId)) {
+      switch (ev.type) {
+        case "queued":
+          try {
+            await ctx.api.editMessageText(
+              chatId,
+              queueMessageId,
+              [
+                `<b>${escapeHtml(member.display_name)}</b> queued`,
+                `Position: #${ev.position}`,
+                `Active browser runs: ${ev.active}`,
+              ].join("\n"),
+              { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
+            );
+          } catch {
+            // Message may be gone
+          }
+          break;
+        case "started":
+          await startRunningStatus();
+          break;
+        case "phase":
+          await startRunningStatus();
+          progressPhase = ev.label;
+          break;
+        case "timing":
+          if (ev.operation === "step" && ev.stepId) {
+            lastTiming = `Last step: ${escapeHtml(ev.stepId)} ${Math.round(ev.durationMs)}ms`;
+          } else if (ev.durationMs >= 1_000) {
+            lastTiming = `Last ${escapeHtml(ev.operation)}: ${Math.round(ev.durationMs)}ms`;
+          }
+          break;
+        case "challenge_required": {
+          progressPhase = "Waiting for 2FA";
+          const promptMsg = await ctx.reply(
+            [
+              `<b>2FA Required — ${escapeHtml(member.display_name)}</b>`,
+              "",
+              `A code was sent via <b>${ev.method.toUpperCase()}</b>.`,
+              "Reply with the code or send it as the next message.",
+            ].join("\n"),
+            { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
+          );
+          tracker.track(promptMsg.message_id);
+          // Bind the Telegram delivery context so the reply-matching middleware
+          // can route the user's code back to this run's pending 2FA request.
+          bindTelegramRoute(runId, {
+            telegramId,
+            chatId,
+            promptMessageId: promptMsg.message_id,
+          });
+          break;
         }
-
-        if (event.type !== "timing") {
-          return;
-        }
-
-        if (event.operation === "step" && event.stepId) {
-          lastTiming = `Last step: ${escapeHtml(event.stepId)} ${Math.round(event.durationMs)}ms`;
-        } else if (event.durationMs >= 1_000) {
-          lastTiming = `Last ${escapeHtml(event.operation)}: ${Math.round(event.durationMs)}ms`;
-        }
-      },
-      onTwoFactorNeeded: async (method: TwoFactorMethod) => {
-        progressPhase = "Waiting for 2FA";
-        await updateRunStatus(
-          ctx.db,
-          runId,
-          { status: "awaiting_2fa" },
-          { throwOnConflict: true }
-        );
-        const promptMsg = await ctx.reply(
-          [
-            `<b>2FA Required — ${escapeHtml(member.display_name)}</b>`,
-            "",
-            `A code was sent via <b>${method.toUpperCase()}</b>.`,
-            "Reply with the code or send it as the next message.",
-          ].join("\n"),
-          { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
-        );
-        tracker.track(promptMsg.message_id);
-        return promptMsg.message_id;
-      },
-    });
-
-    throwIfAborted(signal);
-    const markedSuccess = await updateRunStatus(ctx.db, runId, {
-      status: "success",
-      encrypted_share_code: encrypt(result.shareCode, ctx.env.ENCRYPTION_KEY),
-      valid_until: result.validUntil,
-    });
-    if (!markedSuccess) {
-      throw (
-        abortReason(signal) ??
-        new QueueJobCancelledError("Run is no longer active", "interrupted")
-      );
+        case "artifact_ready":
+          collectedArtifacts.set(ev.artifact.kind, ev.artifact);
+          break;
+        case "completed":
+          result = resultFromEvents(ev, collectedArtifacts);
+          await sendRunArtifacts(ctx, member, result, runId);
+          break;
+        case "failed":
+          await ctx.reply(friendlyErrorMessage(member.display_name, ev.code));
+          break;
+        default:
+          break;
+      }
     }
-
-    await sendRunArtifacts(ctx, member, result, runId, signal);
-    return result;
-  } catch (err) {
-    const code = errorCode(err);
-    const cancellation = queueCancellation(err);
-    const status = cancellation
-      ? cancellation.terminalStatus
-      : code === "FLOW_CANCELLED"
-        ? "cancelled"
-        : "failed";
-    await updateRunStatus(ctx.db, runId, {
-      status,
-      error_code: code,
-      error_message: sanitizeErrorMessage(
-        err instanceof Error ? err.message : String(err)
-      ),
-    }).catch((updateError) => {
-      log.warn({ err: updateError, status }, "Failed to update run terminal status");
-    });
-    log.warn(
-      { err, code, status },
-      status === "cancelled" ? "Run cancelled" : "Run failed"
-    );
-    await ctx.reply(friendlyErrorMessage(member.display_name, err));
-    throw err;
   } finally {
-    clearInterval(progressTimer);
+    if (progressTimer) {
+      clearInterval(progressTimer);
+    }
   }
+
+  return result;
 }
 
 export async function runCommand(ctx: MyContext): Promise<void> {
@@ -676,19 +537,12 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
     if (!user) return;
 
     const tracker = new MessageTracker(chatId, ctx.api);
-    const handles: Array<ReturnType<typeof enqueue>["handle"]> = [];
-    let successCount = 0;
+    const drivers: Array<Promise<CreateShareCodeResult | null>> = [];
 
     for (const member of members) {
-      const key = `${telegramId}:${member.id}`;
-      if (hasJob(key)) {
-        await ctx.reply(
-          `<b>${escapeHtml(member.display_name)}</b> is already queued or running.`,
-          { parse_mode: "HTML" }
-        );
-        continue;
-      }
-
+      // Dedup is enforced by the partial unique index
+      // `idx_runs_one_active_per_member`: a second non-terminal run for the same
+      // member makes `insertRun` throw, which we surface as "already queued".
       let runRecord: DbRun;
       try {
         runRecord = await insertRun(ctx.db, {
@@ -711,52 +565,21 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       );
       tracker.track(queueMsg.message_id);
 
-      const result = enqueue({
-        id: runRecord.id,
-        key,
-        telegramId,
-        memberName: member.display_name,
-        execute: async (signal) => {
-          await runForMember({
-            ctx,
-            user,
-            member,
-            trigger,
-            tracker,
-            runId: runRecord.id,
-            signal,
-          });
-          successCount += 1;
+      const enqueueResult = ctx.engine.enqueueRun({
+        runId: runRecord.id,
+        ownerKey: String(telegramId),
+        custody: "server",
+        applicant: {
+          kind: "memberRef",
+          userId: user.id,
+          familyMemberId: member.id,
         },
-        onPositionUpdate: async (pos: number) => {
-          try {
-            if (pos === 0) {
-              await ctx.api.editMessageText(
-                chatId,
-                queueMsg.message_id,
-                `<b>${escapeHtml(member.display_name)}</b> is starting now...`,
-                { parse_mode: "HTML", reply_markup: cancelKeyboard(runRecord.id) }
-              );
-            } else {
-              const stats = getQueueStats();
-              await ctx.api.editMessageText(
-                chatId,
-                queueMsg.message_id,
-                [
-                  `<b>${escapeHtml(member.display_name)}</b> queued`,
-                  `Position: #${pos}`,
-                  `Active browser runs: ${stats.active}`,
-                ].join("\n"),
-                { parse_mode: "HTML", reply_markup: cancelKeyboard(runRecord.id) }
-              );
-            }
-          } catch {
-            // Message may be gone
-          }
-        },
+        trigger,
+        headless: ctx.env.EVISA_HEADLESS,
+        diagnosticsMode: ctx.env.EVISA_DIAGNOSTICS_MODE,
       });
 
-      if (!result.accepted) {
+      if (!enqueueResult.accepted) {
         await updateRunStatus(ctx.db, runRecord.id, {
           status: "cancelled",
           error_code: "DUPLICATE_RUN",
@@ -769,21 +592,32 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
         continue;
       }
 
-      handles.push(result.handle);
+      drivers.push(
+        driveRun({
+          ctx,
+          member,
+          runId: runRecord.id,
+          queueMessageId: queueMsg.message_id,
+          tracker,
+        })
+      );
     }
 
-    if (handles.length === 0) {
+    if (drivers.length === 0) {
       await tracker.cleanup();
       return;
     }
 
-    void Promise.allSettled(handles.map((handle) => handle.done))
-      .then(async () => {
+    void Promise.allSettled(drivers)
+      .then(async (outcomes) => {
         await tracker.cleanup();
         if (members.length > 1) {
+          const successCount = outcomes.filter(
+            (outcome) => outcome.status === "fulfilled" && outcome.value !== null
+          ).length;
           await ctx.api.sendMessage(
             chatId,
-            `<b>All done!</b> ${successCount}/${handles.length} run${handles.length > 1 ? "s" : ""} completed successfully.`,
+            `<b>All done!</b> ${successCount}/${drivers.length} run${drivers.length > 1 ? "s" : ""} completed successfully.`,
             { parse_mode: "HTML" }
           );
         }
@@ -805,7 +639,7 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       return;
     }
 
-    const cancelled = cancelJob(runId);
+    const cancelled = ctx.engine.cancel(runId, "Cancelled by user");
     if (cancelled) {
       await updateRunStatus(ctx.db, runId, {
         status: "cancelled",

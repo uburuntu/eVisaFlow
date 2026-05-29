@@ -5,12 +5,14 @@ import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
 import { startHealthServer } from "./health.js";
 import { assertSupabaseReady, assertTelegramReady } from "./readiness.js";
+import { createEvisaRunJob } from "./runner/evisa-run-job.js";
 import {
   cancelAllJobs,
   getQueueStats,
   setConcurrency,
   waitForIdle,
 } from "./runner/queue.js";
+import { createRunEngine } from "./runner/run-engine.js";
 import { startScheduler } from "./scheduler/cron.js";
 import { createLogger } from "./utils/logger.js";
 
@@ -70,7 +72,17 @@ async function main(): Promise<void> {
   const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   setConcurrency(env.QUEUE_CONCURRENCY);
 
-  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log);
+  // Single run engine drives every queued run (bot today, web later). It owns
+  // applicant resolution, the queue slot, run-event publishing, output sealing,
+  // and DB persistence; the bot subscribes to drive the Telegram UI.
+  const engine = createRunEngine({
+    runJob: createEvisaRunJob(),
+    db,
+    serverKeyHex: env.ENCRYPTION_KEY,
+    logger: log,
+  });
+
+  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine);
 
   try {
     const username = await assertTelegramReady(bot);

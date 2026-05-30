@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Db } from "./client.js";
 
 export const NON_TERMINAL_RUN_STATUSES = ["pending", "running", "awaiting_2fa"] as const;
 export const TERMINAL_RUN_STATUSES = [
@@ -35,7 +35,7 @@ export interface DbRun {
 }
 
 export async function insertRun(
-  db: SupabaseClient,
+  db: Db,
   run: {
     user_id: string;
     family_member_id: string;
@@ -56,7 +56,7 @@ export async function insertRun(
 }
 
 export async function updateRunStatus(
-  db: SupabaseClient,
+  db: Db,
   runId: string,
   update: {
     status: RunStatus;
@@ -96,7 +96,7 @@ export async function updateRunStatus(
 }
 
 export async function insertRunEvent(
-  db: SupabaseClient,
+  db: Db,
   event: {
     run_id: string;
     event_type: string;
@@ -115,7 +115,7 @@ export async function insertRunEvent(
 }
 
 export async function markNonTerminalRunsInterrupted(
-  db: SupabaseClient,
+  db: Db,
   reason: string,
   options: {
     runIds?: string[];

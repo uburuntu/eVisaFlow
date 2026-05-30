@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Db } from "./client.js";
 
 export interface DbUser {
   id: string;
@@ -11,7 +11,7 @@ export interface DbUser {
 }
 
 export async function upsertUser(
-  db: SupabaseClient,
+  db: Db,
   telegramId: number,
   firstName: string,
   handle: string | null,
@@ -37,7 +37,7 @@ export async function upsertUser(
 }
 
 export async function getUserByTelegramId(
-  db: SupabaseClient,
+  db: Db,
   telegramId: number
 ): Promise<DbUser | null> {
   const { data, error } = await db
@@ -49,7 +49,7 @@ export async function getUserByTelegramId(
   return data;
 }
 
-export async function getUsersDueForSchedule(db: SupabaseClient): Promise<DbUser[]> {
+export async function getUsersDueForSchedule(db: Db): Promise<DbUser[]> {
   const { data, error } = await db
     .from("users")
     .select()
@@ -60,7 +60,7 @@ export async function getUsersDueForSchedule(db: SupabaseClient): Promise<DbUser
 }
 
 export async function advanceSchedule(
-  db: SupabaseClient,
+  db: Db,
   userId: string,
   intervalDays: number
 ): Promise<void> {

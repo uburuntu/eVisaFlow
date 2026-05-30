@@ -1,6 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Applicant, IdentityDocument, Purpose, TwoFactorMethod } from "evisa-flow";
 import { decrypt } from "../crypto/encryption.js";
+import type { Db } from "../db/client.js";
 import { type DbFamilyMember, getFamilyMemberById } from "../db/family-members.js";
 import type { Logger } from "../utils/logger.js";
 import type { RunApplicantInput } from "./run-types.js";
@@ -14,7 +14,7 @@ export interface ResolvedSecret {
 }
 
 export interface SecretResolverDeps {
-  db?: SupabaseClient;
+  db?: Db;
   serverKeyHex?: string;
   log?: Logger;
   /** Injectable for tests; defaults to the real DB accessor. */

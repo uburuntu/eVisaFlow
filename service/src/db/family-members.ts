@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Db } from "./client.js";
 
 export interface DbFamilyMember {
   id: string;
@@ -18,7 +18,7 @@ export interface DbFamilyMember {
 }
 
 export async function addFamilyMember(
-  db: SupabaseClient,
+  db: Db,
   member: {
     user_id: string;
     display_name: string;
@@ -41,7 +41,7 @@ export async function addFamilyMember(
 }
 
 export async function getActiveFamilyMembers(
-  db: SupabaseClient,
+  db: Db,
   userId: string
 ): Promise<DbFamilyMember[]> {
   const { data, error } = await db
@@ -55,7 +55,7 @@ export async function getActiveFamilyMembers(
 }
 
 export async function getFamilyMemberById(
-  db: SupabaseClient,
+  db: Db,
   memberId: string,
   userId: string
 ): Promise<DbFamilyMember | null> {
@@ -70,7 +70,7 @@ export async function getFamilyMemberById(
 }
 
 export async function deactivateFamilyMember(
-  db: SupabaseClient,
+  db: Db,
   memberId: string,
   userId: string
 ): Promise<void> {
@@ -82,10 +82,7 @@ export async function deactivateFamilyMember(
   if (error) throw error;
 }
 
-export async function countActiveFamilyMembers(
-  db: SupabaseClient,
-  userId: string
-): Promise<number> {
+export async function countActiveFamilyMembers(db: Db, userId: string): Promise<number> {
   const { count, error } = await db
     .from("family_members")
     .select("*", { count: "exact", head: true })

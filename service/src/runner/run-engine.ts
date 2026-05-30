@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Applicant,
   CreateShareCodeResult,
@@ -9,6 +8,7 @@ import type {
   TwoFactorMethod,
 } from "evisa-flow";
 import { encrypt as defaultEncrypt } from "../crypto/encryption.js";
+import type { Db } from "../db/client.js";
 import {
   insertRunEvent as defaultInsertRunEvent,
   updateRunStatus as defaultUpdateRunStatus,
@@ -63,7 +63,7 @@ export interface RunEngineDeps {
    * persistence subscriber per run that maps {@link RunEvent}s to the
    * `db/runs` helpers. The same handle backs the server-custody resolver.
    */
-  db?: SupabaseClient;
+  db?: Db;
   /** Server AES key (hex) for server custody. Required for `memberRef` runs. */
   serverKeyHex?: string;
   enqueue?: typeof defaultEnqueue;
@@ -288,7 +288,7 @@ async function persistRunEvents(
   runId: string,
   events: AsyncIterable<RunEvent>,
   deps: {
-    db: SupabaseClient;
+    db: Db;
     updateRunStatus: typeof defaultUpdateRunStatus;
     insertRunEvent: typeof defaultInsertRunEvent;
     log: Logger;

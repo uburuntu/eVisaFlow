@@ -1,7 +1,7 @@
 import { conversations } from "@grammyjs/conversations";
 import { sequentialize } from "@grammyjs/runner";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { Bot, type Context, session } from "grammy";
+import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
 import type { RunEngine } from "../runner/run-engine.js";
 import type { Logger } from "../utils/logger.js";
@@ -42,7 +42,7 @@ const sequentialKey = (ctx: Context): string[] | undefined => {
 
 export function createBot(
   token: string,
-  db: SupabaseClient,
+  db: Db,
   env: Env,
   log: Logger,
   engine: RunEngine,

@@ -1,8 +1,6 @@
 import type { Bot } from "grammy";
 import type { MyContext } from "./bot/context.js";
-import type { getSupabase } from "./db/client.js";
-
-type Supabase = ReturnType<typeof getSupabase>;
+import type { Db } from "./db/client.js";
 
 async function assertNoError(label: string, error: unknown): Promise<void> {
   if (error) {
@@ -10,7 +8,7 @@ async function assertNoError(label: string, error: unknown): Promise<void> {
   }
 }
 
-export async function assertSupabaseReady(db: Supabase): Promise<void> {
+export async function assertSupabaseReady(db: Db): Promise<void> {
   const users = await db
     .from("users")
     .select("id", { count: "exact", head: true })

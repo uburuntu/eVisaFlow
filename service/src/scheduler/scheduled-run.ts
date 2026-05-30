@@ -1,7 +1,7 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Bot } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { MyContext } from "../bot/context.js";
+import type { Db } from "../db/client.js";
 import { getActiveFamilyMembers } from "../db/family-members.js";
 import { advanceSchedule, getUsersDueForSchedule } from "../db/users.js";
 import type { Env } from "../env.js";
@@ -13,7 +13,7 @@ function escapeHtml(text: string): string {
 
 export async function runScheduledChecks(
   bot: Bot<MyContext>,
-  db: SupabaseClient,
+  db: Db,
   env: Env,
   log: Logger
 ): Promise<void> {

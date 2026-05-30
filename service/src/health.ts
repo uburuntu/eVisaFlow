@@ -10,6 +10,9 @@ export interface HealthSnapshot {
     username?: string;
     runnerRunning?: boolean;
   };
+  db?: {
+    ready: boolean;
+  };
   supabase?: {
     ready: boolean;
   };

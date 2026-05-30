@@ -1,11 +1,11 @@
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
 import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
-import { getSupabase } from "./db/client.js";
+import { closeDb, createDb } from "./db/client.js";
 import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
 import { startHealthServer } from "./health.js";
-import { assertSupabaseReady, assertTelegramReady } from "./readiness.js";
+import { assertDbReady, assertTelegramReady } from "./readiness.js";
 import { createEvisaRunJob } from "./runner/evisa-run-job.js";
 import {
   cancelAllJobs,
@@ -25,14 +25,13 @@ interface RuntimeState {
   startedAt: string;
   telegramReady: boolean;
   telegramUsername?: string;
-  supabaseReady: boolean;
+  dbReady: boolean;
   runnerRunning: boolean;
 }
 
 function healthSnapshot(state: RuntimeState) {
   return {
-    ready:
-      state.ready && state.telegramReady && state.supabaseReady && state.runnerRunning,
+    ready: state.ready && state.telegramReady && state.dbReady && state.runnerRunning,
     shuttingDown: state.shuttingDown,
     startedAt: state.startedAt,
     telegram: {
@@ -40,8 +39,8 @@ function healthSnapshot(state: RuntimeState) {
       username: state.telegramUsername,
       runnerRunning: state.runnerRunning,
     },
-    supabase: {
-      ready: state.supabaseReady,
+    db: {
+      ready: state.dbReady,
     },
     queue: getQueueStats(),
   };
@@ -65,12 +64,12 @@ async function main(): Promise<void> {
     shuttingDown: false,
     startedAt: new Date().toISOString(),
     telegramReady: false,
-    supabaseReady: false,
+    dbReady: false,
     runnerRunning: false,
   };
 
   const health = startHealthServer(env.HEALTH_PORT, log, () => healthSnapshot(state));
-  const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const db = createDb(env.DATABASE_URL);
   setConcurrency(env.QUEUE_CONCURRENCY);
 
   // Single run engine drives every queued run (bot today, web later). It owns
@@ -94,8 +93,8 @@ async function main(): Promise<void> {
     const username = await assertTelegramReady(bot);
     state.telegramReady = true;
     state.telegramUsername = username;
-    await assertSupabaseReady(db);
-    state.supabaseReady = true;
+    await assertDbReady(db);
+    state.dbReady = true;
     await markNonTerminalRunsInterrupted(
       db,
       "Service restarted before the run completed"
@@ -155,6 +154,9 @@ async function main(): Promise<void> {
       { runIds: interruptedRunIds }
     ).catch((err) => {
       log.warn({ err }, "Failed to mark interrupted runs");
+    });
+    await closeDb(db).catch((err) => {
+      log.warn({ err }, "Failed to close database pool");
     });
     await health.close().catch((err) => {
       log.warn({ err }, "Failed to close health server");

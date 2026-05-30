@@ -1,8 +1,8 @@
 import { createBot } from "./bot/bot.js";
 import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
-import { getSupabase } from "./db/client.js";
+import { closeDb, createDb } from "./db/client.js";
 import { loadEnv, redactedEnvSummary } from "./env.js";
-import { assertSupabaseReady, assertTelegramReady } from "./readiness.js";
+import { assertDbReady, assertTelegramReady } from "./readiness.js";
 import { createEvisaRunJob } from "./runner/evisa-run-job.js";
 import { createRunEngine } from "./runner/run-engine.js";
 import { createLogger } from "./utils/logger.js";
@@ -12,7 +12,7 @@ async function main(): Promise<void> {
   const env = loadEnv();
   log.info({ env: redactedEnvSummary(env) }, "Loaded service configuration");
 
-  const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const db = createDb(env.DATABASE_URL);
   const engine = createRunEngine({
     runJob: createEvisaRunJob(),
     db,
@@ -22,9 +22,13 @@ async function main(): Promise<void> {
   const twoFactor = createTwoFactorAdapter(engine);
   const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
 
-  const username = await assertTelegramReady(bot);
-  await assertSupabaseReady(db);
-  log.info({ botUsername: username }, "Service preflight passed");
+  try {
+    const username = await assertTelegramReady(bot);
+    await assertDbReady(db);
+    log.info({ botUsername: username }, "Service preflight passed");
+  } finally {
+    await closeDb(db).catch(() => {});
+  }
 }
 
 main().catch((err) => {

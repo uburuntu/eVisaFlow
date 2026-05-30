@@ -1,4 +1,6 @@
+import { and, asc, count, eq } from "drizzle-orm";
 import type { Db } from "./client.js";
+import { familyMembers } from "./schema.js";
 
 export interface DbFamilyMember {
   id: string;
@@ -17,6 +19,27 @@ export interface DbFamilyMember {
   updated_at: string;
 }
 
+type FamilyMemberRow = typeof familyMembers.$inferSelect;
+
+function toDbFamilyMember(row: FamilyMemberRow): DbFamilyMember {
+  return {
+    id: row.id,
+    user_id: row.userId,
+    display_name: row.displayName,
+    auth_type: row.authType,
+    encrypted_doc_number: row.encryptedDocNumber,
+    dob_day: row.dobDay,
+    dob_month: row.dobMonth,
+    dob_year: row.dobYear,
+    preferred_2fa_method: row.preferred2faMethod,
+    purpose: row.purpose,
+    is_active: row.isActive,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
+}
+
 export async function addFamilyMember(
   db: Db,
   member: {
@@ -31,27 +54,35 @@ export async function addFamilyMember(
     purpose: string;
   }
 ): Promise<DbFamilyMember> {
-  const { data, error } = await db
-    .from("family_members")
-    .insert(member)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  // The max-6-active limit is enforced by the `trg_max_family_members` trigger;
+  // a violation surfaces as a thrown pg error, preserving prior behaviour.
+  const [row] = await db
+    .insert(familyMembers)
+    .values({
+      userId: member.user_id,
+      displayName: member.display_name,
+      authType: member.auth_type,
+      encryptedDocNumber: member.encrypted_doc_number,
+      dobDay: member.dob_day,
+      dobMonth: member.dob_month,
+      dobYear: member.dob_year,
+      preferred2faMethod: member.preferred_2fa_method,
+      purpose: member.purpose,
+    })
+    .returning();
+  return toDbFamilyMember(row);
 }
 
 export async function getActiveFamilyMembers(
   db: Db,
   userId: string
 ): Promise<DbFamilyMember[]> {
-  const { data, error } = await db
-    .from("family_members")
+  const rows = await db
     .select()
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+    .from(familyMembers)
+    .where(and(eq(familyMembers.userId, userId), eq(familyMembers.isActive, true)))
+    .orderBy(asc(familyMembers.sortOrder));
+  return rows.map(toDbFamilyMember);
 }
 
 export async function getFamilyMemberById(
@@ -59,14 +90,12 @@ export async function getFamilyMemberById(
   memberId: string,
   userId: string
 ): Promise<DbFamilyMember | null> {
-  const { data, error } = await db
-    .from("family_members")
+  const [row] = await db
     .select()
-    .eq("id", memberId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+    .from(familyMembers)
+    .where(and(eq(familyMembers.id, memberId), eq(familyMembers.userId, userId)))
+    .limit(1);
+  return row ? toDbFamilyMember(row) : null;
 }
 
 export async function deactivateFamilyMember(
@@ -74,20 +103,16 @@ export async function deactivateFamilyMember(
   memberId: string,
   userId: string
 ): Promise<void> {
-  const { error } = await db
-    .from("family_members")
-    .update({ is_active: false })
-    .eq("id", memberId)
-    .eq("user_id", userId);
-  if (error) throw error;
+  await db
+    .update(familyMembers)
+    .set({ isActive: false })
+    .where(and(eq(familyMembers.id, memberId), eq(familyMembers.userId, userId)));
 }
 
 export async function countActiveFamilyMembers(db: Db, userId: string): Promise<number> {
-  const { count, error } = await db
-    .from("family_members")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("is_active", true);
-  if (error) throw error;
-  return count ?? 0;
+  const [row] = await db
+    .select({ value: count() })
+    .from(familyMembers)
+    .where(and(eq(familyMembers.userId, userId), eq(familyMembers.isActive, true)));
+  return row?.value ?? 0;
 }

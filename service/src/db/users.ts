@@ -1,4 +1,6 @@
+import { and, eq, isNotNull, lte } from "drizzle-orm";
 import type { Db } from "./client.js";
+import { users } from "./schema.js";
 
 export interface DbUser {
   id: string;
@@ -10,6 +12,20 @@ export interface DbUser {
   updated_at: string;
 }
 
+type UserRow = typeof users.$inferSelect;
+
+function toDbUser(row: UserRow): DbUser {
+  return {
+    id: row.id,
+    telegram_id: row.telegramId,
+    telegram_handle: row.telegramHandle,
+    first_name: row.firstName,
+    next_scheduled_at: row.nextScheduledAt,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
+}
+
 export async function upsertUser(
   db: Db,
   telegramId: number,
@@ -17,46 +33,48 @@ export async function upsertUser(
   handle: string | null,
   scheduleIntervalDays: number
 ): Promise<DbUser> {
-  const { data, error } = await db
-    .from("users")
-    .upsert(
-      {
-        telegram_id: telegramId,
-        first_name: firstName,
-        telegram_handle: handle,
-        next_scheduled_at: new Date(
-          Date.now() + scheduleIntervalDays * 86_400_000
-        ).toISOString(),
+  const nextScheduledAt = new Date(
+    Date.now() + scheduleIntervalDays * 86_400_000
+  ).toISOString();
+  const [row] = await db
+    .insert(users)
+    .values({
+      telegramId,
+      firstName,
+      telegramHandle: handle,
+      nextScheduledAt,
+    })
+    .onConflictDoUpdate({
+      target: users.telegramId,
+      set: {
+        firstName,
+        telegramHandle: handle,
+        nextScheduledAt,
       },
-      { onConflict: "telegram_id" }
-    )
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+    })
+    .returning();
+  return toDbUser(row);
 }
 
 export async function getUserByTelegramId(
   db: Db,
   telegramId: number
 ): Promise<DbUser | null> {
-  const { data, error } = await db
-    .from("users")
+  const [row] = await db
     .select()
-    .eq("telegram_id", telegramId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+    .from(users)
+    .where(eq(users.telegramId, telegramId))
+    .limit(1);
+  return row ? toDbUser(row) : null;
 }
 
 export async function getUsersDueForSchedule(db: Db): Promise<DbUser[]> {
-  const { data, error } = await db
-    .from("users")
+  const now = new Date().toISOString();
+  const rows = await db
     .select()
-    .lte("next_scheduled_at", new Date().toISOString())
-    .not("next_scheduled_at", "is", null);
-  if (error) throw error;
-  return (data ?? []) as DbUser[];
+    .from(users)
+    .where(and(lte(users.nextScheduledAt, now), isNotNull(users.nextScheduledAt)));
+  return rows.map(toDbUser);
 }
 
 export async function advanceSchedule(
@@ -65,9 +83,5 @@ export async function advanceSchedule(
   intervalDays: number
 ): Promise<void> {
   const nextDate = new Date(Date.now() + intervalDays * 86_400_000).toISOString();
-  const { error } = await db
-    .from("users")
-    .update({ next_scheduled_at: nextDate })
-    .eq("id", userId);
-  if (error) throw error;
+  await db.update(users).set({ nextScheduledAt: nextDate }).where(eq(users.id, userId));
 }

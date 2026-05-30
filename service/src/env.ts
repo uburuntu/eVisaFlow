@@ -26,6 +26,14 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   SUPABASE_URL: z.url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Portable Postgres connection string for the Drizzle + pg handle. Defaults to
+  // a local instance for self-host/dev; a later phase formalises this alongside
+  // the rest of the web/self-host env. SAFETY: only ever point this at a
+  // local/ephemeral Postgres, never a managed production database.
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .default("postgres://postgres:postgres@localhost:5432/evisaflow"),
   ENCRYPTION_KEY: z
     .string()
     .length(64)
@@ -58,9 +66,21 @@ export function loadEnv(): Env {
   return cached;
 }
 
+/** Extracts `host:port/database` from a connection string, dropping credentials. */
+function safeDbHost(databaseUrl: string): string {
+  try {
+    const url = new URL(databaseUrl);
+    const db = url.pathname.replace(/^\//, "");
+    return db ? `${url.host}/${db}` : url.host;
+  } catch {
+    return "<unparseable>";
+  }
+}
+
 export function redactedEnvSummary(env: Env): Record<string, unknown> {
   return {
     supabaseUrl: env.SUPABASE_URL,
+    databaseHost: safeDbHost(env.DATABASE_URL),
     queueConcurrency: env.QUEUE_CONCURRENCY,
     evisaHeadless: env.EVISA_HEADLESS,
     diagnosticsMode: env.EVISA_DIAGNOSTICS_MODE,

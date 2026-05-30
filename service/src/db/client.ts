@@ -1,18 +1,38 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { schema } from "./schema.js";
 
 /**
- * Stable database handle type used across the service. Currently an alias of
- * the Supabase client; a later phase swaps the underlying implementation to a
- * portable Postgres client without changing this seam or any `db/*` signatures.
+ * Stable database handle type used across the service. It is a Drizzle
+ * `node-postgres` database bound to the full {@link schema}; every `db/*` query
+ * module accepts this as its first argument. The seam (and all `db/*`
+ * signatures) is unchanged from the previous Supabase implementation — only the
+ * underlying driver moved to portable Postgres (Drizzle + `pg`).
  */
-export type Db = SupabaseClient;
+export type Db = NodePgDatabase<typeof schema>;
 
-let client: SupabaseClient | undefined;
+/**
+ * Builds a portable Postgres handle from a connection string.
+ *
+ * SAFETY: `databaseUrl` must point at a local/self-hosted Postgres. Never aim a
+ * service instance (or migrations) at a managed/production database that the
+ * legacy schema migrations were not designed to touch.
+ */
+export function createDb(databaseUrl: string): Db {
+  const pool = new Pool({ connectionString: databaseUrl });
+  return drizzle(pool, { schema });
+}
 
-export function getSupabase(url: string, serviceRoleKey: string): SupabaseClient {
-  if (client) return client;
-  client = createClient(url, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  return client;
+/**
+ * Returns the underlying `pg` connection pool for a handle so callers (the
+ * graceful-shutdown path, tests) can close it. Drizzle exposes the client it
+ * was built with on `$client`.
+ */
+export function getPool(db: Db): Pool {
+  return (db as Db & { $client: Pool }).$client;
+}
+
+/** Closes the connection pool backing a handle. Idempotent-safe to await once. */
+export async function closeDb(db: Db): Promise<void> {
+  await getPool(db).end();
 }

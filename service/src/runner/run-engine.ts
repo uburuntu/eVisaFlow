@@ -7,13 +7,19 @@ import type {
   Purpose,
   TwoFactorMethod,
 } from "evisa-flow";
-import { encrypt as defaultEncrypt } from "../crypto/encryption.js";
+import {
+  type CustodyProvider,
+  clientCustody as defaultClientCustody,
+  serverCustody as defaultServerCustody,
+} from "../crypto/custody.js";
+import { ready as sealReady, toBase64 } from "../crypto/seal.js";
 import type { Db } from "../db/client.js";
 import {
   insertRunEvent as defaultInsertRunEvent,
   updateRunStatus as defaultUpdateRunStatus,
 } from "../db/runs.js";
 import { createLogger, type Logger } from "../utils/logger.js";
+import type { ArtifactStore } from "./artifact-store.js";
 import {
   enqueue as defaultEnqueue,
   getQueueStats,
@@ -26,12 +32,39 @@ import { createInMemoryRunBus } from "./run-bus.js";
 import type {
   EnqueueResult,
   EnqueueRunInput,
+  RunCustody,
   RunEvent,
   RunSnapshot,
   SealedArtifactRef,
 } from "./run-types.js";
 import { SecretResolver } from "./secret-resolver.js";
 import { resolveCode as defaultResolveCode } from "./two-factor-store.js";
+
+/**
+ * Picks the {@link CustodyProvider} for a run from its {@link RunCustody}.
+ *
+ * - `server` (the trusted bot): AES-GCM with the server key. Requires
+ *   `serverKeyHex`.
+ * - `client` (the web app, E2EE): anonymous `crypto_box_seal` to the recipient's
+ *   public key. Holds no server key.
+ *
+ * Injectable through {@link RunEngineDeps.selectCustody} so tests can stub the
+ * crypto; the default wires the real {@link serverCustody}/{@link clientCustody}.
+ */
+export type SelectCustody = (
+  custody: RunCustody,
+  serverKeyHex: string | undefined
+) => CustodyProvider;
+
+const defaultSelectCustody: SelectCustody = (custody, serverKeyHex) => {
+  if (custody === "server") {
+    if (!serverKeyHex) {
+      throw new Error("RunEngine: serverKeyHex is required for server custody");
+    }
+    return defaultServerCustody(serverKeyHex);
+  }
+  return defaultClientCustody();
+};
 
 /**
  * What a queued job receives. Tests inject a stub `runJob` so no Playwright is
@@ -68,8 +101,20 @@ export interface RunEngineDeps {
   serverKeyHex?: string;
   enqueue?: typeof defaultEnqueue;
   resolveCode?: (runId: string, code: string) => boolean;
-  /** Injectable AES-GCM encrypt (server custody share-code sealing). */
-  encrypt?: typeof defaultEncrypt;
+  /**
+   * Selects the {@link CustodyProvider} for a run from its custody. Defaults to
+   * the real `serverCustody`/`clientCustody` wiring; injectable in tests.
+   */
+  selectCustody?: SelectCustody;
+  /**
+   * Persistence for sealed output artifacts, used ONLY for client custody: the
+   * engine seals each artifact to the recipient's key and stores the sealed bytes
+   * here for the web client to fetch and open later. Server-custody (bot) runs
+   * never persist artifacts — they stream unsealed bytes straight to Telegram —
+   * so this is unused for them. When absent, client artifacts are still published
+   * as `artifact_ready` events but not stored.
+   */
+  artifactStore?: ArtifactStore;
   /** Injectable for tests; defaults to the real DB writer. */
   updateRunStatus?: typeof defaultUpdateRunStatus;
   /** Injectable for tests; defaults to the real DB writer. */
@@ -216,66 +261,116 @@ function collectByteArtifacts(result: CreateShareCodeResult): Array<{
 }
 
 /**
- * Server-custody output handling: AES-encrypt the share code with the server
- * key, publish a `completed` event carrying both the sealed form and the
- * unsealed share code (allowed for the trusted bot), then publish one
- * `artifact_ready` per produced artifact carrying the unsealed bytes for the
- * bot to deliver.
+ * Custody-aware output handling. The {@link CustodyProvider} chosen from
+ * `input.custody` decides how every output is protected before it leaves the
+ * worker; the engine never branches on the algorithm beyond that one selection.
  *
- * Client-custody sealing (`crypto_box_seal` to `recipientPublicKey`) lands in
- * Phase 3; see the explicitly marked branch below.
+ * - **server** (the trusted bot): AES-GCM with the server key. `completed`
+ *   carries both the sealed (`aesgcm` cipher) form and the unsealed `shareCode`
+ *   (allowed for the trusted bot); each `artifact_ready` carries the unsealed
+ *   bytes for delivery.
+ * - **client** (the web app, E2EE): anonymous `crypto_box_seal` to
+ *   `recipientPublicKey`. `completed` carries ONLY the sealed share code — never
+ *   a plaintext `shareCode`. Each `artifact_ready` carries `box_seal` bytes, and
+ *   the sealed artifact is persisted via the {@link ArtifactStore} (sealed bytes
+ *   only). No plaintext output ever leaves the worker for a client-custody run.
+ *
+ * INVARIANT: the plaintext `result.shareCode` is read only to seal it; for
+ * client custody it is never published, persisted, or logged.
  */
-function publishOutputs(
+async function publishOutputs(
   input: EnqueueRunInput,
   result: CreateShareCodeResult,
   publish: (event: RunEvent) => void,
-  encrypt: typeof defaultEncrypt,
-  serverKeyHex: string | undefined,
-  log: Logger
-): void {
-  if (input.custody === "client") {
-    // TODO(Phase 3): seal the share code and each artifact to
-    // `input.recipientPublicKey` via crypto_box_seal and publish the sealed
-    // forms only (no plaintext share code, no unsealed bytes). Until then,
-    // client-custody output handling is intentionally not implemented.
-    log.warn(
-      { custody: "client" },
-      "Client-custody output sealing is not implemented yet (Phase 3)"
+  deps: {
+    provider: CustodyProvider;
+    artifactStore?: ArtifactStore;
+    log: Logger;
+  }
+): Promise<void> {
+  const isClient = input.custody === "client";
+  // Client custody seals to the recipient's public key; without it we cannot
+  // protect the outputs, so fail loudly rather than risk leaking plaintext.
+  if (isClient && !input.recipientPublicKey) {
+    throw new Error(
+      "RunEngine: recipientPublicKey is required for client custody (cannot seal outputs)"
     );
-    throw new Error("Client-custody output sealing is not implemented yet");
   }
-
-  // Server custody (the trusted bot): AES-encrypt the share code.
-  if (!serverKeyHex) {
-    throw new Error("RunEngine: serverKeyHex is required for server custody");
-  }
-  const cipher = encrypt(result.shareCode, serverKeyHex);
+  const ctx = { recipientPublicKey: input.recipientPublicKey };
 
   // Publish artifacts BEFORE the terminal `completed` event. `completed` is a
   // terminal bus event: it flushes and ends every subscriber, so anything
   // published after it (including the DB-persistence subscriber and SSE
   // clients) would be dropped.
   for (const artifact of collectByteArtifacts(result)) {
-    publish({
-      type: "artifact_ready",
-      artifact: {
-        kind: artifact.kind,
-        filename: artifact.filename,
-        contentType: artifact.contentType,
-        byteLength: artifact.bytes.byteLength,
-        // Server custody: carry the unsealed bytes for the trusted bot.
-        sealed: { alg: "aesgcm", bytes: artifact.bytes },
-      },
-    });
+    const sealed = deps.provider.sealArtifact(artifact.bytes, ctx);
+    const ref: SealedArtifactRef = {
+      kind: artifact.kind,
+      filename: artifact.filename,
+      contentType: artifact.contentType,
+      byteLength: artifact.bytes.byteLength,
+      sealed,
+    };
+    publish({ type: "artifact_ready", artifact: ref });
+    // Persist the SEALED artifact (sealed bytes only) for CLIENT custody — this
+    // is the E2EE delivery path: the web client fetches the sealed blob later and
+    // opens it in-browser, and the store never sees plaintext. Server custody
+    // (the trusted bot) keeps today's behavior: it streams the unsealed bytes
+    // straight to Telegram via `artifact_ready` and persists nothing here.
+    if (isClient && deps.artifactStore) {
+      try {
+        await deps.artifactStore.putSealed(input.runId, ref);
+      } catch (err) {
+        // Persistence is best-effort: a storage hiccup must not break the live
+        // run. The sealed bytes were already delivered via `artifact_ready`.
+        deps.log.warn(
+          { err, runId: input.runId, kind: ref.kind },
+          "Failed to persist sealed artifact"
+        );
+      }
+    }
   }
 
+  const sealedShareCode = deps.provider.sealShareCode(result.shareCode, ctx);
   publish({
     type: "completed",
     validUntil: result.validUntil,
-    sealedShareCode: { alg: "aesgcm", cipher },
-    // Unsealed share code is allowed for the trusted server-custody bot.
-    shareCode: result.shareCode,
+    sealedShareCode,
+    // The unsealed share code is included ONLY for the trusted server-custody
+    // bot. Client custody must never publish plaintext: omit it entirely.
+    ...(isClient ? {} : { shareCode: result.shareCode }),
   });
+}
+
+/**
+ * Encodes a `completed` event's sealed share code for the `runs` row, deriving
+ * the persisted `encrypted_share_code` text, its `share_code_alg`, and the
+ * denormalized `custody` from the seal algorithm:
+ *
+ * - `aesgcm` (server custody): the AES ciphertext `cipher` string is stored as-is.
+ * - `box_seal` (client custody): the sealed bytes are base64-encoded for the TEXT
+ *   column — only the SEALED form is ever persisted, never plaintext.
+ *
+ * Returns `encrypted: undefined` when no sealed material is present (e.g. a run
+ * with no share code), leaving `encrypted_share_code` untouched.
+ */
+function encodeSealedShareCode(blob: {
+  alg: "aesgcm" | "box_seal";
+  bytes?: Uint8Array;
+  cipher?: string;
+}): {
+  encrypted: string | undefined;
+  alg: "aesgcm" | "box_seal";
+  custody: RunCustody;
+} {
+  if (blob.alg === "box_seal") {
+    return {
+      encrypted: blob.bytes ? toBase64(blob.bytes) : undefined,
+      alg: "box_seal",
+      custody: "client",
+    };
+  }
+  return { encrypted: blob.cipher, alg: "aesgcm", custody: "server" };
 }
 
 /**
@@ -303,13 +398,22 @@ async function persistRunEvents(
         case "challenge_required":
           await deps.updateRunStatus(deps.db, runId, { status: "awaiting_2fa" });
           break;
-        case "completed":
+        case "completed": {
+          // Persist the SEALED share code in the form matching its custody:
+          // server custody stores the AES `cipher` string; client custody stores
+          // the base64 of the `box_seal` bytes. The plaintext share code is
+          // never written here (and `completed` never carries it for client
+          // custody). Custody is derived from the seal algorithm.
+          const sealed = encodeSealedShareCode(event.sealedShareCode);
           await deps.updateRunStatus(deps.db, runId, {
             status: "success",
-            encrypted_share_code: event.sealedShareCode.cipher,
+            encrypted_share_code: sealed.encrypted,
+            share_code_alg: sealed.alg,
+            custody: sealed.custody,
             valid_until: event.validUntil,
           });
           break;
+        }
         case "failed":
           // A cancelled/interrupted run carries `cause`; persist the matching
           // terminal status so run dedup sees it as cancelled/interrupted rather
@@ -402,7 +506,7 @@ export function createRunEngine(deps: RunEngineDeps): RunEngine {
   const bus = deps.bus ?? createInMemoryRunBus();
   const enqueue = deps.enqueue ?? defaultEnqueue;
   const resolveCode = deps.resolveCode ?? defaultResolveCode;
-  const encrypt = deps.encrypt ?? defaultEncrypt;
+  const selectCustody = deps.selectCustody ?? defaultSelectCustody;
   const updateRunStatus = deps.updateRunStatus ?? defaultUpdateRunStatus;
   const insertRunEvent = deps.insertRunEvent ?? defaultInsertRunEvent;
   const log = deps.logger ?? createLogger();
@@ -445,8 +549,19 @@ export function createRunEngine(deps: RunEngineDeps): RunEngine {
             // No result (e.g. a stub job that publishes its own terminal event).
             return;
           }
-          // Seal/encrypt outputs per custody, then publish completed + artifacts.
-          publishOutputs(input, runResult, publish, encrypt, deps.serverKeyHex, runLog);
+          // Select the custody provider and seal/encrypt outputs, then publish
+          // completed + artifacts. Client custody seals via libsodium WASM, which
+          // must be initialized before the synchronous seal calls; awaiting here
+          // is a no-op once memoized.
+          const provider = selectCustody(input.custody, deps.serverKeyHex);
+          if (provider.custody === "client") {
+            await sealReady();
+          }
+          await publishOutputs(input, runResult, publish, {
+            provider,
+            artifactStore: deps.artifactStore,
+            log: runLog,
+          });
         },
         onPositionUpdate: (position) => {
           if (position > 0) {

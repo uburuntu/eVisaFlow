@@ -44,6 +44,17 @@ const envSchema = z.object({
     .default("0 9 * * *")
     .refine((value) => cron.validate(value), "Invalid cron expression"),
   SCHEDULE_INTERVAL_DAYS: z.coerce.number().int().min(1).default(30),
+  // How often the cleanup cron sweeps expired run_artifacts, sessions, and
+  // consumed/expired magic-link tokens. Hourly by default — frequent enough to
+  // keep sealed artifacts and stale auth rows from lingering, cheap to run.
+  CLEANUP_CRON: z
+    .string()
+    .default("0 * * * *")
+    .refine((value) => cron.validate(value), "Invalid cron expression"),
+  // TTL applied to sealed run artifacts at write time (expires_at = now + TTL).
+  // After this the cleanup cron deletes them. 24h by default: long enough for a
+  // user to fetch and decrypt their PDFs, short enough to bound at-rest storage.
+  ARTIFACT_TTL_MINUTES: z.coerce.number().int().min(1).default(1440),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -83,5 +94,7 @@ export function redactedEnvSummary(env: Env): Record<string, unknown> {
     healthPort: env.HEALTH_PORT,
     schedulerCron: env.SCHEDULER_CRON,
     scheduleIntervalDays: env.SCHEDULE_INTERVAL_DAYS,
+    cleanupCron: env.CLEANUP_CRON,
+    artifactTtlMinutes: env.ARTIFACT_TTL_MINUTES,
   };
 }

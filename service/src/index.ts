@@ -7,6 +7,7 @@ import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
 import { startHealthServer } from "./health.js";
 import { assertDbReady, assertTelegramReady } from "./readiness.js";
+import { createPostgresArtifactStore } from "./runner/artifact-store.js";
 import { createEvisaRunJob } from "./runner/evisa-run-job.js";
 import {
   cancelAllJobs,
@@ -15,6 +16,7 @@ import {
   waitForIdle,
 } from "./runner/queue.js";
 import { createRunEngine } from "./runner/run-engine.js";
+import { startCleanupScheduler } from "./scheduler/cleanup.js";
 import { startScheduler } from "./scheduler/cron.js";
 import { createLogger } from "./utils/logger.js";
 
@@ -73,13 +75,24 @@ async function main(): Promise<void> {
   const db = createDb(env.DATABASE_URL);
   setConcurrency(env.QUEUE_CONCURRENCY);
 
+  // Postgres-backed store for sealed output artifacts (self-host v1: bytes inline
+  // in `run_artifacts`). Bytes are ALWAYS sealed before they reach it. Shared by
+  // the engine (writes sealed artifacts) and the cleanup cron (deletes expired).
+  const artifactStore = createPostgresArtifactStore(db, {
+    ttlMs: env.ARTIFACT_TTL_MINUTES * 60_000,
+  });
+
   // Single run engine drives every queued run (bot today, web later). It owns
-  // applicant resolution, the queue slot, run-event publishing, output sealing,
-  // and DB persistence; the bot subscribes to drive the Telegram UI.
+  // applicant resolution, the queue slot, run-event publishing, custody-aware
+  // output sealing, and DB persistence; the bot subscribes to drive the Telegram
+  // UI. The default custody selector wires serverCustody(ENCRYPTION_KEY) for the
+  // trusted bot and clientCustody() for E2EE web runs; sealed artifacts are
+  // persisted via the artifact store above.
   const engine = createRunEngine({
     runJob: createEvisaRunJob(),
     db,
     serverKeyHex: env.ENCRYPTION_KEY,
+    artifactStore,
     logger: log,
   });
 
@@ -119,6 +132,9 @@ async function main(): Promise<void> {
   }
 
   const scheduler = startScheduler(bot, db, env, log);
+  // Periodic housekeeping: deletes expired sealed artifacts, expired sessions,
+  // and consumed/expired magic-link tokens on CLEANUP_CRON.
+  const cleanupScheduler = startCleanupScheduler(db, artifactStore, env, log);
   const runner = run(bot);
   state.runnerRunning = runner.isRunning();
   void runner
@@ -139,6 +155,7 @@ async function main(): Promise<void> {
     {
       concurrency: env.QUEUE_CONCURRENCY,
       cron: env.SCHEDULER_CRON,
+      cleanupCron: env.CLEANUP_CRON,
       botUsername: state.telegramUsername,
     },
     "Bot started"
@@ -153,6 +170,7 @@ async function main(): Promise<void> {
     log.info({ signal }, "Shutting down");
 
     scheduler.stop();
+    cleanupScheduler.stop();
     await Promise.resolve(runner.stop());
     const interruptedRunIds = cancelAllJobs(`Service received ${signal}`, "interrupted");
     const drained = await waitForIdle(SHUTDOWN_DRAIN_MS);

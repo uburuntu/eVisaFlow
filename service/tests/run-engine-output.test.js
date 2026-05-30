@@ -395,18 +395,19 @@ test("persistence failures are swallowed and never break the live run", async ()
   assert.ok(calls > 0, "persistence was attempted");
 });
 
-test("client custody output handling is not implemented yet (Phase 3) -> run fails terminally", async () => {
+test("client custody without a recipient public key fails terminally (never leaks plaintext)", async () => {
   const bus = createInMemoryRunBus();
   const engine = createRunEngine({
     bus,
     runJob: async () => fakeResult(),
   });
 
+  // Client custody with NO recipientPublicKey: the engine cannot seal outputs,
+  // so it must fail loudly rather than publish a plaintext share code.
   engine.enqueueRun({
-    runId: "run-client",
+    runId: "run-client-nokey",
     ownerKey: "owner-client",
     custody: "client",
-    recipientPublicKey: new Uint8Array([1, 2, 3]),
     trigger: "manual",
     headless: true,
     diagnosticsMode: "off",
@@ -421,10 +422,14 @@ test("client custody output handling is not implemented yet (Phase 3) -> run fai
     },
   });
 
-  const events = await collect(engine.subscribe("run-client"));
+  const events = await collect(engine.subscribe("run-client-nokey"));
   const failure = events.find((e) => e.type === "failed");
-  assert.ok(failure, "client custody output sealing should fail until Phase 3");
-  assert.match(failure.message, /not implemented/i);
-  // No completed event leaked for an unsealed client-custody run.
+  assert.ok(failure, "client custody without a key should fail");
+  assert.match(failure.message, /recipientPublicKey/i);
+  // No completed event and no plaintext share code leaked.
   assert.ok(!events.some((e) => e.type === "completed"));
+  assert.ok(
+    !events.some((e) => e.type === "completed" && e.shareCode === "ABC123XYZ"),
+    "no plaintext share code is ever published for client custody"
+  );
 });

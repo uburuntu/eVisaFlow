@@ -28,6 +28,10 @@ export interface DbRun {
   trigger: string;
   status: string;
   encrypted_share_code: string | null;
+  /** How `encrypted_share_code` is sealed: 'aesgcm' (server) or 'box_seal' (client). */
+  share_code_alg: string | null;
+  /** Denormalized run custody: 'server' or 'client'. */
+  custody: string | null;
   valid_until: string | null;
   error_code: string | null;
   error_message: string | null;
@@ -46,6 +50,8 @@ function toDbRun(row: RunRow): DbRun {
     trigger: row.trigger,
     status: row.status,
     encrypted_share_code: row.encryptedShareCode,
+    share_code_alg: row.shareCodeAlg,
+    custody: row.custody,
     valid_until: row.validUntil,
     error_code: row.errorCode,
     error_message: row.errorMessage,
@@ -85,6 +91,10 @@ export async function updateRunStatus(
   update: {
     status: RunStatus;
     encrypted_share_code?: string;
+    /** 'aesgcm' (server custody) or 'box_seal' (client custody). */
+    share_code_alg?: "aesgcm" | "box_seal";
+    /** Denormalized run custody recorded alongside the share code. */
+    custody?: "server" | "client";
     valid_until?: string;
     error_code?: string;
     error_message?: string;
@@ -98,6 +108,8 @@ export async function updateRunStatus(
   if (update.encrypted_share_code !== undefined) {
     payload.encryptedShareCode = update.encrypted_share_code;
   }
+  if (update.share_code_alg !== undefined) payload.shareCodeAlg = update.share_code_alg;
+  if (update.custody !== undefined) payload.custody = update.custody;
   if (update.valid_until !== undefined) payload.validUntil = update.valid_until;
   if (update.error_code !== undefined) payload.errorCode = update.error_code;
   if (update.error_message !== undefined) payload.errorMessage = update.error_message;

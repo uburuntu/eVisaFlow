@@ -20,6 +20,24 @@ jobs:
     name: Validate
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Ephemeral Postgres so the DATABASE_URL-gated db/migrate tests actually run
+    # in CI. This is a throwaway container, never a managed/production database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evisaflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/evisaflow
     steps:
       - uses: actions/checkout@v6
 
@@ -48,6 +66,10 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Run database migrations
+        working-directory: service
+        run: node dist/db/migrate.js
 
       - name: Test
         run: pnpm run test

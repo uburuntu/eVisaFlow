@@ -4,9 +4,13 @@ import { users } from "./schema.js";
 
 export interface DbUser {
   id: string;
-  telegram_id: number;
+  // Nullable since migration 004: web users carry an email instead of a Telegram id.
+  telegram_id: number | null;
   telegram_handle: string | null;
-  first_name: string;
+  first_name: string | null;
+  email: string | null;
+  email_verified: boolean;
+  display_name: string | null;
   next_scheduled_at: string | null;
   created_at: string;
   updated_at: string;
@@ -20,6 +24,9 @@ function toDbUser(row: UserRow): DbUser {
     telegram_id: row.telegramId,
     telegram_handle: row.telegramHandle,
     first_name: row.firstName,
+    email: row.email,
+    email_verified: row.emailVerified,
+    display_name: row.displayName,
     next_scheduled_at: row.nextScheduledAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,

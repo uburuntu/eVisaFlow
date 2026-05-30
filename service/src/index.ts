@@ -1,7 +1,8 @@
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
 import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
-import { closeDb, createDb } from "./db/client.js";
+import { closeDb, createDb, getPool } from "./db/client.js";
+import { runMigrationsWithPool } from "./db/migrate.js";
 import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
 import { startHealthServer } from "./health.js";
@@ -93,6 +94,17 @@ async function main(): Promise<void> {
     const username = await assertTelegramReady(bot);
     state.telegramReady = true;
     state.telegramUsername = username;
+    // Bring the schema up to date before readiness. Baseline-safe and idempotent:
+    // a no-op against an already-migrated database, and it auto-provisions a fresh
+    // self-host database so the bot can start without manual SQL.
+    const migrateResult = await runMigrationsWithPool(getPool(db), log);
+    log.info(
+      {
+        baselined: migrateResult.baselined,
+        applied: migrateResult.applied,
+      },
+      "Database migrations ready"
+    );
     await assertDbReady(db);
     state.dbReady = true;
     await markNonTerminalRunsInterrupted(

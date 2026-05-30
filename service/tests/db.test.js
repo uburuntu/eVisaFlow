@@ -36,19 +36,27 @@ import {
 const DATABASE_URL = process.env.DATABASE_URL;
 const TEST_SCHEMA = `evisaflow_dbtest_${process.pid}_${Date.now().toString(36)}`;
 
-// Final shape of the live schema after migrations 001 + 002 + 003, created
+// Final shape of the live schema after migrations 001 + 002 + 003 + 004, created
 // inside the isolated test schema (search_path is pinned to it at the pool).
+// The users table carries the 004 web-identity columns (telegram_id/first_name
+// now nullable; email/email_verified/display_name added) so the db/users.ts
+// selects, which now reference those columns, resolve here.
 const SCHEMA_DDL = `
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  telegram_id       BIGINT NOT NULL UNIQUE,
+  telegram_id       BIGINT UNIQUE,
   telegram_handle   TEXT,
-  first_name        TEXT NOT NULL,
+  first_name        TEXT,
+  email             TEXT UNIQUE,
+  email_verified    BOOLEAN NOT NULL DEFAULT false,
+  display_name      TEXT,
   next_scheduled_at TIMESTAMPTZ,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT users_identity_present_check
+    CHECK (telegram_id IS NOT NULL OR email IS NOT NULL)
 );
 
 CREATE TABLE family_members (

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   doublePrecision,
   index,
   jsonb,
@@ -13,6 +14,18 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+/**
+ * Postgres `bytea` column surfaced to JS as a Node {@link Buffer}. Drizzle has no
+ * first-class `bytea` builder in this version, so we declare a custom type; the
+ * `pg` driver already maps `bytea` ⇄ `Buffer` on the wire. Used by the
+ * client-held-key vault, whose blobs the server stores but never interprets.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 /**
  * Drizzle table definitions mirroring the live Postgres schema produced by
@@ -33,9 +46,14 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    telegramId: bigint("telegram_id", { mode: "number" }).notNull().unique(),
+    // telegram_id is nullable since 004 (web users have none) but keeps UNIQUE.
+    telegramId: bigint("telegram_id", { mode: "number" }).unique(),
     telegramHandle: text("telegram_handle"),
-    firstName: text("first_name").notNull(),
+    // first_name became nullable in 004; web sign-up has no Telegram first name.
+    firstName: text("first_name"),
+    email: text("email").unique(),
+    emailVerified: boolean("email_verified").notNull().default(false),
+    displayName: text("display_name"),
     nextScheduledAt: timestamp("next_scheduled_at", {
       withTimezone: true,
       mode: "string",
@@ -49,7 +67,12 @@ export const users = pgTable(
   },
   (table) => [
     index("idx_users_telegram_id").on(table.telegramId),
+    index("idx_users_email").on(table.email),
     index("idx_users_next_scheduled").on(table.nextScheduledAt),
+    check(
+      "users_identity_present_check",
+      sql`${table.telegramId} IS NOT NULL OR ${table.email} IS NOT NULL`
+    ),
   ]
 );
 
@@ -157,4 +180,78 @@ export const runEvents = pgTable(
   (table) => [index("idx_run_events_run_created").on(table.runId, table.createdAt)]
 );
 
-export const schema = { users, familyMembers, runs, runEvents };
+/**
+ * Client-held-key vault (1:1 with a user, optional). All blobs are opaque to the
+ * server: it stores and returns them but never decrypts. Added in migration 004.
+ */
+export const userVault = pgTable("user_vault", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  publicKey: bytea("public_key").notNull(),
+  wrappedPrivateKey: bytea("wrapped_private_key").notNull(),
+  kdfSalt: bytea("kdf_salt").notNull(),
+  kdfParams: jsonb("kdf_params").notNull().default(sql`'{}'::jsonb`),
+  recoveryWrappedKey: bytea("recovery_wrapped_key"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Web session tokens. Only the hash is stored; the raw token lives in the
+ * HttpOnly cookie. Added in migration 004.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+  },
+  (table) => [
+    index("idx_sessions_user").on(table.userId),
+    index("idx_sessions_expires").on(table.expiresAt),
+  ]
+);
+
+/**
+ * Single-use, short-TTL email magic-link tokens. Only the hash is stored;
+ * `consumedAt` enforces single use. Added in migration 004.
+ */
+export const magicLinkTokens = pgTable(
+  "magic_link_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+  },
+  (table) => [
+    index("idx_magic_link_tokens_email").on(table.email),
+    index("idx_magic_link_tokens_expires").on(table.expiresAt),
+  ]
+);
+
+export const schema = {
+  users,
+  familyMembers,
+  runs,
+  runEvents,
+  userVault,
+  sessions,
+  magicLinkTokens,
+};

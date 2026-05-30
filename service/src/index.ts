@@ -5,20 +5,17 @@ import { closeDb, createDb, getPool } from "./db/client.js";
 import { runMigrationsWithPool } from "./db/migrate.js";
 import { markNonTerminalRunsInterrupted } from "./db/runs.js";
 import { type Env, loadEnv, redactedEnvSummary } from "./env.js";
-import { startHealthServer } from "./health.js";
 import { assertDbReady, assertTelegramReady } from "./readiness.js";
 import { createPostgresArtifactStore } from "./runner/artifact-store.js";
 import { createEvisaRunJob } from "./runner/evisa-run-job.js";
-import {
-  cancelAllJobs,
-  getQueueStats,
-  setConcurrency,
-  waitForIdle,
-} from "./runner/queue.js";
+import { cancelAllJobs, setConcurrency, waitForIdle } from "./runner/queue.js";
 import { createRunEngine } from "./runner/run-engine.js";
 import { startCleanupScheduler } from "./scheduler/cleanup.js";
 import { startScheduler } from "./scheduler/cron.js";
 import { createLogger } from "./utils/logger.js";
+import { unlimitedEntitlements } from "./web/entitlements.js";
+import { consoleMailer, type Mailer, smtpMailer } from "./web/mailer.js";
+import { createWebServer, type HealthSnapshot } from "./web/server.js";
 
 const SHUTDOWN_DRAIN_MS = 15_000;
 
@@ -32,7 +29,13 @@ interface RuntimeState {
   runnerRunning: boolean;
 }
 
-function healthSnapshot(state: RuntimeState) {
+/**
+ * Builds the health snapshot from the live runtime state, minus the queue stats
+ * (the web server merges those from the shared queue). Passed to
+ * {@link createWebServer} as `getHealth`, preserving the readiness semantics the
+ * old standalone health server had.
+ */
+function healthSnapshot(state: RuntimeState): Omit<HealthSnapshot, "queue"> {
   return {
     ready: state.ready && state.telegramReady && state.dbReady && state.runnerRunning,
     shuttingDown: state.shuttingDown,
@@ -45,7 +48,6 @@ function healthSnapshot(state: RuntimeState) {
     db: {
       ready: state.dbReady,
     },
-    queue: getQueueStats(),
   };
 }
 
@@ -71,7 +73,6 @@ async function main(): Promise<void> {
     runnerRunning: false,
   };
 
-  const health = startHealthServer(env.HEALTH_PORT, log, () => healthSnapshot(state));
   const db = createDb(env.DATABASE_URL);
   setConcurrency(env.QUEUE_CONCURRENCY);
 
@@ -96,12 +97,45 @@ async function main(): Promise<void> {
     logger: log,
   });
 
+  // Outbound email transport for magic-link sign-in. SMTP when SMTP_URL is set
+  // (SMTP_FROM is validated as required alongside it); otherwise a console
+  // transport that logs the link for SMTP-less dev/self-host. Telegram Login
+  // needs neither, so a Telegram-only deployment can run with the console mailer.
+  const mailer: Mailer =
+    env.SMTP_URL && env.SMTP_FROM
+      ? smtpMailer({ url: env.SMTP_URL, from: env.SMTP_FROM })
+      : consoleMailer(log);
+
   // Telegram-specific 2FA reply matcher: maps incoming code messages back to the
   // engine's runId-keyed gate. Shared between the run driver (registration) and
   // the 2FA middleware (matching).
   const twoFactor = createTwoFactorAdapter(engine);
 
   const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
+
+  // Web server (Fastify): the API channel and the folded-in health probes share
+  // this one listener on PORT. Started before the readiness checks so `/live`
+  // and `/ready` answer during boot — both report 503 until `state` flips ready,
+  // matching the old standalone health server's behavior. Auth/vault/member/run
+  // routes mount in later Phase 4 steps; the deps already carry what they need.
+  const app = createWebServer({
+    db,
+    engine,
+    env,
+    log,
+    mailer,
+    entitlements: unlimitedEntitlements,
+    artifactStore,
+    getHealth: () => healthSnapshot(state),
+  });
+  try {
+    await app.listen({ port: env.PORT, host: "0.0.0.0" });
+    log.info({ port: env.PORT }, "Web server listening");
+  } catch (err) {
+    log.fatal({ err }, "Failed to start web server");
+    process.exit(1);
+    return;
+  }
 
   try {
     const username = await assertTelegramReady(bot);
@@ -126,7 +160,7 @@ async function main(): Promise<void> {
     );
   } catch (err) {
     log.fatal({ err }, "Startup readiness check failed");
-    await health.close().catch(() => {});
+    await app.close().catch(() => {});
     process.exit(1);
     return;
   }
@@ -185,11 +219,11 @@ async function main(): Promise<void> {
     ).catch((err) => {
       log.warn({ err }, "Failed to mark interrupted runs");
     });
+    await app.close().catch((err) => {
+      log.warn({ err }, "Failed to close web server");
+    });
     await closeDb(db).catch((err) => {
       log.warn({ err }, "Failed to close database pool");
-    });
-    await health.close().catch((err) => {
-      log.warn({ err }, "Failed to close health server");
     });
     process.exit(drained ? 0 : 1);
   };

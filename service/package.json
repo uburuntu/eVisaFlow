@@ -19,9 +19,12 @@
   "author": "Ramzan Bekbulatov",
   "license": "MIT",
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.0.1",
     "@grammyjs/conversations": "^2.1.1",
     "@grammyjs/runner": "^2.0.3",
     "drizzle-orm": "^0.44.6",
+    "fastify": "^5.2.1",
     "evisa-flow": "workspace:*",
     "grammy": "^1.42.0",
     "libsodium-wrappers": "^0.7.15",

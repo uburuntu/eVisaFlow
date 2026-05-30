@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot/bot.js";
 import { createTwoFactorAdapter } from "./bot/two-factor-adapter.js";
@@ -18,6 +20,24 @@ import { consoleMailer, type Mailer, smtpMailer } from "./web/mailer.js";
 import { createWebServer, type HealthSnapshot } from "./web/server.js";
 
 const SHUTDOWN_DRAIN_MS = 15_000;
+
+/**
+ * Resolves the built web bundle directory to serve from Fastify.
+ *
+ * Honours an explicit `WEB_DIST_PATH` override; otherwise defaults to the
+ * workspace `web/dist`, located relative to THIS compiled module rather than the
+ * process cwd. The build output is `service/dist/index.js`, so the sibling web
+ * package's build is two levels up at `../../web/dist`. Computing it from
+ * `import.meta.url` means `node dist/index.js` (run from any cwd) and the
+ * self-host Docker layout both resolve the bundle without configuration.
+ */
+function resolveWebDistPath(env: Env): string {
+  if (env.WEB_DIST_PATH) {
+    return path.resolve(env.WEB_DIST_PATH);
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "..", "..", "web", "dist");
+}
 
 interface RuntimeState {
   ready: boolean;
@@ -113,11 +133,12 @@ async function main(): Promise<void> {
 
   const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
 
-  // Web server (Fastify): the API channel and the folded-in health probes share
-  // this one listener on PORT. Started before the readiness checks so `/live`
-  // and `/ready` answer during boot — both report 503 until `state` flips ready,
-  // matching the old standalone health server's behavior. Auth/vault/member/run
-  // routes mount in later Phase 4 steps; the deps already carry what they need.
+  // Web server (Fastify): the API channel, the folded-in health probes, and the
+  // built web app (web/dist, with an SPA fallback for /app/*) all share this one
+  // listener on PORT. Started before the readiness checks so `/live` and `/ready`
+  // answer during boot — both report 503 until `state` flips ready, matching the
+  // old standalone health server's behavior. The deps carry the auth/vault/
+  // member/run wiring plus the resolved web-bundle path.
   const app = createWebServer({
     db,
     engine,
@@ -127,6 +148,10 @@ async function main(): Promise<void> {
     entitlements: unlimitedEntitlements,
     artifactStore,
     getHealth: () => healthSnapshot(state),
+    // Serve the built Astro app (web/dist) from this same origin with an SPA
+    // fallback for /app/*. Path is the WEB_DIST_PATH override or the workspace
+    // default; missing builds degrade gracefully (API stays up, hint logged).
+    webDistPath: resolveWebDistPath(env),
   });
   try {
     await app.listen({ port: env.PORT, host: "0.0.0.0" });

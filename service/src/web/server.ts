@@ -18,6 +18,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerMemberRoutes } from "./routes/members.js";
 import { registerRunRoutes } from "./routes/runs.js";
 import { registerVaultRoutes } from "./routes/vault.js";
+import { registerStaticAssets } from "./static.js";
 
 /**
  * Health snapshot served by `/live` and `/ready`. This is the contract the old
@@ -66,6 +67,15 @@ export interface WebServerDeps {
    * `false` (same-origin only) when omitted.
    */
   corsOrigin?: string | string[] | boolean;
+  /**
+   * Filesystem path to the built Astro web bundle (`web/dist`) to serve from this
+   * same origin, with an SPA fallback for `/app/*`. When omitted, no static
+   * assets are served (the API/health endpoints still work) — useful for tests
+   * and for API-only deployments. `index.ts` passes the env-resolved path so a
+   * self-host process serves the bundled app. Registration degrades gracefully if
+   * the path (or its `index.html`) is absent.
+   */
+  webDistPath?: string;
 }
 
 /**
@@ -175,6 +185,15 @@ export function createWebServer(deps: WebServerDeps): WebFastifyInstance {
     env: deps.env,
     log: deps.log,
   });
+
+  // Static web bundle + SPA fallback. Registered LAST so the concrete API/health
+  // routes above always win the router match; this only adds per-file routes and
+  // a not-found handler (the SPA fallback), neither of which can shadow them.
+  // Skipped when no path is configured (tests, API-only) and degrades gracefully
+  // when the bundle is absent — the API stays up either way.
+  if (deps.webDistPath) {
+    registerStaticAssets(app, { webDistPath: deps.webDistPath, log: deps.log });
+  }
 
   return app;
 }

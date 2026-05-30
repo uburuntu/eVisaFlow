@@ -70,6 +70,7 @@ Fill in the values:
 | `HEALTH_PORT` | HTTP health port for `/live` and `/ready` (default: 8080) |
 | `SCHEDULER_CRON` | Cron expression for daily check (default: `0 9 * * *`) |
 | `SCHEDULE_INTERVAL_DAYS` | Days between scheduled runs per user (default: 30) |
+| `WEB_DIST_PATH` | Path to the built web bundle served at this same origin. Optional — defaults to the workspace `web/dist`. If the build is absent the API still runs (a hint is logged). |
 
 ### 4. Run
 
@@ -90,6 +91,55 @@ pnpm exec playwright install chromium --with-deps
 # Build and start
 pnpm run build:service
 pnpm --filter evisa-flow-bot start
+```
+
+> `build:service` compiles only the backend (library + bot/API). To also build
+> the web app for a single-origin self-host, run the root `pnpm run build`, which
+> chains `build:service` and `build:web` (`pnpm --filter @evisaflow/web build`).
+
+## Web app (single origin)
+
+This same Fastify process serves the built [web app](../web) (`web/dist`) at the
+**same origin** as the API, so the SPA and `/api/*` literally share one host and
+the session cookie flows without CORS. There is **no Astro SSR server** in
+self-host — the app is pre-rendered static assets.
+
+- **Static files** are served from `web/dist`. The marketing/SEO pages, the
+  login page, and hashed `_astro/*` assets are real files.
+- **SPA fallback**: the app island is a single client-routed SPA mounted at
+  `/app`. Any unknown `/app/*` deep link (e.g. `/app/run/123`) or a reload there
+  is served the app shell (`web/dist/app/index.html`) so the in-browser router
+  takes over.
+- **API precedence**: `/api/*` and the `/ready` / `/live` probes always win the
+  route match, and a miss under them returns a **JSON 404** (never the HTML
+  shell), so API clients always get a machine-readable response.
+- **Graceful degradation**: if `web/dist` is missing (you ran the backend
+  without building the web app), the API and health endpoints stay up and a hint
+  is logged — only the browser app is unavailable. Build it with
+  `pnpm --filter @evisaflow/web build`, or point `WEB_DIST_PATH` at a built
+  bundle elsewhere.
+
+### Local development
+
+For the production single-origin behavior, run the root `pnpm run build` and
+start the service — it serves both the API and `web/dist` on `PORT`.
+
+For a fast frontend dev loop, run the Astro dev server and the API separately;
+the Astro dev server proxies `/api/*` to Fastify so the browser still talks to a
+same-origin `/api` and cookies flow:
+
+```bash
+# Terminal 1 — the API (and bot)
+pnpm --filter evisa-flow-bot start          # serves /api on :8080
+
+# Terminal 2 — the web app with hot reload, proxying /api → :8080
+pnpm --filter @evisaflow/web dev            # http://localhost:4321
+```
+
+If the API runs on a non-default port, point the proxy at it:
+
+```bash
+API_PROXY_TARGET=http://localhost:9000 pnpm --filter @evisaflow/web dev
 ```
 
 ## Bot Commands

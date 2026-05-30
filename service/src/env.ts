@@ -88,6 +88,14 @@ const envSchema = z
     // logs the link for dev/self-host without SMTP. Telegram Login needs neither.
     SMTP_URL: z.string().min(1).optional(),
     SMTP_FROM: z.string().min(1).optional(),
+    // Filesystem path to the built Astro web assets (`web/dist`) the Fastify
+    // server serves at the single origin, with an SPA fallback for `/app/*`.
+    // Optional: when unset, `index.ts` defaults to the workspace `web/dist`
+    // resolved relative to the running module (so a built self-host image and a
+    // local `node dist/index.js` both find it). Set explicitly only when the
+    // bundle lives elsewhere. If the path (or its `index.html`) is absent the web
+    // server degrades gracefully — the API stays up and a hint is logged.
+    WEB_DIST_PATH: z.string().min(1).optional(),
   })
   .refine((env) => !env.SMTP_URL || Boolean(env.SMTP_FROM), {
     error: "SMTP_FROM is required when SMTP_URL is set",
@@ -139,5 +147,8 @@ export function redactedEnvSummary(env: Env): Record<string, unknown> {
     // SMTP_URL/SMTP_FROM may embed credentials, so report only whether email is
     // configured (which mailer the app selected), never the values themselves.
     mailer: env.SMTP_URL ? "smtp" : "console",
+    // Report whether an explicit web-dist override is set; the resolved default
+    // path is logged separately by the static-asset registrar at boot.
+    webDistPath: env.WEB_DIST_PATH ?? "(default)",
   };
 }

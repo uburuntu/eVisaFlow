@@ -21,6 +21,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.1",
+    "@fastify/static": "^8.0.0",
     "@grammyjs/conversations": "^2.1.1",
     "@grammyjs/runner": "^2.0.3",
     "drizzle-orm": "^0.44.6",

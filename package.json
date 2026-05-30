@@ -31,9 +31,10 @@
   ],
   "scripts": {
     "audit": "node ./scripts/audit.js",
-    "build": "pnpm run build:service",
+    "build": "pnpm run build:service && pnpm run build:web",
     "build:lib": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --dts --sourcemap --clean",
     "build:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot build",
+    "build:web": "pnpm --filter @evisaflow/web build",
     "dev": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --dts --sourcemap --clean --watch",
     "format": "biome check --write .",
     "format:check": "biome ci . --reporter=summary --error-on-warnings",

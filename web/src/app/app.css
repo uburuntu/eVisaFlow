@@ -1,0 +1,609 @@
+/*
+ * App island styles.
+ *
+ * Built entirely on the marketing design tokens defined in `src/styles/global.css`
+ * (`--brand`, `--bg-raised`, `--sp-*`, `--radius-*`, `--shadow-*`, status colours,
+ * the type scale) so the authenticated app reads as the same product — "calm
+ * institutional trust" — with full light/dark support inherited from those tokens.
+ * Nothing here re-declares a colour literal except where a token has no exact
+ * match; accessibility (focus visibility, contrast, reduced motion) is inherited
+ * from the global stylesheet.
+ *
+ * Class names mirror the React components 1:1 (BEM-ish) for easy tracing.
+ */
+
+/* ---- Frame + in-app chrome -------------------------------------------- */
+.app-body {
+  min-height: 100vh;
+}
+
+.app-frame {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.app-frame--center {
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6) var(--sp-4);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.app-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 4rem;
+  flex-wrap: wrap;
+}
+.app-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  color: var(--fg);
+  text-decoration: none;
+}
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-right: auto;
+}
+.app-nav__link {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  color: var(--fg-soft);
+  font-weight: 550;
+  font-size: var(--fs-sm);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.app-nav__link:hover {
+  background: var(--bg-sunken);
+  color: var(--fg);
+}
+.app-nav__link[aria-current="page"] {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.app-header__account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.app-header__user {
+  color: var(--fg-faint);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  padding-block: var(--sp-7);
+}
+
+/* A button styled like a text link (lock / sign out / inline actions). */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.linklike:hover {
+  color: var(--accent-strong);
+}
+
+/* ---- Page header (per screen) ----------------------------------------- */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.page-head__title {
+  font-size: var(--fs-xl);
+  margin-top: var(--sp-1);
+}
+
+.form-narrow {
+  max-width: 34rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* ---- Vault gate ------------------------------------------------------- */
+.gate {
+  width: 100%;
+  max-width: 30rem;
+  margin-inline: auto;
+}
+.gate__panel {
+  padding: var(--sp-6);
+}
+.gate__title {
+  font-size: var(--fs-xl);
+}
+
+/* ---- Forms: fields, controls ----------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.field__label {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+.field__msg {
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+}
+.field__msg--error {
+  color: var(--c-err-700);
+}
+
+.control {
+  width: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  font-size: var(--fs-base);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.control:focus-visible {
+  border-color: var(--brand);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.control[aria-invalid="true"] {
+  border-color: var(--c-err-700);
+}
+.control[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.control--select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-faint) 50%),
+    linear-gradient(135deg, var(--fg-faint) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.1rem) 1.15rem,
+    calc(100% - 0.75rem) 1.15rem;
+  background-size:
+    0.4rem 0.4rem,
+    0.4rem 0.4rem;
+  background-repeat: no-repeat;
+  padding-right: 2.4rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg-soft);
+  cursor: pointer;
+}
+.checkbox input {
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--brand);
+  flex: none;
+}
+
+/* ---- Banners (status / alert) ---------------------------------------- */
+.banner {
+  border-radius: var(--radius);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-sm);
+  border: 1px solid transparent;
+}
+.banner--info {
+  background: var(--brand-tint);
+  border-color: color-mix(in srgb, var(--brand) 28%, transparent);
+  color: var(--brand);
+}
+.banner--success {
+  background: var(--c-ok-100);
+  border-color: color-mix(in srgb, var(--c-ok-700) 35%, transparent);
+  color: var(--c-ok-700);
+}
+.banner--error {
+  background: var(--c-err-100);
+  border-color: color-mix(in srgb, var(--c-err-700) 35%, transparent);
+  color: var(--c-err-700);
+}
+
+/* ---- Spinner --------------------------------------------------------- */
+.spinner {
+  display: inline-block;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 2.5px solid color-mix(in srgb, var(--brand) 28%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: app-spin 0.7s linear infinite;
+  flex: none;
+}
+.spinner--inline {
+  width: 1em;
+  height: 1em;
+  border-width: 2px;
+  vertical-align: -0.125em;
+  /* Faint full ring first, then a solid top so the spin reads against the
+   * button's own text colour (inherited via currentColor). */
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+}
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.4s;
+  }
+}
+
+/* ---- States: loading / empty ----------------------------------------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: center;
+}
+.state--loading {
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--fg-faint);
+}
+.state--empty {
+  padding: var(--sp-7);
+}
+.state__title {
+  font-size: var(--fs-lg);
+}
+.state__text {
+  color: var(--fg-faint);
+  max-width: 36rem;
+}
+.state__action {
+  margin-top: var(--sp-2);
+}
+
+/* ---- Member grid / cards --------------------------------------------- */
+.member-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-5);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+.member-grid li {
+  margin: 0;
+}
+.member-card {
+  height: 100%;
+}
+.member-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.member-card__name {
+  font-size: var(--fs-lg);
+  font-family: var(--font-display);
+}
+.member-card__meta {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.member-card__meta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.member-card__meta dt {
+  color: var(--fg-faint);
+}
+.member-card__meta dd {
+  margin: 0;
+  color: var(--fg);
+  text-align: right;
+}
+.member-card__meta-empty {
+  color: var(--fg-faint);
+  font-size: var(--fs-sm);
+}
+.member-card__actions {
+  margin-top: auto;
+}
+
+/* A subtle, destructive-leaning text button (remove member). */
+.icon-btn {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--fg-faint);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 0.2rem 0.3rem;
+  border-radius: var(--radius-sm);
+}
+.icon-btn:hover {
+  color: var(--c-err-700);
+  background: var(--c-err-100);
+}
+
+/* ---- Recovery code + share code -------------------------------------- */
+.recovery-code,
+.share-code {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  background: var(--bg-sunken);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+}
+.recovery-code__value,
+.share-code__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  letter-spacing: 0.03em;
+  color: var(--fg);
+  word-break: break-all;
+  flex: 1 1 14rem;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.share-code {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-tint);
+}
+.share-code__value {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+/* ---- Run progress / result ------------------------------------------- */
+.card-title {
+  font-size: var(--fs-lg);
+  font-family: var(--font-display);
+}
+.run-progress__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.run-progress__phase {
+  font-weight: 600;
+  color: var(--fg);
+}
+.run-progress__sub {
+  font-size: var(--fs-sm);
+  color: var(--fg-faint);
+}
+.result__validity {
+  color: var(--fg-soft);
+}
+.result__no-docs,
+.result__validity {
+  font-size: var(--fs-sm);
+}
+
+.downloads {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-4);
+}
+.downloads__title {
+  font-size: var(--fs-md);
+  font-family: var(--font-display);
+  margin-bottom: var(--sp-3);
+}
+.downloads__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-3);
+}
+.downloads__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0;
+}
+.downloads__name {
+  font-weight: 550;
+}
+
+.run-footer {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---- History table --------------------------------------------------- */
+.table-card {
+  padding: 0;
+  overflow: hidden;
+}
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.history-table th {
+  color: var(--fg-faint);
+  font-weight: 650;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-sunken);
+}
+.history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.history-table__action {
+  text-align: right;
+}
+
+/* A status pill with a leading coloured dot. */
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+.status-dot::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+.status-dot--info::before {
+  background: var(--brand);
+}
+.status-dot--success::before {
+  background: var(--c-ok-700);
+}
+.status-dot--error::before {
+  background: var(--c-err-700);
+}
+.status-dot--neutral::before {
+  background: var(--fg-faint);
+}
+
+/* Responsive history table: stack into cards on narrow screens. */
+@media (max-width: 40rem) {
+  .history-table thead {
+    display: none;
+  }
+  .history-table,
+  .history-table tbody,
+  .history-table tr,
+  .history-table td {
+    display: block;
+    width: 100%;
+  }
+  .history-table tr {
+    border-bottom: 1px solid var(--border);
+    padding: var(--sp-2) 0;
+  }
+  .history-table td {
+    border: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: var(--sp-2) var(--sp-4);
+  }
+  .history-table td::before {
+    content: attr(data-label);
+    color: var(--fg-faint);
+    font-weight: 600;
+  }
+  .history-table__action {
+    justify-content: flex-end;
+  }
+  .history-table td.history-table__action::before {
+    content: "";
+  }
+}
+
+/* ---- Modal ----------------------------------------------------------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--c-brand-900) 55%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+}
+/* Full-area click-to-close target sitting behind the panel. */
+.modal-backdrop__close {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  box-shadow: var(--shadow-lg);
+}
+.modal__title {
+  font-size: var(--fs-lg);
+  margin-bottom: var(--sp-3);
+}
+.modal__actions {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: flex-end;
+  margin-top: var(--sp-5);
+  flex-wrap: wrap;
+}
+
+/* ---- No-JS notice ---------------------------------------------------- */
+.app-noscript {
+  max-width: var(--container-prose);
+  margin: var(--sp-8) auto;
+  padding: var(--sp-6);
+  text-align: center;
+}

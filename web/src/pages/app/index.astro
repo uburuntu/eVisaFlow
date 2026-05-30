@@ -1,0 +1,54 @@
+---
+import AppIsland from "../../app/AppIsland.tsx";
+import Seo from "../../components/Seo.astro";
+import "../../styles/global.css";
+import "../../app/app.css";
+
+/**
+ * /app — host page for the interactive, client-only React app island.
+ *
+ * The whole authenticated experience (vault setup/unlock, dashboard, add-member
+ * wizard, live run screen with SSE + 2FA + in-browser artifact decryption, and
+ * history) lives inside `<AppIsland>`, hydrated with `client:only="react"`:
+ *
+ *   - `client:only` means Astro ships NO server-rendered HTML for the island and
+ *     never runs it on the server — correct here because the app reads the
+ *     session, talks to `/api/*`, and runs libsodium WASM, all browser-only. It
+ *     also means libsodium is bundled ONLY into this page, keeping the marketing
+ *     pages zero-JS.
+ *   - Routing is client-side via the URL hash (`/app#/run/<id>`), so a single
+ *     static `/app` page backs every in-app view — no SPA-fallback server config
+ *     and no deep-link 404s.
+ *
+ * This page is intentionally `noindex` (authenticated surface). The session
+ * cookie is HttpOnly, so this static shell cannot read it; the island calls
+ * `GET /api/auth/me` and redirects to `/login` when unauthenticated.
+ *
+ * The full-page layout here is deliberately minimal (no marketing header/footer)
+ * — the island renders its own in-app chrome.
+ */
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <Seo
+      title="Your dashboard"
+      description="The eVisaFlow application."
+      noindex={true}
+    />
+  </head>
+  <body class="app-body">
+    <AppIsland client:only="react" />
+    <noscript>
+      <div class="app-noscript">
+        <h1>JavaScript is required</h1>
+        <p>
+          The eVisaFlow app encrypts your data in your browser, so it needs
+          JavaScript to run. Please enable it, then reload this page.
+        </p>
+        <p><a href="/">Return to the homepage</a></p>
+      </div>
+    </noscript>
+  </body>
+</html>

@@ -15,6 +15,8 @@ import type { Logger } from "../utils/logger.js";
 import type { EntitlementService } from "./entitlements.js";
 import type { Mailer } from "./mailer.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerMemberRoutes } from "./routes/members.js";
+import { registerVaultRoutes } from "./routes/vault.js";
 
 /**
  * Health snapshot served by `/live` and `/ready`. This is the contract the old
@@ -145,6 +147,16 @@ export function createWebServer(deps: WebServerDeps): WebFastifyInstance {
     db: deps.db,
     env: deps.env,
     mailer: deps.mailer,
+    log: deps.log,
+  });
+
+  // Vault routes (opaque client-held-key blobs) and member routes (client-custody
+  // sealed secrets + entitlement-gated creation). Both authenticate via the
+  // session cookie (requireUser) and scope every read/write to the caller.
+  registerVaultRoutes(app, { db: deps.db, log: deps.log });
+  registerMemberRoutes(app, {
+    db: deps.db,
+    entitlements: deps.entitlements,
     log: deps.log,
   });
 

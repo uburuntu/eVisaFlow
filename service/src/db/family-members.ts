@@ -81,6 +81,45 @@ export async function addFamilyMember(
   return toDbFamilyMember(row);
 }
 
+/**
+ * Inserts a CLIENT-custody member (the E2EE web app path). The server stores ONLY
+ * the opaque {@link encrypted_secret} blob — sealed to the user's public key
+ * (`crypto_box_seal`) and holding the entire applicant ({docType, docNumber, dob,
+ * 2fa, purpose}). The server never sees that plaintext and holds no key to open
+ * it, so the cleartext-ish columns (`auth_type`, `encrypted_doc_number`, `dob_*`,
+ * `preferred_2fa_method`, `purpose`) are intentionally left NULL; the
+ * `family_members_custody_secret_check` constraint requires `encrypted_secret` to
+ * be present for `custody='client'` rows.
+ *
+ * The max-6-active limit (`trg_max_family_members`) is enforced by the DB trigger;
+ * a violation surfaces as a thrown pg error, identical to {@link addFamilyMember}.
+ */
+export async function addClientMember(
+  db: Db,
+  member: {
+    user_id: string;
+    display_name: string;
+    encrypted_secret: Buffer;
+  }
+): Promise<DbFamilyMember> {
+  const [row] = await db
+    .insert(familyMembers)
+    .values({
+      userId: member.user_id,
+      displayName: member.display_name,
+      custody: "client",
+      encryptedSecret: member.encrypted_secret,
+      // All cleartext-ish columns stay NULL for client custody (data lives sealed
+      // in encrypted_secret). preferred2faMethod/purpose carry table-level
+      // defaults, so set them explicit-null to keep the row free of any applicant
+      // hints the server should not retain.
+      preferred2faMethod: null,
+      purpose: null,
+    })
+    .returning();
+  return toDbFamilyMember(row);
+}
+
 export async function getActiveFamilyMembers(
   db: Db,
   userId: string

@@ -42,8 +42,6 @@ const TEST_SCHEMA = `evisaflow_dbtest_${process.pid}_${Date.now().toString(36)}`
 // now nullable; email/email_verified/display_name added) so the db/users.ts
 // selects, which now reference those columns, resolve here.
 const SCHEMA_DDL = `
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 CREATE TABLE users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   telegram_id       BIGINT UNIQUE,
@@ -219,6 +217,15 @@ describe("db (Drizzle + pg)", { skip: skip ?? false }, () => {
     // Bootstrap connection on the default search_path to create the isolated
     // test schema, then build a pool pinned to it for everything else.
     bootstrap = new Pool({ connectionString: DATABASE_URL });
+    // pgcrypto (for gen_random_uuid()) is database-global, so parallel live-pg
+    // test files race to create it. `IF NOT EXISTS` is not race-safe in Postgres:
+    // tolerate the concurrent-duplicate errors (unique-index 23505 / 42710) and
+    // rethrow anything else — the extension is present either way.
+    try {
+      await bootstrap.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto"');
+    } catch (err) {
+      if (err?.code !== "23505" && err?.code !== "42710") throw err;
+    }
     await bootstrap.query(`CREATE SCHEMA IF NOT EXISTS "${TEST_SCHEMA}"`);
 
     pool = new Pool({

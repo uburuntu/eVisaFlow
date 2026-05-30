@@ -59,22 +59,31 @@ CREATE TABLE users (
     CHECK (telegram_id IS NOT NULL OR email IS NOT NULL)
 );
 
+-- Mirrors the live schema through migration 005: custody + encrypted_secret,
+-- cleartext-ish columns nullable, and the per-custody integrity CHECK.
 CREATE TABLE family_members (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   display_name          TEXT NOT NULL,
-  auth_type             TEXT NOT NULL CHECK (auth_type IN ('passport', 'nationalId', 'brc', 'ukvi')),
-  encrypted_doc_number  TEXT NOT NULL,
-  dob_day               SMALLINT NOT NULL CHECK (dob_day BETWEEN 1 AND 31),
-  dob_month             SMALLINT NOT NULL CHECK (dob_month BETWEEN 1 AND 12),
-  dob_year              SMALLINT NOT NULL CHECK (dob_year BETWEEN 1900 AND 2100),
-  preferred_2fa_method  TEXT NOT NULL DEFAULT 'sms' CHECK (preferred_2fa_method IN ('sms', 'email')),
-  purpose               TEXT NOT NULL DEFAULT 'immigration_status_other'
+  custody               TEXT NOT NULL DEFAULT 'server' CHECK (custody IN ('server', 'client')),
+  auth_type             TEXT CHECK (auth_type IN ('passport', 'nationalId', 'brc', 'ukvi')),
+  encrypted_doc_number  TEXT,
+  dob_day               SMALLINT CHECK (dob_day BETWEEN 1 AND 31),
+  dob_month             SMALLINT CHECK (dob_month BETWEEN 1 AND 12),
+  dob_year              SMALLINT CHECK (dob_year BETWEEN 1900 AND 2100),
+  preferred_2fa_method  TEXT DEFAULT 'sms' CHECK (preferred_2fa_method IN ('sms', 'email')),
+  purpose               TEXT DEFAULT 'immigration_status_other'
                         CHECK (purpose IN ('right_to_work', 'right_to_rent', 'immigration_status_other')),
+  encrypted_secret      BYTEA,
   is_active             BOOLEAN NOT NULL DEFAULT true,
   sort_order            SMALLINT NOT NULL DEFAULT 0,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT family_members_custody_secret_check CHECK (
+    (custody = 'server' AND encrypted_doc_number IS NOT NULL)
+    OR
+    (custody = 'client' AND encrypted_secret IS NOT NULL)
+  )
 );
 
 CREATE OR REPLACE FUNCTION check_max_family_members()
@@ -102,6 +111,8 @@ CREATE TABLE runs (
   status            TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'running', 'awaiting_2fa', 'success', 'failed', 'cancelled', 'interrupted')),
   encrypted_share_code TEXT,
+  share_code_alg    TEXT CHECK (share_code_alg IN ('aesgcm', 'box_seal')),
+  custody           TEXT,
   valid_until       TIMESTAMPTZ,
   error_code        TEXT,
   error_message     TEXT,
@@ -126,6 +137,22 @@ CREATE TABLE run_events (
   error_code  TEXT,
   message     TEXT,
   metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Sealed run outputs (migration 006). Mirrored so Drizzle selects referencing
+-- run_artifacts resolve against the isolated test schema.
+CREATE TABLE run_artifacts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id      UUID REFERENCES runs(id) ON DELETE CASCADE,
+  kind        TEXT CHECK (kind IN ('evisa_pdf', 'checker_html', 'checker_pdf')),
+  filename    TEXT,
+  sealed_alg  TEXT,
+  storage     TEXT NOT NULL DEFAULT 'db' CHECK (storage IN ('db', 'disk')),
+  bytes       BYTEA,
+  path        TEXT,
+  byte_length INT,
+  expires_at  TIMESTAMPTZ NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

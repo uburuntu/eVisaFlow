@@ -122,14 +122,127 @@ describe("db migrate runner", { skip: skip ?? false }, () => {
     return rows[0]?.is_nullable ?? null;
   }
 
-  it("fresh database: applies all migrations including 004 and is idempotent", async () => {
+  /**
+   * Proves the 005 custody schema behaves: a client row carries only a sealed
+   * secret (cleartext columns NULL), a server row needs its doc number, and the
+   * custody CHECK rejects a server row missing it. Inserts and removes its own
+   * rows (CASCADE via the user) so it is safe to call repeatedly.
+   */
+  async function assertMemberCustodySemantics(pool) {
+    const {
+      rows: [user],
+    } = await pool.query("INSERT INTO users (telegram_id) VALUES (910005) RETURNING id");
+    try {
+      // A client row: only the sealed secret, every cleartext column NULL.
+      const {
+        rows: [client],
+      } = await pool.query(
+        `INSERT INTO family_members (user_id, display_name, custody, encrypted_secret)
+         VALUES ($1, 'Client', 'client', '\\xdeadbeef'::bytea)
+         RETURNING custody, auth_type, encrypted_doc_number, dob_day, encrypted_secret`,
+        [user.id]
+      );
+      assert.equal(client.custody, "client");
+      assert.equal(client.auth_type, null, "client row leaves auth_type NULL");
+      assert.equal(client.encrypted_doc_number, null);
+      assert.equal(client.dob_day, null);
+      assert.ok(
+        Buffer.isBuffer(client.encrypted_secret),
+        "sealed secret stored as bytea"
+      );
+
+      // A server row with its doc number inserts (custody defaults to server).
+      await pool.query(
+        `INSERT INTO family_members (user_id, display_name, auth_type, encrypted_doc_number, dob_day, dob_month, dob_year)
+         VALUES ($1, 'Server', 'passport', 'cipher', 1, 2, 1990)`,
+        [user.id]
+      );
+
+      // The custody CHECK rejects a server row with no doc number.
+      await assert.rejects(
+        () =>
+          pool.query(
+            `INSERT INTO family_members (user_id, display_name, custody)
+             VALUES ($1, 'Bad', 'server')`,
+            [user.id]
+          ),
+        (err) => /family_members_custody_secret_check/.test(String(err)),
+        "server row without a doc number is rejected"
+      );
+    } finally {
+      await pool.query("DELETE FROM users WHERE id = $1", [user.id]);
+    }
+  }
+
+  /**
+   * Proves the 006 run_artifacts schema behaves: sealed bytes persist with a
+   * default `storage='db'`, invalid enum values are rejected, and rows cascade
+   * when their run is deleted. Inserts and removes its own rows.
+   */
+  async function assertRunArtifactsSemantics(pool) {
+    const {
+      rows: [user],
+    } = await pool.query("INSERT INTO users (telegram_id) VALUES (910006) RETURNING id");
+    try {
+      const {
+        rows: [member],
+      } = await pool.query(
+        `INSERT INTO family_members (user_id, display_name, auth_type, encrypted_doc_number, dob_day, dob_month, dob_year)
+         VALUES ($1, 'M', 'passport', 'cipher', 1, 2, 1990) RETURNING id`,
+        [user.id]
+      );
+      const {
+        rows: [run],
+      } = await pool.query(
+        `INSERT INTO runs (user_id, family_member_id, share_code_alg, custody)
+         VALUES ($1, $2, 'box_seal', 'client') RETURNING id`,
+        [user.id, member.id]
+      );
+
+      // A sealed artifact persists; storage defaults to 'db'.
+      const {
+        rows: [artifact],
+      } = await pool.query(
+        `INSERT INTO run_artifacts (run_id, kind, filename, sealed_alg, bytes, byte_length, expires_at)
+         VALUES ($1, 'evisa_pdf', 'visa.pdf', 'box_seal', '\\xcafe'::bytea, 2, now() + interval '1 day')
+         RETURNING storage, kind, bytes`,
+        [run.id]
+      );
+      assert.equal(artifact.storage, "db", "storage defaults to db");
+      assert.equal(artifact.kind, "evisa_pdf");
+      assert.ok(Buffer.isBuffer(artifact.bytes), "sealed bytes stored as bytea");
+
+      // The kind CHECK rejects an unknown artifact kind.
+      await assert.rejects(
+        () =>
+          pool.query(
+            `INSERT INTO run_artifacts (run_id, kind, expires_at)
+             VALUES ($1, 'bogus', now() + interval '1 day')`,
+            [run.id]
+          ),
+        (err) => /run_artifacts_kind_check/.test(String(err))
+      );
+
+      // Deleting the run cascades to its artifacts.
+      await pool.query("DELETE FROM runs WHERE id = $1", [run.id]);
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM run_artifacts WHERE run_id = $1",
+        [run.id]
+      );
+      assert.equal(rows[0].n, 0, "artifacts cascade-deleted with their run");
+    } finally {
+      await pool.query("DELETE FROM users WHERE id = $1", [user.id]);
+    }
+  }
+
+  it("fresh database: applies all migrations including 004-006 and is idempotent", async () => {
     const url = await freshDatabase("fresh");
 
     const first = await runMigrations(url, silentLog);
     assert.deepEqual(first.baselined, [], "nothing to baseline on a truly empty DB");
     assert.deepEqual(
       first.applied,
-      ["001", "002", "003", "004"],
+      ["001", "002", "003", "004", "005", "006"],
       "every migration runs on a fresh DB in ascending order"
     );
 
@@ -167,12 +280,53 @@ describe("db migrate runner", { skip: skip ?? false }, () => {
         (err) => /users_identity_present_check/.test(String(err))
       );
 
+      // --- 005: member custody ---
+      // New columns present; custody defaults to server and is NOT NULL.
+      assert.equal(await columnNullability(pool, "family_members", "custody"), "NO");
+      assert.notEqual(
+        await columnNullability(pool, "family_members", "encrypted_secret"),
+        null,
+        "family_members.encrypted_secret added"
+      );
+      // The cleartext-ish columns are now nullable (NULL for client rows).
+      for (const c of [
+        "auth_type",
+        "encrypted_doc_number",
+        "dob_day",
+        "dob_month",
+        "dob_year",
+        "preferred_2fa_method",
+        "purpose",
+      ]) {
+        assert.equal(
+          await columnNullability(pool, "family_members", c),
+          "YES",
+          `family_members.${c} dropped NOT NULL`
+        );
+      }
+      await assertMemberCustodySemantics(pool);
+
+      // --- 006: sealed artifacts ---
+      assert.equal(
+        await tableExists(pool, "run_artifacts"),
+        true,
+        "run_artifacts created"
+      );
+      for (const c of ["share_code_alg", "custody"]) {
+        assert.notEqual(
+          await columnNullability(pool, "runs", c),
+          null,
+          `runs.${c} added`
+        );
+      }
+      await assertRunArtifactsSemantics(pool);
+
       const ledger = await pool.query(
         "SELECT version FROM schema_migrations ORDER BY version"
       );
       assert.deepEqual(
         ledger.rows.map((r) => r.version),
-        ["001", "002", "003", "004"]
+        ["001", "002", "003", "004", "005", "006"]
       );
     });
 
@@ -180,10 +334,17 @@ describe("db migrate runner", { skip: skip ?? false }, () => {
     const second = await runMigrations(url, silentLog);
     assert.deepEqual(second.baselined, []);
     assert.deepEqual(second.applied, []);
-    assert.deepEqual(second.alreadyApplied, ["001", "002", "003", "004"]);
+    assert.deepEqual(second.alreadyApplied, ["001", "002", "003", "004", "005", "006"]);
+
+    // The schema still behaves correctly after a re-run (idempotent DDL did not
+    // drop constraints or columns).
+    await withPool(url, async (pool) => {
+      await assertMemberCustodySemantics(pool);
+      await assertRunArtifactsSemantics(pool);
+    });
   });
 
-  it("baseline: pre-existing 001-003 schema is recorded, only 004 runs, data preserved", async () => {
+  it("baseline: pre-existing 001-003 schema is recorded, only 004-006 run, data preserved", async () => {
     const url = await freshDatabase("baseline");
 
     // Simulate an existing Supabase database: apply 001-003 raw, with NO ledger.
@@ -205,7 +366,11 @@ describe("db migrate runner", { skip: skip ?? false }, () => {
       ["001", "002", "003"],
       "pre-ledger versions recorded without re-running"
     );
-    assert.deepEqual(result.applied, ["004"], "only the new migration runs");
+    assert.deepEqual(
+      result.applied,
+      ["004", "005", "006"],
+      "only the post-baseline migrations run"
+    );
 
     await withPool(url, async (pool) => {
       // Sentinel survived and display_name was backfilled from first_name.
@@ -222,12 +387,30 @@ describe("db migrate runner", { skip: skip ?? false }, () => {
         assert.equal(await tableExists(pool, t), true, `${t} created by 004`);
       }
 
+      // 005 ran against the pre-existing family_members: NOT NULL was relaxed on
+      // the cleartext columns and the custody columns were added.
+      assert.equal(await columnNullability(pool, "family_members", "custody"), "NO");
+      assert.equal(
+        await columnNullability(pool, "family_members", "encrypted_doc_number"),
+        "YES",
+        "005 dropped NOT NULL on a baselined table"
+      );
+      await assertMemberCustodySemantics(pool);
+
+      // 006 ran: run_artifacts + the new runs columns exist and behave.
+      assert.equal(
+        await tableExists(pool, "run_artifacts"),
+        true,
+        "run_artifacts created by 006"
+      );
+      await assertRunArtifactsSemantics(pool);
+
       const ledger = await pool.query(
         "SELECT version FROM schema_migrations ORDER BY version"
       );
       assert.deepEqual(
         ledger.rows.map((r) => r.version),
-        ["001", "002", "003", "004"]
+        ["001", "002", "003", "004", "005", "006"]
       );
     });
 

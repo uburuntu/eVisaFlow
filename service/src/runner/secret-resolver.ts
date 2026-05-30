@@ -37,7 +37,38 @@ function toIdentityDocument(authType: string, docNumber: string): IdentityDocume
   return { type: authType as IdentityDocument["type"], number: docNumber };
 }
 
-function memberApplicant(member: DbFamilyMember, docNumber: string): Applicant {
+/**
+ * A server-custody member with its cleartext-ish columns proven non-null.
+ * The `family_members_custody_secret_check` constraint guarantees a server row
+ * has `encrypted_doc_number`, and 001's column CHECKs keep the rest populated;
+ * this narrows the now-nullable (post-005) types and fails loudly otherwise.
+ */
+type ServerFamilyMember = DbFamilyMember & {
+  auth_type: string;
+  encrypted_doc_number: string;
+  dob_day: number;
+  dob_month: number;
+  dob_year: number;
+  preferred_2fa_method: string;
+  purpose: string;
+};
+
+function assertServerMember(member: DbFamilyMember): ServerFamilyMember {
+  if (
+    member.auth_type === null ||
+    member.encrypted_doc_number === null ||
+    member.dob_day === null ||
+    member.dob_month === null ||
+    member.dob_year === null ||
+    member.preferred_2fa_method === null ||
+    member.purpose === null
+  ) {
+    throw new Error(`Family member ${member.id} is not a complete server-custody record`);
+  }
+  return member as ServerFamilyMember;
+}
+
+function memberApplicant(member: ServerFamilyMember, docNumber: string): Applicant {
   return {
     identityDocument: toIdentityDocument(member.auth_type, docNumber),
     dateOfBirth: `${String(member.dob_year).padStart(4, "0")}-${String(
@@ -87,10 +118,11 @@ async function resolve(
   const getMember = deps.getMember ?? getFamilyMemberById;
   const decryptDocNumber = deps.decryptDocNumber ?? decrypt;
 
-  const member = await getMember(deps.db, input.familyMemberId, input.userId);
-  if (!member) {
+  const loaded = await getMember(deps.db, input.familyMemberId, input.userId);
+  if (!loaded) {
     throw new Error(`Family member not found: ${input.familyMemberId}`);
   }
+  const member = assertServerMember(loaded);
 
   const docNumber = decryptDocNumber(member.encrypted_doc_number, deps.serverKeyHex);
   // Log only non-secret structure (ids + doc type), never the number or DOB.

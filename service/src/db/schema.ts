@@ -6,6 +6,7 @@ import {
   customType,
   doublePrecision,
   index,
+  integer,
   jsonb,
   pgTable,
   smallint,
@@ -76,6 +77,20 @@ export const users = pgTable(
   ]
 );
 
+/**
+ * Family members carry one of two key-custody models, set in migration 005:
+ *
+ * - **server** (the trusted bot): the cleartext-ish columns are populated —
+ *   `encryptedDocNumber` (AES with the server key) plus `authType`/`dob*`/
+ *   `preferred2faMethod`/`purpose`. This is the existing path; existing rows
+ *   default to `custody='server'`.
+ * - **client** (the web app, E2EE): the server stores ONLY `encryptedSecret`,
+ *   an opaque blob sealed to the user's public key; the cleartext-ish columns
+ *   are left NULL, which is why 005 dropped their `NOT NULL`.
+ *
+ * The `family_members_custody_secret_check` constraint enforces that a server
+ * row has its doc number and a client row has its sealed secret.
+ */
 export const familyMembers = pgTable(
   "family_members",
   {
@@ -84,13 +99,19 @@ export const familyMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     displayName: text("display_name").notNull(),
-    authType: text("auth_type").notNull(),
-    encryptedDocNumber: text("encrypted_doc_number").notNull(),
-    dobDay: smallint("dob_day").notNull(),
-    dobMonth: smallint("dob_month").notNull(),
-    dobYear: smallint("dob_year").notNull(),
-    preferred2faMethod: text("preferred_2fa_method").notNull().default("sms"),
-    purpose: text("purpose").notNull().default("immigration_status_other"),
+    // custody added in 005; existing rows default to server (the trusted bot).
+    custody: text("custody").notNull().default("server"),
+    // The next group became nullable in 005: mandatory for server rows, NULL for
+    // client rows (their data lives in encryptedSecret instead).
+    authType: text("auth_type"),
+    encryptedDocNumber: text("encrypted_doc_number"),
+    dobDay: smallint("dob_day"),
+    dobMonth: smallint("dob_month"),
+    dobYear: smallint("dob_year"),
+    preferred2faMethod: text("preferred_2fa_method").default("sms"),
+    purpose: text("purpose").default("immigration_status_other"),
+    // Opaque blob (sealed to the user's public key) for client custody. Added 005.
+    encryptedSecret: bytea("encrypted_secret"),
     isActive: boolean("is_active").notNull().default(true),
     sortOrder: smallint("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
@@ -102,6 +123,7 @@ export const familyMembers = pgTable(
   },
   (table) => [
     index("idx_family_members_user").on(table.userId),
+    check("family_members_custody_check", sql`${table.custody} IN ('server', 'client')`),
     check(
       "family_members_auth_type_check",
       sql`${table.authType} IN ('passport', 'nationalId', 'brc', 'ukvi')`
@@ -116,6 +138,10 @@ export const familyMembers = pgTable(
     check(
       "family_members_purpose_check",
       sql`${table.purpose} IN ('right_to_work', 'right_to_rent', 'immigration_status_other')`
+    ),
+    check(
+      "family_members_custody_secret_check",
+      sql`(${table.custody} = 'server' AND ${table.encryptedDocNumber} IS NOT NULL) OR (${table.custody} = 'client' AND ${table.encryptedSecret} IS NOT NULL)`
     ),
   ]
 );
@@ -133,6 +159,11 @@ export const runs = pgTable(
     trigger: text("trigger").notNull().default("manual"),
     status: text("status").notNull().default("pending"),
     encryptedShareCode: text("encrypted_share_code"),
+    // Algorithm used to seal `encryptedShareCode`, set per custody in 006:
+    // 'aesgcm' (server) or 'box_seal' (client). Nullable for legacy/no-code runs.
+    shareCodeAlg: text("share_code_alg"),
+    // Denormalized custody of the run, recorded in 006 for history/audit.
+    custody: text("custody"),
     validUntil: timestamp("valid_until", { withTimezone: true, mode: "string" }),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
@@ -153,6 +184,10 @@ export const runs = pgTable(
     check(
       "runs_status_check",
       sql`${table.status} IN ('pending', 'running', 'awaiting_2fa', 'success', 'failed', 'cancelled', 'interrupted')`
+    ),
+    check(
+      "runs_share_code_alg_check",
+      sql`${table.shareCodeAlg} IN ('aesgcm', 'box_seal')`
     ),
   ]
 );
@@ -178,6 +213,43 @@ export const runEvents = pgTable(
       .defaultNow(),
   },
   (table) => [index("idx_run_events_run_created").on(table.runId, table.createdAt)]
+);
+
+/**
+ * Sealed run outputs (eVisa PDF, checker HTML/PDF) with a TTL. Added in 006.
+ *
+ * `bytes` are ALWAYS sealed before storage: AES-GCM for server custody
+ * (`sealedAlg='aesgcm'`) or anonymous `crypto_box_seal` to the user's public key
+ * for client custody (`sealedAlg='box_seal'`). No plaintext output bytes are ever
+ * written here. Self-host v1 stores bytes inline (`storage='db'`); a later cloud
+ * build can offload to disk/object storage (`storage='disk'`, via `path`).
+ */
+export const runArtifacts = pgTable(
+  "run_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id").references(() => runs.id, { onDelete: "cascade" }),
+    kind: text("kind"),
+    filename: text("filename"),
+    sealedAlg: text("sealed_alg"),
+    storage: text("storage").notNull().default("db"),
+    bytes: bytea("bytes"),
+    path: text("path"),
+    byteLength: integer("byte_length"),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_run_artifacts_run").on(table.runId),
+    index("idx_run_artifacts_expires").on(table.expiresAt),
+    check(
+      "run_artifacts_kind_check",
+      sql`${table.kind} IN ('evisa_pdf', 'checker_html', 'checker_pdf')`
+    ),
+    check("run_artifacts_storage_check", sql`${table.storage} IN ('db', 'disk')`),
+  ]
 );
 
 /**
@@ -251,6 +323,7 @@ export const schema = {
   familyMembers,
   runs,
   runEvents,
+  runArtifacts,
   userVault,
   sessions,
   magicLinkTokens,

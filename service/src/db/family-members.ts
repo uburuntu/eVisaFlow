@@ -6,13 +6,19 @@ export interface DbFamilyMember {
   id: string;
   user_id: string;
   display_name: string;
-  auth_type: string;
-  encrypted_doc_number: string;
-  dob_day: number;
-  dob_month: number;
-  dob_year: number;
-  preferred_2fa_method: string;
-  purpose: string;
+  /** 'server' (trusted bot, AES doc number) or 'client' (web E2EE, sealed secret). */
+  custody: string;
+  // The next group is non-null only for server-custody rows; NULL for client
+  // rows, whose data lives in `encrypted_secret` instead (migration 005).
+  auth_type: string | null;
+  encrypted_doc_number: string | null;
+  dob_day: number | null;
+  dob_month: number | null;
+  dob_year: number | null;
+  preferred_2fa_method: string | null;
+  purpose: string | null;
+  /** Opaque blob sealed to the user's public key, for client custody (005). */
+  encrypted_secret: Buffer | null;
   is_active: boolean;
   sort_order: number;
   created_at: string;
@@ -26,6 +32,7 @@ function toDbFamilyMember(row: FamilyMemberRow): DbFamilyMember {
     id: row.id,
     user_id: row.userId,
     display_name: row.displayName,
+    custody: row.custody,
     auth_type: row.authType,
     encrypted_doc_number: row.encryptedDocNumber,
     dob_day: row.dobDay,
@@ -33,6 +40,7 @@ function toDbFamilyMember(row: FamilyMemberRow): DbFamilyMember {
     dob_year: row.dobYear,
     preferred_2fa_method: row.preferred2faMethod,
     purpose: row.purpose,
+    encrypted_secret: row.encryptedSecret,
     is_active: row.isActive,
     sort_order: row.sortOrder,
     created_at: row.createdAt,

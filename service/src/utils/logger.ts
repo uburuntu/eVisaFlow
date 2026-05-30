@@ -34,7 +34,6 @@ export function createLogger(opts?: { verbose?: boolean }) {
         "*.caption",
         "*.token",
         "*.TELEGRAM_BOT_TOKEN",
-        "*.SUPABASE_SERVICE_ROLE_KEY",
         "*.ENCRYPTION_KEY",
         "*.shareCode",
         "*.dateOfBirth",

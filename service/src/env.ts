@@ -24,16 +24,13 @@ const DiagnosticsModeSchema = z.enum(["off", "sanitized", "raw", "sanitized_on_f
 
 const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
-  SUPABASE_URL: z.url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  // Portable Postgres connection string for the Drizzle + pg handle. Defaults to
-  // a local instance for self-host/dev; a later phase formalises this alongside
-  // the rest of the web/self-host env. SAFETY: only ever point this at a
-  // local/ephemeral Postgres, never a managed production database.
-  DATABASE_URL: z
-    .string()
-    .min(1)
-    .default("postgres://postgres:postgres@localhost:5432/evisaflow"),
+  // Portable Postgres connection string for the Drizzle + pg handle and the
+  // migration runner. This is the single source of database truth: for a Supabase
+  // deployment it is the project's Postgres connection string, and for self-host
+  // it points at the bundled Postgres. SAFETY: only ever point this at a
+  // local/ephemeral Postgres while developing or testing, never a managed
+  // production database.
+  DATABASE_URL: z.url(),
   ENCRYPTION_KEY: z
     .string()
     .length(64)
@@ -79,7 +76,6 @@ function safeDbHost(databaseUrl: string): string {
 
 export function redactedEnvSummary(env: Env): Record<string, unknown> {
   return {
-    supabaseUrl: env.SUPABASE_URL,
     databaseHost: safeDbHost(env.DATABASE_URL),
     queueConcurrency: env.QUEUE_CONCURRENCY,
     evisaHeadless: env.EVISA_HEADLESS,

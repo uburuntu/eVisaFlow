@@ -3,8 +3,7 @@ import test from "node:test";
 
 const ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
+  "DATABASE_URL",
   "ENCRYPTION_KEY",
   "QUEUE_CONCURRENCY",
   "EVISA_HEADLESS",
@@ -16,8 +15,7 @@ const ENV_KEYS = [
 
 const baseEnv = {
   TELEGRAM_BOT_TOKEN: "telegram-token",
-  SUPABASE_URL: "https://example.supabase.co",
-  SUPABASE_SERVICE_ROLE_KEY: "service-role",
+  DATABASE_URL: "postgres://postgres:postgres@localhost:5432/evisaflow",
   ENCRYPTION_KEY: "a".repeat(64),
 };
 
@@ -83,9 +81,9 @@ test("loadEnv rejects invalid encryption keys", async () => {
 });
 
 test("loadEnv rejects invalid URLs and cron expressions", async () => {
-  await withEnv({ ...baseEnv, SUPABASE_URL: "not-a-url" }, async () => {
+  await withEnv({ ...baseEnv, DATABASE_URL: "not-a-url" }, async () => {
     const { loadEnv } = await importFreshEnv();
-    assert.throws(() => loadEnv(), /SUPABASE_URL/);
+    assert.throws(() => loadEnv(), /DATABASE_URL/);
   });
 
   await withEnv({ ...baseEnv, SCHEDULER_CRON: "not cron" }, async () => {
@@ -99,9 +97,10 @@ test("redactedEnvSummary omits secrets", async () => {
     const { loadEnv, redactedEnvSummary } = await importFreshEnv();
     const summary = redactedEnvSummary(loadEnv());
 
-    assert.equal(summary.supabaseUrl, baseEnv.SUPABASE_URL);
+    // The host:port/database is surfaced for diagnostics; credentials are dropped.
+    assert.equal(summary.databaseHost, "localhost:5432/evisaflow");
+    assert.equal("DATABASE_URL" in summary, false);
     assert.equal("TELEGRAM_BOT_TOKEN" in summary, false);
-    assert.equal("SUPABASE_SERVICE_ROLE_KEY" in summary, false);
     assert.equal("ENCRYPTION_KEY" in summary, false);
   });
 });

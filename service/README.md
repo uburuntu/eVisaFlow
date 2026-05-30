@@ -19,20 +19,37 @@ Telegram bot that automates UK eVisa share code retrieval for families. Built on
 2. Send `/newbot` and follow the prompts
 3. Copy the bot token
 
-### 2. Set Up Supabase
+### 2. Set Up Postgres
 
-1. Create a free account at [supabase.com](https://supabase.com)
-2. Create a new project (name it e.g. "evisa-bot")
-3. Go to **Settings → API** and copy:
-   - **Project URL** → `SUPABASE_URL`
-   - **service_role key** (under "Project API keys") → `SUPABASE_SERVICE_ROLE_KEY`
-4. Go to **SQL Editor** and run the migration files in order:
-   - `migrations/001_initial_schema.sql`
-   - `migrations/002_bot_runtime_hardening.sql`
-   - `migrations/003_drop_plaintext_share_code.sql`
-5. Verify the tables (`users`, `family_members`, `runs`, `run_events`) appear in the **Table Editor**
+The bot talks to any Postgres database over a single `DATABASE_URL` connection
+string (Drizzle + `pg`). You do **not** paste SQL anywhere — the built-in
+migration runner applies the schema for you.
 
-Migration `003` removes the legacy plaintext `runs.share_code` column. The bot now stores encrypted share-code bytes plus metadata only.
+- **Self-host:** use the bundled Postgres from `docker compose` (default
+  `postgres://postgres:postgres@localhost:5432/evisaflow`), or point at any
+  Postgres you manage.
+- **Supabase:** create a project, then copy the project's Postgres connection
+  string from **Settings → Database → Connection string** into `DATABASE_URL`.
+  The service role key is no longer needed.
+
+On startup the service runs the migration runner against `DATABASE_URL`. It owns
+a `schema_migrations` ledger and applies every `migrations/NNN_*.sql` that has
+not been recorded yet, each in its own transaction; a second run is a no-op. You
+can also apply them manually with `node dist/db/migrate.js`.
+
+The existing migrations `001`–`003` are **baselined automatically**: if a
+database already carries the core tables (`users`, `family_members`, `runs`,
+`run_events`) but has no ledger yet — as the original Supabase database does —
+those versions are recorded as already-applied **without re-running their DDL**,
+so an existing schema is never re-migrated or broken. Fresh databases have
+neither the tables nor the ledger, so every migration runs normally.
+
+> Migration `003` removed the legacy plaintext `runs.share_code` column. The bot
+> stores encrypted share-code bytes plus metadata only.
+
+> SAFETY: only ever point `DATABASE_URL` (and the migration runner) at a
+> local/ephemeral Postgres while developing or testing — never at a
+> managed/production database.
 
 ### 3. Configure Environment
 
@@ -45,8 +62,7 @@ Fill in the values:
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | From BotFather |
-| `SUPABASE_URL` | From Supabase project settings |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase project settings |
+| `DATABASE_URL` | Postgres connection string (self-host: bundled Postgres; Supabase: project Postgres connection string). Use a local/ephemeral DB for dev/test only. |
 | `ENCRYPTION_KEY` | Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `QUEUE_CONCURRENCY` | Max parallel browsers (default: 2) |
 | `EVISA_HEADLESS` | Run browser automation headlessly (default: true) |
@@ -100,7 +116,7 @@ pnpm --filter evisa-flow-bot start
 Telegram ←→ grammY Bot (long polling) ←→ eVisaFlow (Playwright)
                   │
                   ↓
-            Supabase (Postgres)
+            Postgres (Drizzle + pg)
 ```
 
 - **Long polling + health server** — Telegram updates use long polling; `/live` and `/ready` expose container health
@@ -110,6 +126,6 @@ Telegram ←→ grammY Bot (long polling) ←→ eVisaFlow (Playwright)
 
 ## Deploy Notes
 
-The GitHub deploy workflow builds an immutable service image, runs `node dist/preflight.js` in that image, then replaces the live container only if Telegram and Supabase readiness checks pass. If the new container fails `/ready`, the workflow restores the previous container.
+The GitHub deploy workflow builds an immutable service image, runs `node dist/preflight.js` in that image, then replaces the live container only if Telegram and Postgres readiness checks pass. If the new container fails `/ready`, the workflow restores the previous container.
 
-Before merging deploy changes, make sure the server has the current `.env` values from `.env.example`, the Supabase migrations above have been applied, and the deployment user can run Docker Compose.
+Before merging deploy changes, make sure the server has the current `.env` values from `.env.example` (in particular `DATABASE_URL` — the `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` pair is no longer used), and that the deployment user can run Docker Compose. The schema is applied automatically by the migration runner on startup, so there is no manual SQL step.

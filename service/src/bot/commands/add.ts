@@ -268,9 +268,17 @@ export async function addMemberConversation(
     }
     const twoFaMethod = twoFaValue;
 
-    const encryptedDoc = await conversation.external((ctx) =>
-      encrypt(docNumber, ctx.env.ENCRYPTION_KEY)
-    );
+    const encryptedDoc = await conversation.external((ctx) => {
+      // The bot path is server-custody and needs the AES key. env validation
+      // (superRefine) requires ENCRYPTION_KEY whenever ENABLE_BOT is true, and the
+      // bot only runs in that case, so this is a defensive narrow — never expected
+      // to throw at runtime.
+      const key = ctx.env.ENCRYPTION_KEY;
+      if (!key) {
+        throw new Error("ENCRYPTION_KEY is required for the Telegram bot");
+      }
+      return encrypt(docNumber, key);
+    });
     await conversation.external((ctx) =>
       addFamilyMember(ctx.db, {
         user_id: user.id,

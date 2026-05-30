@@ -106,3 +106,45 @@ test("GET /ready is 503 when ready but shutting down", async () => {
     await app.close();
   }
 });
+
+// Bot-less (web-first) deployment: ENABLE_BOT=false. index.ts builds a health
+// snapshot with NO `telegram` block and readiness driven by the web/db state
+// alone. The server must honor that — readiness must not require Telegram.
+test("GET /ready is 200 without a bot (no telegram block, db ready)", async () => {
+  const app = makeServer(() => ({
+    ready: true,
+    shuttingDown: false,
+    startedAt: new Date(0).toISOString(),
+    // No `telegram` field — exactly what index.ts emits when ENABLE_BOT is false.
+    db: { ready: true },
+  }));
+  try {
+    const res = await app.inject({ method: "GET", url: "/ready" });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.ready, true);
+    // A pure-web deployment reports no Telegram readiness at all.
+    assert.equal("telegram" in body, false);
+    assert.equal(body.db.ready, true);
+  } finally {
+    await app.close();
+  }
+});
+
+test("GET /ready is 503 without a bot when the DB is not ready", async () => {
+  // index.ts only flips `ready` true after migrations + DB readiness, so a
+  // bot-less deployment that has not reached DB readiness stays 503.
+  const app = makeServer(() => ({
+    ready: false,
+    shuttingDown: false,
+    startedAt: new Date(0).toISOString(),
+    db: { ready: false },
+  }));
+  try {
+    const res = await app.inject({ method: "GET", url: "/ready" });
+    assert.equal(res.statusCode, 503);
+    assert.equal("telegram" in res.json(), false);
+  } finally {
+    await app.close();
+  }
+});

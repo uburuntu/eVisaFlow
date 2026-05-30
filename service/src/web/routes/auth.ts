@@ -125,6 +125,13 @@ export function registerAuthRoutes(app: WebFastifyInstance, deps: AuthRoutesDeps
    * started and the current user is returned.
    */
   app.post("/api/auth/telegram", async (request, reply) => {
+    // Telegram Login is only available when a bot token is configured (ENABLE_BOT
+    // true). On a pure-web deployment there is no token to derive the HMAC key
+    // from, so the widget cannot be verified — collapse into the same opaque 401
+    // the verifier returns, leaking nothing about the deployment shape.
+    if (!env.TELEGRAM_BOT_TOKEN) {
+      return reply.code(401).send({ error: "telegram_auth_failed" });
+    }
     const parsed = telegramBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_payload" });

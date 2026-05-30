@@ -22,9 +22,26 @@ const BooleanFromEnv = z.preprocess(
 
 const DiagnosticsModeSchema = z.enum(["off", "sanitized", "raw", "sanitized_on_failure"]);
 
+const DeploymentModeSchema = z.enum(["selfhost", "cloud"]);
+
 const envSchema = z
   .object({
-    TELEGRAM_BOT_TOKEN: z.string().min(1),
+    // Selects the deployment profile. `selfhost` (the default) is the web-first,
+    // one-`docker compose up` profile: no billing, no provider mailer, no R2 — a
+    // local Postgres and the bundled web app. `cloud` is reserved for the later
+    // paid tier (Stripe/quotas/R2 wiring keys off this). Defaults to `selfhost`
+    // so a fresh checkout is a self-host install with zero extra config.
+    DEPLOYMENT_MODE: DeploymentModeSchema.default("selfhost"),
+    // Opt-in Telegram bot. Web-first: defaults to OFF so a pure-web self-host runs
+    // with NO Telegram account and never touches the server encryption key (web
+    // runs are client-custody). When true, the grammY bot, its 2FA reply matching,
+    // the Telegram-notify scheduler, and the Telegram readiness check all turn on —
+    // and TELEGRAM_BOT_TOKEN + ENCRYPTION_KEY become required (see superRefine).
+    ENABLE_BOT: BooleanFromEnv.default(false),
+    // Telegram bot token from @BotFather. REQUIRED ONLY when ENABLE_BOT is true
+    // (enforced by the superRefine below); a pure-web deployment needs no bot, so
+    // it is optional here and validated conditionally.
+    TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
     // Portable Postgres connection string for the Drizzle + pg handle and the
     // migration runner. This is the single source of database truth: for a Supabase
     // deployment it is the project's Postgres connection string, and for self-host
@@ -32,10 +49,15 @@ const envSchema = z
     // local/ephemeral Postgres while developing or testing, never a managed
     // production database.
     DATABASE_URL: z.url(),
+    // Server-custody AES key (32 bytes hex). Only the trusted Telegram bot path
+    // uses server custody; web runs are client-custody and seal to the user's
+    // public key, so a bot-less web deployment needs NO server key. REQUIRED ONLY
+    // when ENABLE_BOT is true (enforced by the superRefine below).
     ENCRYPTION_KEY: z
       .string()
       .length(64)
-      .regex(/^[0-9a-f]+$/i, "Must be 64 hex characters (32 bytes)"),
+      .regex(/^[0-9a-f]+$/i, "Must be 64 hex characters (32 bytes)")
+      .optional(),
     QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
     EVISA_HEADLESS: BooleanFromEnv.default(true),
     EVISA_DIAGNOSTICS_MODE: DiagnosticsModeSchema.default("sanitized_on_failure"),
@@ -97,9 +119,34 @@ const envSchema = z
     // server degrades gracefully — the API stays up and a hint is logged.
     WEB_DIST_PATH: z.string().min(1).optional(),
   })
-  .refine((env) => !env.SMTP_URL || Boolean(env.SMTP_FROM), {
-    error: "SMTP_FROM is required when SMTP_URL is set",
-    path: ["SMTP_FROM"],
+  .superRefine((env, ctx) => {
+    if (env.SMTP_URL && !env.SMTP_FROM) {
+      ctx.addIssue({
+        code: "custom",
+        message: "SMTP_FROM is required when SMTP_URL is set",
+        path: ["SMTP_FROM"],
+      });
+    }
+    // The Telegram bot is the only consumer of TELEGRAM_BOT_TOKEN (to talk to the
+    // Bot API) and of ENCRYPTION_KEY (server-custody AES for the bot's runs). When
+    // the bot is disabled a pure-web deployment needs neither, so require them only
+    // when ENABLE_BOT is true.
+    if (env.ENABLE_BOT) {
+      if (!env.TELEGRAM_BOT_TOKEN) {
+        ctx.addIssue({
+          code: "custom",
+          message: "TELEGRAM_BOT_TOKEN is required when ENABLE_BOT is true",
+          path: ["TELEGRAM_BOT_TOKEN"],
+        });
+      }
+      if (!env.ENCRYPTION_KEY) {
+        ctx.addIssue({
+          code: "custom",
+          message: "ENCRYPTION_KEY is required when ENABLE_BOT is true",
+          path: ["ENCRYPTION_KEY"],
+        });
+      }
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;
@@ -132,6 +179,11 @@ function safeDbHost(databaseUrl: string): string {
 
 export function redactedEnvSummary(env: Env): Record<string, unknown> {
   return {
+    deploymentMode: env.DEPLOYMENT_MODE,
+    // Whether the opt-in Telegram bot is enabled. Reported (not the token) so the
+    // boot log shows the deployment shape — a bot-less web deployment vs. one with
+    // the Telegram channel — without leaking the credential.
+    botEnabled: env.ENABLE_BOT,
     databaseHost: safeDbHost(env.DATABASE_URL),
     queueConcurrency: env.QUEUE_CONCURRENCY,
     evisaHeadless: env.EVISA_HEADLESS,

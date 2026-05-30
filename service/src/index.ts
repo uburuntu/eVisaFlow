@@ -39,10 +39,16 @@ function resolveWebDistPath(env: Env): string {
   return path.resolve(here, "..", "..", "web", "dist");
 }
 
-interface RuntimeState {
+export interface RuntimeState {
   ready: boolean;
   shuttingDown: boolean;
   startedAt: string;
+  /**
+   * Whether the opt-in Telegram bot is enabled (ENABLE_BOT). Web-first: when
+   * false the process runs as a pure-web deployment with no bot, and readiness
+   * does NOT depend on Telegram (see {@link healthSnapshot}).
+   */
+  botEnabled: boolean;
   telegramReady: boolean;
   telegramUsername?: string;
   dbReady: boolean;
@@ -52,12 +58,29 @@ interface RuntimeState {
 /**
  * Builds the health snapshot from the live runtime state, minus the queue stats
  * (the web server merges those from the shared queue). Passed to
- * {@link createWebServer} as `getHealth`, preserving the readiness semantics the
- * old standalone health server had.
+ * {@link createWebServer} as `getHealth`.
+ *
+ * Readiness is bot-aware: a pure-web deployment (ENABLE_BOT=false) is ready on DB
+ * connectivity alone and reports NO `telegram` block, so `/ready` never requires
+ * a bot. With the bot enabled, readiness additionally requires Telegram to be
+ * reachable and its update runner to be running, and the `telegram` block is
+ * included — preserving the readiness semantics the old standalone health server
+ * had for the bot deployment.
  */
-function healthSnapshot(state: RuntimeState): Omit<HealthSnapshot, "queue"> {
+export function healthSnapshot(state: RuntimeState): Omit<HealthSnapshot, "queue"> {
+  const baseReady = state.ready && state.dbReady;
+  if (!state.botEnabled) {
+    return {
+      ready: baseReady,
+      shuttingDown: state.shuttingDown,
+      startedAt: state.startedAt,
+      db: {
+        ready: state.dbReady,
+      },
+    };
+  }
   return {
-    ready: state.ready && state.telegramReady && state.dbReady && state.runnerRunning,
+    ready: baseReady && state.telegramReady && state.runnerRunning,
     shuttingDown: state.shuttingDown,
     startedAt: state.startedAt,
     telegram: {
@@ -88,6 +111,7 @@ async function main(): Promise<void> {
     ready: false,
     shuttingDown: false,
     startedAt: new Date().toISOString(),
+    botEnabled: env.ENABLE_BOT,
     telegramReady: false,
     dbReady: false,
     runnerRunning: false,
@@ -103,12 +127,14 @@ async function main(): Promise<void> {
     ttlMs: env.ARTIFACT_TTL_MINUTES * 60_000,
   });
 
-  // Single run engine drives every queued run (bot today, web later). It owns
-  // applicant resolution, the queue slot, run-event publishing, custody-aware
-  // output sealing, and DB persistence; the bot subscribes to drive the Telegram
-  // UI. The default custody selector wires serverCustody(ENCRYPTION_KEY) for the
-  // trusted bot and clientCustody() for E2EE web runs; sealed artifacts are
-  // persisted via the artifact store above.
+  // Single run engine drives every queued run (web always; bot when enabled). It
+  // owns applicant resolution, the queue slot, run-event publishing, custody-aware
+  // output sealing, and DB persistence. The default custody selector wires
+  // serverCustody(ENCRYPTION_KEY) for the trusted bot and clientCustody() for
+  // E2EE web runs; sealed artifacts are persisted via the artifact store above.
+  // serverKeyHex may be undefined on a pure-web deployment — that is fine because
+  // web runs are client-custody and never use it; server custody (bot only) is
+  // the single consumer and env validation guarantees the key when ENABLE_BOT.
   const engine = createRunEngine({
     runJob: createEvisaRunJob(),
     db,
@@ -126,19 +152,12 @@ async function main(): Promise<void> {
       ? smtpMailer({ url: env.SMTP_URL, from: env.SMTP_FROM })
       : consoleMailer(log);
 
-  // Telegram-specific 2FA reply matcher: maps incoming code messages back to the
-  // engine's runId-keyed gate. Shared between the run driver (registration) and
-  // the 2FA middleware (matching).
-  const twoFactor = createTwoFactorAdapter(engine);
-
-  const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log, engine, twoFactor);
-
   // Web server (Fastify): the API channel, the folded-in health probes, and the
   // built web app (web/dist, with an SPA fallback for /app/*) all share this one
-  // listener on PORT. Started before the readiness checks so `/live` and `/ready`
-  // answer during boot — both report 503 until `state` flips ready, matching the
-  // old standalone health server's behavior. The deps carry the auth/vault/
-  // member/run wiring plus the resolved web-bundle path.
+  // listener on PORT. The web app is ALWAYS served — it is the primary channel.
+  // Started before the readiness checks so `/live` and `/ready` answer during
+  // boot (503 until `state` flips ready). The deps carry the auth/vault/member/
+  // run wiring plus the resolved web-bundle path.
   const app = createWebServer({
     db,
     engine,
@@ -162,13 +181,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Database is always required (web + bot both depend on it). Migrate-on-boot is
+  // baseline-safe and idempotent: a no-op against an already-migrated database,
+  // and it auto-provisions a fresh self-host database so a one-command
+  // `docker compose up` works with no manual SQL — independent of the bot.
   try {
-    const username = await assertTelegramReady(bot);
-    state.telegramReady = true;
-    state.telegramUsername = username;
-    // Bring the schema up to date before readiness. Baseline-safe and idempotent:
-    // a no-op against an already-migrated database, and it auto-provisions a fresh
-    // self-host database so the bot can start without manual SQL.
     const migrateResult = await runMigrationsWithPool(getPool(db), log);
     log.info(
       {
@@ -184,40 +201,94 @@ async function main(): Promise<void> {
       "Service restarted before the run completed"
     );
   } catch (err) {
-    log.fatal({ err }, "Startup readiness check failed");
+    log.fatal({ err }, "Database startup/readiness check failed");
     await app.close().catch(() => {});
+    await closeDb(db).catch(() => {});
     process.exit(1);
     return;
   }
 
-  const scheduler = startScheduler(bot, db, env, log);
-  // Periodic housekeeping: deletes expired sealed artifacts, expired sessions,
-  // and consumed/expired magic-link tokens on CLEANUP_CRON.
+  // Periodic housekeeping is channel-agnostic and always runs: deletes expired
+  // sealed artifacts, expired sessions, and consumed/expired magic-link tokens on
+  // CLEANUP_CRON.
   const cleanupScheduler = startCleanupScheduler(db, artifactStore, env, log);
-  const runner = run(bot);
-  state.runnerRunning = runner.isRunning();
-  void runner
-    .task()
-    ?.then(() => {
-      state.runnerRunning = false;
-      state.ready = false;
-      log.warn("Bot runner stopped");
-    })
-    .catch((err) => {
-      state.runnerRunning = false;
-      state.ready = false;
-      log.error({ err }, "Bot runner crashed");
-    });
+
+  // The Telegram bot is OPT-IN (web-first). Only when ENABLE_BOT is true do we
+  // create the grammY bot, assert it can reach Telegram, start its update runner,
+  // and start the Telegram-notify scheduler. With it off, none of this exists and
+  // readiness does not require Telegram (see healthSnapshot). These handles stay
+  // undefined for a pure-web deployment so shutdown can skip them.
+  let telegramScheduler: ReturnType<typeof startScheduler> | undefined;
+  let runner: ReturnType<typeof run> | undefined;
+
+  if (env.ENABLE_BOT) {
+    // env validation requires TELEGRAM_BOT_TOKEN when ENABLE_BOT is true; narrow
+    // it here. This is never expected to throw.
+    const token = env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      log.fatal("ENABLE_BOT is true but TELEGRAM_BOT_TOKEN is missing");
+      await app.close().catch(() => {});
+      await closeDb(db).catch(() => {});
+      process.exit(1);
+      return;
+    }
+
+    // Telegram-specific 2FA reply matcher: maps incoming code messages back to the
+    // engine's runId-keyed gate. Shared between the run driver (registration) and
+    // the 2FA middleware (matching). Only needed for the bot channel.
+    const twoFactor = createTwoFactorAdapter(engine);
+    const bot = createBot(token, db, env, log, engine, twoFactor);
+
+    try {
+      const username = await assertTelegramReady(bot);
+      state.telegramReady = true;
+      state.telegramUsername = username;
+    } catch (err) {
+      log.fatal({ err }, "Telegram readiness check failed");
+      await app.close().catch(() => {});
+      await closeDb(db).catch(() => {});
+      process.exit(1);
+      return;
+    }
+
+    telegramScheduler = startScheduler(bot, db, env, log);
+    const botRunner = run(bot);
+    runner = botRunner;
+    state.runnerRunning = botRunner.isRunning();
+    void botRunner
+      .task()
+      ?.then(() => {
+        state.runnerRunning = false;
+        state.ready = false;
+        log.warn("Bot runner stopped");
+      })
+      .catch((err) => {
+        state.runnerRunning = false;
+        state.ready = false;
+        log.error({ err }, "Bot runner crashed");
+      });
+
+    log.info(
+      {
+        concurrency: env.QUEUE_CONCURRENCY,
+        cron: env.SCHEDULER_CRON,
+        botUsername: state.telegramUsername,
+      },
+      "Telegram bot started"
+    );
+  }
+
   state.ready = true;
 
   log.info(
     {
+      deploymentMode: env.DEPLOYMENT_MODE,
+      botEnabled: env.ENABLE_BOT,
+      port: env.PORT,
       concurrency: env.QUEUE_CONCURRENCY,
-      cron: env.SCHEDULER_CRON,
       cleanupCron: env.CLEANUP_CRON,
-      botUsername: state.telegramUsername,
     },
-    "Bot started"
+    "Service ready"
   );
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -228,9 +299,12 @@ async function main(): Promise<void> {
     state.shuttingDown = true;
     log.info({ signal }, "Shutting down");
 
-    scheduler.stop();
+    // The Telegram scheduler and update runner exist only when the bot is enabled.
+    telegramScheduler?.stop();
     cleanupScheduler.stop();
-    await Promise.resolve(runner.stop());
+    if (runner) {
+      await Promise.resolve(runner.stop());
+    }
     const interruptedRunIds = cancelAllJobs(`Service received ${signal}`, "interrupted");
     const drained = await waitForIdle(SHUTDOWN_DRAIN_MS);
     if (!drained) {
@@ -261,8 +335,20 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
-  const log = createLogger({ verbose: true });
-  log.fatal({ err }, "Fatal service error");
-  process.exit(1);
-});
+/**
+ * Whether this module is the process entry point (`node dist/index.js`). Guards
+ * the `main()` call so importing this module — e.g. unit-testing the pure
+ * {@link healthSnapshot} readiness logic — does not boot the whole service.
+ * Compares the resolved module URL to the invoked script path.
+ */
+const isEntryPoint = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isEntryPoint) {
+  main().catch((err) => {
+    const log = createLogger({ verbose: true });
+    log.fatal({ err }, "Fatal service error");
+    process.exit(1);
+  });
+}

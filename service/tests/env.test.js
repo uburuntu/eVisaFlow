@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const ENV_KEYS = [
+  "DEPLOYMENT_MODE",
+  "ENABLE_BOT",
   "TELEGRAM_BOT_TOKEN",
   "DATABASE_URL",
   "ENCRYPTION_KEY",
@@ -13,9 +15,18 @@ const ENV_KEYS = [
   "SCHEDULE_INTERVAL_DAYS",
 ];
 
+// Web-first defaults: only DATABASE_URL is required for a pure-web (bot-off)
+// deployment. The bot token and encryption key are required ONLY when
+// ENABLE_BOT is true, so they are NOT part of the minimal base env.
 const baseEnv = {
-  TELEGRAM_BOT_TOKEN: "telegram-token",
   DATABASE_URL: "postgres://postgres:postgres@localhost:5432/evisaflow",
+};
+
+// Adds the credentials the Telegram bot needs on top of the web-only base.
+const botEnv = {
+  ...baseEnv,
+  ENABLE_BOT: "true",
+  TELEGRAM_BOT_TOKEN: "telegram-token",
   ENCRYPTION_KEY: "a".repeat(64),
 };
 
@@ -52,6 +63,72 @@ test("loadEnv parses required values and applies defaults", async () => {
     assert.equal(env.EVISA_DIAGNOSTICS_MODE, "sanitized_on_failure");
     assert.equal(env.HEALTH_PORT, 8080);
     assert.equal(env.SCHEDULE_INTERVAL_DAYS, 30);
+    // Web-first deployment defaults.
+    assert.equal(env.DEPLOYMENT_MODE, "selfhost");
+    assert.equal(env.ENABLE_BOT, false);
+  });
+});
+
+test("loadEnv defaults to a bot-less self-host with only DATABASE_URL", async () => {
+  // The minimal pure-web deployment: no Telegram token, no encryption key.
+  await withEnv(baseEnv, async () => {
+    const { loadEnv } = await importFreshEnv();
+    const env = loadEnv();
+
+    assert.equal(env.ENABLE_BOT, false);
+    assert.equal(env.DEPLOYMENT_MODE, "selfhost");
+    assert.equal(env.TELEGRAM_BOT_TOKEN, undefined);
+    assert.equal(env.ENCRYPTION_KEY, undefined);
+  });
+});
+
+test("DEPLOYMENT_MODE accepts cloud and rejects unknown values", async () => {
+  await withEnv({ ...baseEnv, DEPLOYMENT_MODE: "cloud" }, async () => {
+    const { loadEnv } = await importFreshEnv();
+    assert.equal(loadEnv().DEPLOYMENT_MODE, "cloud");
+  });
+
+  await withEnv({ ...baseEnv, DEPLOYMENT_MODE: "staging" }, async () => {
+    const { loadEnv } = await importFreshEnv();
+    assert.throws(() => loadEnv(), /DEPLOYMENT_MODE/);
+  });
+});
+
+test("ENABLE_BOT requires TELEGRAM_BOT_TOKEN and ENCRYPTION_KEY", async () => {
+  // Bot on but no token/key → both surface as required.
+  await withEnv({ ...baseEnv, ENABLE_BOT: "true" }, async () => {
+    const { loadEnv } = await importFreshEnv();
+    assert.throws(() => loadEnv(), /TELEGRAM_BOT_TOKEN/);
+    assert.throws(() => loadEnv(), /ENCRYPTION_KEY/);
+  });
+
+  // Bot on with a token but still no key → only the key is missing.
+  await withEnv(
+    { ...baseEnv, ENABLE_BOT: "true", TELEGRAM_BOT_TOKEN: "telegram-token" },
+    async () => {
+      const { loadEnv } = await importFreshEnv();
+      assert.throws(() => loadEnv(), /ENCRYPTION_KEY/);
+    }
+  );
+
+  // Bot on with both → parses, and the values are surfaced.
+  await withEnv(botEnv, async () => {
+    const { loadEnv } = await importFreshEnv();
+    const env = loadEnv();
+    assert.equal(env.ENABLE_BOT, true);
+    assert.equal(env.TELEGRAM_BOT_TOKEN, "telegram-token");
+    assert.equal(env.ENCRYPTION_KEY, "a".repeat(64));
+  });
+});
+
+test("bot token and encryption key are NOT required when ENABLE_BOT is false", async () => {
+  // Explicitly off, omitting both credentials, still parses.
+  await withEnv({ ...baseEnv, ENABLE_BOT: "false" }, async () => {
+    const { loadEnv } = await importFreshEnv();
+    const env = loadEnv();
+    assert.equal(env.ENABLE_BOT, false);
+    assert.equal(env.TELEGRAM_BOT_TOKEN, undefined);
+    assert.equal(env.ENCRYPTION_KEY, undefined);
   });
 });
 
@@ -92,7 +169,7 @@ test("loadEnv rejects invalid URLs and cron expressions", async () => {
   });
 });
 
-test("redactedEnvSummary omits secrets", async () => {
+test("redactedEnvSummary omits secrets and reports deployment shape", async () => {
   await withEnv(baseEnv, async () => {
     const { loadEnv, redactedEnvSummary } = await importFreshEnv();
     const summary = redactedEnvSummary(loadEnv());
@@ -100,6 +177,19 @@ test("redactedEnvSummary omits secrets", async () => {
     // The host:port/database is surfaced for diagnostics; credentials are dropped.
     assert.equal(summary.databaseHost, "localhost:5432/evisaflow");
     assert.equal("DATABASE_URL" in summary, false);
+    assert.equal("TELEGRAM_BOT_TOKEN" in summary, false);
+    assert.equal("ENCRYPTION_KEY" in summary, false);
+    // Deployment shape is surfaced (not the credentials) so the boot log shows
+    // whether this is a bot-less web deployment.
+    assert.equal(summary.deploymentMode, "selfhost");
+    assert.equal(summary.botEnabled, false);
+  });
+
+  // With the bot enabled, botEnabled flips but the token is still never surfaced.
+  await withEnv(botEnv, async () => {
+    const { loadEnv, redactedEnvSummary } = await importFreshEnv();
+    const summary = redactedEnvSummary(loadEnv());
+    assert.equal(summary.botEnabled, true);
     assert.equal("TELEGRAM_BOT_TOKEN" in summary, false);
     assert.equal("ENCRYPTION_KEY" in summary, false);
   });

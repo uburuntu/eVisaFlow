@@ -1,0 +1,44 @@
+---
+/**
+ * Standard page header for interior pages (/security, /pricing, /docs,
+ * /self-host): an eyebrow label, an <h1>, and an optional lead paragraph,
+ * centred in a narrow column. Keeps interior pages visually consistent without
+ * each re-implementing the same markup.
+ */
+interface Props {
+  eyebrow: string;
+  title: string;
+  lead?: string;
+  align?: "center" | "start";
+}
+const { eyebrow, title, lead, align = "center" } = Astro.props;
+---
+
+<header class:list={["page-header", `page-header--${align}`]}>
+  <p class="eyebrow">{eyebrow}</p>
+  <h1>{title}</h1>
+  {lead && <p class="lead page-header__lead">{lead}</p>}
+</header>
+
+<style>
+  .page-header {
+    max-width: var(--container-narrow);
+  }
+  .page-header--center {
+    margin-inline: auto;
+    text-align: center;
+  }
+  .page-header--center .eyebrow {
+    justify-content: center;
+  }
+  .page-header h1 {
+    margin-top: var(--sp-3);
+  }
+  .page-header__lead {
+    margin-top: var(--sp-4);
+  }
+  .page-header--center .page-header__lead {
+    margin-inline: auto;
+    max-width: 46ch;
+  }
+</style>

@@ -1,0 +1,373 @@
+---
+import PageHeader from "../components/PageHeader.astro";
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * /self-host — a practical guide to running eVisaFlow on your own server. Copy
+ * is grounded in the real configuration surface (the documented environment
+ * variables, the Postgres connection string, the on-start migration runner) and
+ * is honest that the web UI ships in a combined container alongside the API.
+ */
+
+const requirements = [
+  "A machine or VPS with Docker and Docker Compose",
+  "About 1 GB of RAM free (the automation drives a real headless browser)",
+  "Optional: an SMTP server for email magic links, or just use Telegram login",
+  "Optional: a Telegram bot token if you want Telegram login or the bot",
+];
+
+const envVars = [
+  {
+    name: "DATABASE_URL",
+    required: true,
+    desc: "Postgres connection string. Point it at the bundled database, e.g. postgres://postgres:postgres@postgres:5432/evisaflow.",
+  },
+  {
+    name: "PUBLIC_BASE_URL",
+    required: true,
+    desc: "The externally reachable origin, e.g. https://evisa.example.com. Used to build the magic-link verification URL.",
+  },
+  {
+    name: "SESSION_SECRET",
+    required: true,
+    desc: "A long random string used to protect session cookies. Generate one with openssl rand -hex 32.",
+  },
+  {
+    name: "SMTP_URL / SMTP_FROM",
+    required: false,
+    desc: "Enable email magic links. Leave SMTP_URL empty to print the link to the logs instead (fine for a Telegram-only setup).",
+  },
+  {
+    name: "TELEGRAM_BOT_TOKEN",
+    required: false,
+    desc: "Required only if you enable Telegram login or the bot. Get it from @BotFather.",
+  },
+  {
+    name: "PORT",
+    required: false,
+    desc: "Port the web server and health probes bind. Defaults to 8080.",
+  },
+];
+
+const steps = [
+  {
+    n: "1",
+    title: "Get the code",
+    body: "Clone the repository from GitHub. Everything you need — the app, the worker, and the database schema — is in the one repo.",
+    code: "git clone https://github.com/uburuntu/eVisaFlow.git\ncd eVisaFlow",
+  },
+  {
+    n: "2",
+    title: "Configure your environment",
+    body: "Copy the example env file and fill in the handful of values your deployment needs. The defaults are sensible for a local trial.",
+    code: "cp service/.env.example service/.env\n# then edit service/.env",
+  },
+  {
+    n: "3",
+    title: "Bring it up",
+    body: "Start the app and its Postgres database together. The schema is applied automatically on startup by the built-in migration runner — no SQL to paste.",
+    code: "docker compose up -d",
+  },
+  {
+    n: "4",
+    title: "Sign in and create your vault",
+    body: "Open your PUBLIC_BASE_URL, sign in with an email magic link or Telegram, and create your encrypted vault. You're ready to add a person and run.",
+    code: null,
+  },
+];
+---
+
+<Layout
+  title="Self-host eVisaFlow"
+  description="Run eVisaFlow on your own server with Docker and Postgres. A practical guide: requirements, environment variables, and the steps to bring it up with end-to-end encryption you control."
+>
+  <section class="section">
+    <div class="container">
+      <PageHeader
+        eyebrow="Run it yourself"
+        title="Self-host eVisaFlow in a few minutes"
+        lead="Own your data end to end. Self-hosting brings up the app and its database together, applies the schema for you, and keeps every document on infrastructure only you control."
+      />
+    </div>
+  </section>
+
+  <!-- Why self-host -->
+  <section class="section--tight">
+    <div class="container container--narrow">
+      <div class="callout">
+        <span class="seal-dot" aria-hidden="true"></span>
+        <p>
+          When you self-host, the worker that briefly handles your documents is
+          <strong>your</strong> worker, on <strong>your</strong> server. Combined
+          with the client-held-key encryption, nothing sensitive ever leaves
+          infrastructure you run.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Requirements -->
+  <section class="section" aria-labelledby="req-heading">
+    <div class="container container--narrow">
+      <h2 id="req-heading">Before you start</h2>
+      <ul class="check-list">
+        {requirements.map((requirement) => <li>{requirement}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <!-- Steps -->
+  <section class="section section--alt" aria-labelledby="steps-heading">
+    <div class="container container--narrow">
+      <h2 id="steps-heading" class="steps-title">Four steps to a running instance</h2>
+      <ol class="install">
+        {
+          steps.map((step) => (
+            <li class="install__item">
+              <div class="install__head">
+                <span class="install__n" aria-hidden="true">
+                  {step.n}
+                </span>
+                <h3 class="install__title">{step.title}</h3>
+              </div>
+              <p class="install__body">{step.body}</p>
+              {step.code && (
+                <pre class="install__code"><code>{step.code}</code></pre>
+              )}
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <!-- Environment variables -->
+  <section class="section" aria-labelledby="env-heading">
+    <div class="container container--narrow">
+      <h2 id="env-heading">Environment variables</h2>
+      <p class="lead env__lead">
+        The full list lives in <code>service/.env.example</code>. These are the
+        ones most deployments care about.
+      </p>
+      <div class="env-table" role="table" aria-label="Environment variables">
+        <div class="env-table__row env-table__row--head" role="row">
+          <span role="columnheader">Variable</span>
+          <span role="columnheader">Required</span>
+          <span role="columnheader">What it does</span>
+        </div>
+        {
+          envVars.map((envVar) => (
+            <div class="env-table__row" role="row">
+              <code role="cell" class="env-table__name">
+                {envVar.name}
+              </code>
+              <span role="cell">
+                {envVar.required ? (
+                  <span class="badge badge--accent">Required</span>
+                ) : (
+                  <span class="badge">Optional</span>
+                )}
+              </span>
+              <span role="cell" class="env-table__desc">
+                {envVar.desc}
+              </span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Next steps -->
+  <section class="section--tight">
+    <div class="container container--narrow">
+      <div class="next">
+        <div>
+          <h2 class="next__title">Need the details?</h2>
+          <p>
+            The repository's <code>service/README.md</code> covers database
+            options, the migration runner, and operational notes. The security
+            page explains exactly what is and isn't stored.
+          </p>
+        </div>
+        <div class="next__actions">
+          <a
+            href="https://github.com/uburuntu/eVisaFlow"
+            class="btn"
+            rel="noopener"
+            target="_blank">View on GitHub</a
+          >
+          <a href="/security" class="btn btn--ghost">Security model</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .callout {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+    border-radius: var(--radius-lg);
+    background: var(--brand-tint);
+    border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+  }
+  .callout .seal-dot {
+    margin-top: 0.5rem;
+    flex: none;
+  }
+  .callout p {
+    margin: 0;
+    color: var(--fg);
+  }
+
+  .check-list {
+    list-style: none;
+    margin: var(--sp-5) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-3);
+  }
+  .check-list li {
+    position: relative;
+    padding-left: 1.8rem;
+    color: var(--fg-soft);
+  }
+  .check-list li::before {
+    content: "\2713";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--brand);
+    font-weight: 700;
+  }
+
+  .section--alt {
+    background: var(--bg-sunken);
+    border-block: 1px solid var(--border);
+  }
+  .steps-title {
+    margin-bottom: var(--sp-6);
+  }
+  .install {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-5);
+  }
+  .install__item {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-5);
+  }
+  .install__item li + li {
+    margin: 0;
+  }
+  .install__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+  }
+  .install__n {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    flex: none;
+    border-radius: 50%;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-weight: 700;
+    font-size: var(--fs-sm);
+  }
+  .install__title {
+    font-size: var(--fs-lg);
+  }
+  .install__body {
+    color: var(--fg-soft);
+  }
+  .install__code {
+    margin-top: var(--sp-4);
+  }
+
+  .env__lead {
+    margin-top: var(--sp-3);
+    margin-bottom: var(--sp-5);
+  }
+  .env-table {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--bg-raised);
+  }
+  .env-table__row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--sp-2);
+    padding: var(--sp-4) var(--sp-5);
+    border-top: 1px solid var(--border);
+  }
+  .env-table__row:first-child {
+    border-top: 0;
+  }
+  .env-table__row--head {
+    display: none;
+    background: var(--bg-sunken);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    color: var(--fg-faint);
+  }
+  .env-table__name {
+    font-weight: 600;
+    color: var(--brand);
+    word-break: break-word;
+  }
+  .env-table__desc {
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+  @media (min-width: 48rem) {
+    .env-table__row {
+      grid-template-columns: 12rem 7rem 1fr;
+      gap: var(--sp-4);
+      align-items: center;
+    }
+    .env-table__row--head {
+      display: grid;
+    }
+  }
+
+  .next {
+    display: grid;
+    gap: var(--sp-5);
+    align-items: center;
+    padding: var(--sp-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
+  }
+  @media (min-width: 48rem) {
+    .next {
+      grid-template-columns: 1.7fr 1fr;
+    }
+  }
+  .next__title {
+    font-size: var(--fs-lg);
+  }
+  .next p {
+    margin-top: var(--sp-2);
+    color: var(--fg-soft);
+  }
+  .next__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
+</style>

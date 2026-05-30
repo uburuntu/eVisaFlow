@@ -1,0 +1,205 @@
+---
+import PageHeader from "../components/PageHeader.astro";
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * /docs — a concise documentation hub. v1 keeps this as an overview with deep
+ * links into the more detailed pages (self-host, security) and the source repo,
+ * plus the core concepts a new user needs: vault, members, runs, 2FA, results.
+ * Deeper reference docs grow here as the app ships.
+ */
+
+interface DocItem {
+  heading: string;
+  body: string;
+  link?: { href: string; label: string };
+}
+interface DocSection {
+  title: string;
+  items: DocItem[];
+}
+
+const sections: DocSection[] = [
+  {
+    title: "Getting started",
+    items: [
+      {
+        heading: "Create an account",
+        body: "Sign in with an email magic link, or use the Telegram Login Widget. No password to remember and no Telegram account required for email sign-in.",
+        link: { href: "/login", label: "Go to sign in" },
+      },
+      {
+        heading: "Set up your vault",
+        body: "On first use your browser generates an encryption key, locks it with your passphrase, and shows a one-time recovery kit. Save the recovery kit somewhere safe.",
+        link: { href: "/security", label: "How keys work" },
+      },
+    ],
+  },
+  {
+    title: "Core concepts",
+    items: [
+      {
+        heading: "People (members)",
+        body: "Each person you retrieve codes for is a member: a display name plus an identity document and date of birth, sealed in your browser before upload. Up to six active people per account.",
+      },
+      {
+        heading: "Runs",
+        body: "A run drives the GOV.UK flow once for one person and one purpose (right to work, right to rent, or another immigration check). You can watch it live and cancel it at any time.",
+      },
+      {
+        heading: "Two-factor codes",
+        body: "Partway through, GOV.UK sends a code by SMS or email. The run pauses and waits for you to enter it — the code is used once and never stored.",
+      },
+      {
+        heading: "Sealed results",
+        body: "When a run finishes you get the share code and the eVisa PDF, sealed to your key and decrypted in your browser. Download the PDF and copy the code.",
+      },
+    ],
+  },
+];
+
+interface Resource {
+  title: string;
+  body: string;
+  href: string;
+  external?: boolean;
+}
+
+const resources: Resource[] = [
+  {
+    title: "Security model",
+    body: "The honest end-to-end-encryption boundary, the data lifecycle, and how the cryptography works.",
+    href: "/security",
+  },
+  {
+    title: "Self-host guide",
+    body: "Run eVisaFlow on your own server with Docker and Postgres, with the environment variables explained.",
+    href: "/self-host",
+  },
+  {
+    title: "Source code",
+    body: "The full implementation — core automation, worker, crypto, and API — open on GitHub under the MIT licence.",
+    href: "https://github.com/uburuntu/eVisaFlow",
+    external: true,
+  },
+];
+---
+
+<Layout
+  title="Documentation"
+  description="eVisaFlow documentation: getting started, core concepts (vaults, members, runs, two-factor, sealed results), and links to the security model and self-host guide."
+>
+  <section class="section">
+    <div class="container">
+      <PageHeader
+        eyebrow="Documentation"
+        title="Everything you need to get going"
+        lead="A short tour of how eVisaFlow works, the concepts behind it, and where to go next. The reference grows as the app does."
+      />
+    </div>
+  </section>
+
+  <section class="section--tight">
+    <div class="container">
+      <div class="docs">
+        {
+          sections.map((section) => (
+            <section class="docs__section" aria-label={section.title}>
+              <h2 class="docs__section-title">{section.title}</h2>
+              <div class="grid grid-2">
+                {section.items.map((item) => (
+                  <article class="card stack">
+                    <h3 class="docs__heading">{item.heading}</h3>
+                    <p>{item.body}</p>
+                    {"link" in item && item.link && (
+                      <a href={item.link.href} class="link-arrow docs__link">
+                        {item.link.label}
+                      </a>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="resources-heading">
+    <div class="container">
+      <h2 id="resources-heading" class="docs__section-title">Keep reading</h2>
+      <div class="grid grid-3">
+        {
+          resources.map((resource) => (
+            <a
+              href={resource.href}
+              class="resource"
+              {...(resource.external ? { rel: "noopener", target: "_blank" } : {})}
+            >
+              <h3 class="resource__title">{resource.title}</h3>
+              <p class="resource__body">{resource.body}</p>
+              <span class="resource__arrow" aria-hidden="true">
+                &rarr;
+              </span>
+            </a>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .docs {
+    display: grid;
+    gap: var(--sp-8);
+  }
+  .docs__section-title {
+    font-size: var(--fs-xl);
+    margin-bottom: var(--sp-5);
+  }
+  .docs__heading {
+    font-size: var(--fs-lg);
+  }
+  .docs__link {
+    font-size: var(--fs-sm);
+  }
+
+  .resource {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-6);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    text-decoration: none;
+    color: inherit;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  }
+  .resource:hover {
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+  .resource__title {
+    font-size: var(--fs-lg);
+    color: var(--brand);
+  }
+  .resource__body {
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+  .resource__arrow {
+    margin-top: auto;
+    font-size: 1.3rem;
+    color: var(--accent);
+    transition: transform 140ms ease;
+  }
+  .resource:hover .resource__arrow {
+    transform: translateX(0.3rem);
+  }
+</style>

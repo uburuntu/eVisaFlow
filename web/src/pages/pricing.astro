@@ -1,0 +1,311 @@
+---
+import PageHeader from "../components/PageHeader.astro";
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * /pricing — three honest columns: self-host (free, available now), a hosted
+ * free tier, and a hosted paid plan (a clearly-labelled placeholder; billing is
+ * out of scope for v1). No fake numbers presented as final — the paid tier says
+ * "planned" so the page stays truthful.
+ */
+
+const plans = [
+  {
+    name: "Self-host",
+    price: "Free",
+    cadence: "forever",
+    tagline: "Run the whole app on your own machine.",
+    available: true,
+    featured: true,
+    badge: "Available now",
+    cta: { label: "Read the self-host guide", href: "/self-host" },
+    features: [
+      "Unlimited runs",
+      "Up to 6 people per account",
+      "End-to-end encryption with your passphrase",
+      "Email magic-link or Telegram login",
+      "One docker compose up to deploy",
+      "MIT licensed, fully open source",
+    ],
+  },
+  {
+    name: "Cloud Free",
+    price: "£0",
+    cadence: "planned",
+    tagline: "For occasional, low-volume use, hosted for you.",
+    available: false,
+    badge: "Coming soon",
+    cta: { label: "Sign in to be notified", href: "/login" },
+    features: [
+      "A monthly allowance of runs",
+      "Add a small number of people",
+      "Sealed results you decrypt locally",
+      "No server to maintain",
+      "Email magic-link or Telegram login",
+    ],
+  },
+  {
+    name: "Cloud Private",
+    price: "Paid",
+    cadence: "planned",
+    tagline: "For heavier use, with client-held-key encryption.",
+    available: false,
+    badge: "Coming soon",
+    cta: { label: "Register interest", href: "/login" },
+    features: [
+      "Higher run and people limits",
+      "Client-held-key end-to-end encryption",
+      "Priority automation capacity",
+      "Scheduled reminders before codes expire",
+      "Everything in Cloud Free",
+    ],
+  },
+];
+
+const faqs = [
+  {
+    q: "Is self-hosting really free?",
+    a: "Yes. eVisaFlow is open source under the MIT licence. You can run it on your own hardware or a small VPS at no cost, with no feature gating.",
+  },
+  {
+    q: "When will the hosted version launch?",
+    a: "The hosted version on evisaflow.uk is in development. Pricing for the paid tier is not finalised, which is why this page marks those plans as planned rather than quoting a final figure.",
+  },
+  {
+    q: "Will I be locked in?",
+    a: "No. The hosted and self-hosted apps share the same open-source core, and your encrypted data is portable. You can always move to self-hosting.",
+  },
+  {
+    q: "Do paid features change the encryption?",
+    a: "The Cloud Private tier keeps the same client-held-key end-to-end encryption as the self-hosted app. You hold the passphrase either way.",
+  },
+];
+---
+
+<Layout
+  title="Pricing"
+  description="eVisaFlow is free to self-host, forever. A hosted version with a free tier and a paid plan is planned, both built on the same open-source, end-to-end-encrypted core."
+>
+  <section class="section">
+    <div class="container">
+      <PageHeader
+        eyebrow="Simple, honest pricing"
+        title="Free to self-host. Hosted plans on the way."
+        lead="The fastest way to start today is to run eVisaFlow yourself — it's free and complete. A managed cloud version is coming for those who'd rather not run a server."
+      />
+    </div>
+  </section>
+
+  <section class="section--tight">
+    <div class="container">
+      <div class="plans" role="list">
+        {
+          plans.map((plan) => (
+            <article
+              role="listitem"
+              class:list={["plan", { "plan--featured": plan.featured }]}
+            >
+              <div class="plan__head">
+                <span
+                  class:list={[
+                    "badge",
+                    plan.available ? "badge--brand" : "badge--accent",
+                  ]}
+                >
+                  {plan.badge}
+                </span>
+                <h2 class="plan__name">{plan.name}</h2>
+                <p class="plan__price">
+                  <span class="plan__amount">{plan.price}</span>
+                  <span class="plan__cadence">/ {plan.cadence}</span>
+                </p>
+                <p class="plan__tagline">{plan.tagline}</p>
+              </div>
+
+              <ul class="plan__features">
+                {plan.features.map((feature) => (
+                  <li>{feature}</li>
+                ))}
+              </ul>
+
+              <a
+                href={plan.cta.href}
+                class:list={[
+                  "btn",
+                  "plan__cta",
+                  plan.featured ? "btn--accent" : "btn--ghost",
+                ]}
+              >
+                {plan.cta.label}
+              </a>
+            </article>
+          ))
+        }
+      </div>
+      <p class="plans__note">
+        Planned plans are shown for transparency and may change before launch. No
+        payment is collected today.
+      </p>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="faq-heading">
+    <div class="container container--narrow">
+      <h2 id="faq-heading" class="faq-heading">Pricing questions</h2>
+      <div class="faq">
+        {
+          faqs.map((faq) => (
+            <details class="faq__item">
+              <summary class="faq__q">{faq.q}</summary>
+              <p class="faq__a">{faq.a}</p>
+            </details>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .plans {
+    display: grid;
+    gap: var(--sp-5);
+    align-items: start;
+  }
+  @media (min-width: 56rem) {
+    .plans {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .plan {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    height: 100%;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-6);
+    box-shadow: var(--shadow-sm);
+  }
+  .plan--featured {
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  @media (min-width: 56rem) {
+    .plan--featured {
+      transform: translateY(-0.5rem);
+    }
+  }
+  .plan__head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .plan__head .badge {
+    align-self: flex-start;
+  }
+  .plan__name {
+    font-size: var(--fs-xl);
+    margin-top: var(--sp-2);
+  }
+  .plan__price {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin: 0;
+  }
+  .plan__amount {
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    font-weight: 600;
+    color: var(--brand);
+    line-height: 1;
+  }
+  .plan__cadence {
+    color: var(--fg-faint);
+    font-size: var(--fs-sm);
+  }
+  .plan__tagline {
+    color: var(--fg-soft);
+    margin: 0;
+  }
+  .plan__features {
+    list-style: none;
+    margin: 0;
+    padding: var(--sp-5) 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    gap: var(--sp-3);
+    flex: 1;
+  }
+  .plan__features li {
+    position: relative;
+    padding-left: 1.7rem;
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+  .plan__features li::before {
+    content: "\2713";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--brand);
+    font-weight: 700;
+  }
+  .plan__cta {
+    width: 100%;
+  }
+  .plans__note {
+    margin-top: var(--sp-5);
+    text-align: center;
+    color: var(--fg-faint);
+    font-size: var(--fs-sm);
+  }
+
+  .faq-heading {
+    text-align: center;
+    margin-bottom: var(--sp-6);
+  }
+  .faq {
+    display: grid;
+    gap: var(--sp-3);
+  }
+  .faq__item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    overflow: hidden;
+  }
+  .faq__q {
+    cursor: pointer;
+    padding: var(--sp-4) var(--sp-5);
+    font-weight: 650;
+    color: var(--fg);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .faq__q::-webkit-details-marker {
+    display: none;
+  }
+  .faq__q::after {
+    content: "+";
+    font-size: 1.4rem;
+    color: var(--brand);
+    line-height: 1;
+    flex: none;
+  }
+  .faq__item[open] .faq__q::after {
+    content: "\2212";
+  }
+  .faq__a {
+    margin: 0;
+    padding: 0 var(--sp-5) var(--sp-5);
+    color: var(--fg-soft);
+  }
+</style>

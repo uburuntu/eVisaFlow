@@ -1,0 +1,306 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * /login — email magic-link sign-in plus the Telegram Login Widget.
+ *
+ * Both methods are cookie-based and handled by the same-origin API:
+ *  - The email form POSTs to /api/auth/magic-link (always 204; no enumeration).
+ *  - The Telegram widget calls window.onTelegramAuth(user), which POSTs the
+ *    signed payload to /api/auth/telegram for HMAC verification server-side.
+ *
+ * The Telegram widget needs the PUBLIC bot username (not the token). It is read
+ * from PUBLIC_TELEGRAM_BOT_USERNAME at build time; when unset we render a clear
+ * configuration hint instead of a broken widget, so a self-host without Telegram
+ * still builds and the email path stays fully usable.
+ */
+const telegramBotUsername = import.meta.env.PUBLIC_TELEGRAM_BOT_USERNAME?.replace(
+  /^@/,
+  ""
+);
+const telegramConfigured = Boolean(telegramBotUsername);
+---
+
+<Layout
+  title="Sign in"
+  description="Sign in to eVisaFlow with an email magic link or your Telegram account. No password required; your encryption passphrase never leaves your browser."
+  noindex={true}
+  mainClass="auth-main"
+>
+  <section class="auth">
+    <div class="container auth__inner">
+      <div class="auth__intro stack">
+        <p class="eyebrow">Welcome back</p>
+        <h1 class="auth__title">Sign in to eVisaFlow</h1>
+        <p class="lead">
+          Choose how you'd like to sign in. New here? Signing in for the first
+          time creates your account &mdash; you'll set up your encrypted vault
+          next.
+        </p>
+        <ul class="auth__points">
+          <li>
+            <span class="seal-dot" aria-hidden="true"></span> No password to remember
+          </li>
+          <li>
+            <span class="seal-dot" aria-hidden="true"></span> Your passphrase never leaves
+            your browser
+          </li>
+          <li>
+            <span class="seal-dot" aria-hidden="true"></span> Works the same self-hosted
+            or cloud
+          </li>
+        </ul>
+      </div>
+
+      <div class="auth__card card">
+        <!-- Email magic link -->
+        <section aria-labelledby="email-heading" class="auth__method">
+          <h2 id="email-heading" class="auth__method-title">Email magic link</h2>
+          <p class="auth__method-hint">
+            We'll email you a secure link that signs you in &mdash; no password
+            needed.
+          </p>
+          <form data-magic-form class="auth__form" novalidate>
+            <div class="field">
+              <label class="field__label" for="email">Email address</label>
+              <input
+                class="field__input"
+                type="email"
+                id="email"
+                name="email"
+                autocomplete="email"
+                inputmode="email"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn--block">Send magic link</button>
+            <p
+              class="auth__status"
+              data-magic-status
+              role="status"
+              aria-live="polite"
+              hidden
+            >
+            </p>
+          </form>
+        </section>
+
+        <div class="auth__divider" role="separator" aria-label="or">
+          <span>or</span>
+        </div>
+
+        <!-- Telegram login -->
+        <section aria-labelledby="telegram-heading" class="auth__method">
+          <h2 id="telegram-heading" class="auth__method-title">
+            Continue with Telegram
+          </h2>
+          <p class="auth__method-hint">
+            Use your Telegram account. If you already use the eVisaFlow bot, this
+            links them.
+          </p>
+
+          {
+            telegramConfigured ? (
+              <div class="auth__telegram">
+                <script
+                  is:inline
+                  async
+                  src="https://telegram.org/js/telegram-widget.js?22"
+                  data-telegram-login={telegramBotUsername}
+                  data-size="large"
+                  data-radius="10"
+                  data-request-access="write"
+                  data-onauth="onTelegramAuth(user)"
+                />
+                <noscript>
+                  <p class="auth__noscript">
+                    Telegram sign-in needs JavaScript enabled. You can use the
+                    email magic link above instead.
+                  </p>
+                </noscript>
+              </div>
+            ) : (
+              <p class="auth__telegram-missing">
+                Telegram sign-in isn't configured on this instance. Use the email
+                magic link above, or set <code>PUBLIC_TELEGRAM_BOT_USERNAME</code>{" "}
+                to enable it.
+              </p>
+            )
+          }
+          <p
+            class="auth__status"
+            data-telegram-status
+            role="status"
+            aria-live="polite"
+            hidden
+          >
+          </p>
+        </section>
+
+        <p class="auth__legal">
+          By signing in you agree this tool is not affiliated with GOV.UK or the
+          Home Office. Read our <a href="/security">security model</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<script>
+  import "../scripts/login.ts";
+</script>
+
+<style>
+  .auth-main {
+    display: flex;
+    align-items: center;
+  }
+  .auth {
+    width: 100%;
+    padding-block: var(--sp-8);
+  }
+  .auth__inner {
+    display: grid;
+    gap: var(--sp-7);
+    align-items: center;
+  }
+  @media (min-width: 56rem) {
+    .auth__inner {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--sp-8);
+    }
+  }
+
+  .auth__title {
+    font-size: var(--fs-2xl);
+  }
+  .auth__points {
+    list-style: none;
+    margin: var(--sp-2) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-3);
+  }
+  .auth__points li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    color: var(--fg-soft);
+    font-weight: 550;
+  }
+
+  .auth__card {
+    padding: var(--sp-6);
+    box-shadow: var(--shadow-lg);
+  }
+  @media (min-width: 30rem) {
+    .auth__card {
+      padding: var(--sp-7);
+    }
+  }
+  .auth__method-title {
+    font-size: var(--fs-lg);
+  }
+  .auth__method-hint {
+    margin-top: var(--sp-2);
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+  .auth__form {
+    margin-top: var(--sp-4);
+    display: grid;
+    gap: var(--sp-4);
+  }
+
+  .field {
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .field__label {
+    font-weight: 600;
+    font-size: var(--fs-sm);
+  }
+  .field__input {
+    width: 100%;
+    padding: 0.8rem 0.9rem;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    font-size: var(--fs-base);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .field__input::placeholder {
+    color: var(--fg-faint);
+  }
+  .field__input:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-tint);
+  }
+
+  .auth__divider {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-block: var(--sp-6);
+    color: var(--fg-faint);
+    font-size: var(--fs-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .auth__divider::before,
+  .auth__divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .auth__telegram {
+    min-height: 3rem;
+    margin-top: var(--sp-4);
+  }
+  .auth__telegram-missing,
+  .auth__noscript {
+    margin-top: var(--sp-4);
+    padding: var(--sp-4);
+    border-radius: var(--radius);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+
+  .auth__status {
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius);
+    font-size: var(--fs-sm);
+    font-weight: 550;
+  }
+  .auth__status[data-tone="info"] {
+    background: var(--bg-sunken);
+    color: var(--fg-soft);
+    border: 1px solid var(--border);
+  }
+  .auth__status[data-tone="success"] {
+    background: var(--c-ok-100);
+    color: var(--c-ok-700);
+    border: 1px solid color-mix(in srgb, var(--c-ok-700) 30%, transparent);
+  }
+  .auth__status[data-tone="error"] {
+    background: var(--c-err-100);
+    color: var(--c-err-700);
+    border: 1px solid color-mix(in srgb, var(--c-err-700) 30%, transparent);
+  }
+
+  .auth__legal {
+    margin-top: var(--sp-6);
+    padding-top: var(--sp-5);
+    border-top: 1px solid var(--border);
+    color: var(--fg-faint);
+    font-size: var(--fs-xs);
+  }
+</style>

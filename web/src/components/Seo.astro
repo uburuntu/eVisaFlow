@@ -1,0 +1,67 @@
+---
+/**
+ * <head> metadata for crawlable, shareable static pages: title, description,
+ * canonical URL, Open Graph + Twitter cards, and viewport/theme colour.
+ *
+ * URLs are resolved against the configured `site` (astro.config `site`) so
+ * canonical/OG links are absolute even though the pages are static. Defaults are
+ * product-accurate (no lorem); each page passes its own title/description.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** Path of the current page (e.g. "/pricing"); used for canonical + OG URL. */
+  path?: string;
+  /** Append the brand suffix to <title>. Off for the home page (already branded). */
+  brandSuffix?: boolean;
+  /** Discourage indexing (e.g. the authenticated app shell). */
+  noindex?: boolean;
+}
+const {
+  title,
+  description,
+  path = Astro.url.pathname,
+  brandSuffix = true,
+  noindex = false,
+} = Astro.props;
+
+const siteOrigin = Astro.site?.origin ?? "https://evisaflow.uk";
+const canonical = new URL(path, siteOrigin).href;
+const fullTitle = brandSuffix ? `${title} — eVisaFlow` : title;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{fullTitle}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+{noindex && <meta name="robots" content="noindex, nofollow" />}
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="eVisaFlow" />
+<meta property="og:title" content={fullTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={fullTitle} />
+<meta name="twitter:description" content={description} />
+
+<!-- Theme: matches the brand ink-teal in light and the dark surface in dark. -->
+<meta
+  name="theme-color"
+  content="#0e5350"
+  media="(prefers-color-scheme: light)"
+/>
+<meta
+  name="theme-color"
+  content="#0b1413"
+  media="(prefers-color-scheme: dark)"
+/>
+<meta name="generator" content={Astro.generator} />
+<link
+  rel="icon"
+  href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2.5 5 6.6v8.2c0 6.7 4.5 11.7 11 14.7 6.5-3 11-8 11-14.7V6.6L16 2.5Z' fill='none' stroke='%230e5350' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='24.5' cy='8' r='3.6' fill='%23c2780f'/%3E%3C/svg%3E"
+/>

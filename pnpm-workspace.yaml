@@ -1,6 +1,7 @@
 packages:
   - .
   - service
+  - web
 
 minimumReleaseAge: 4320
 blockExoticSubdeps: true

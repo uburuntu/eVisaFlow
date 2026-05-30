@@ -1,0 +1,603 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * Landing page: what eVisaFlow does, who it's for, how it works, and the
+ * self-host vs cloud split. Fully static and crawlable; zero client JS beyond
+ * the shared header's mobile-nav enhancement. Copy is specific and honest — it
+ * states the run-time plaintext boundary up front rather than overclaiming
+ * "zero knowledge".
+ */
+
+const audiences = [
+  {
+    title: "Families with several members",
+    body: "Partners, children, parents — keep each person's documents in one vault and pull a fresh share code for whoever needs one, without re-entering anything.",
+  },
+  {
+    title: "People who repeat the flow often",
+    body: "Right-to-work and right-to-rent checks expire and recur. Skip the GOV.UK form-filling each time and get the code and PDF in a couple of minutes.",
+  },
+  {
+    title: "Privacy-conscious self-hosters",
+    body: "Run the whole thing on your own server with one Docker command. Your passport numbers and dates of birth never touch anyone else's infrastructure.",
+  },
+];
+
+const steps = [
+  {
+    n: "01",
+    title: "Create your vault",
+    body: "Your browser generates an encryption key and locks it with a passphrase only you know. You also get a one-time recovery kit. Nothing leaves your device unencrypted.",
+  },
+  {
+    n: "02",
+    title: "Add a person, sealed",
+    body: "Enter a document number and date of birth once. They're sealed in your browser to your own key before upload — the server stores only ciphertext it cannot read.",
+  },
+  {
+    n: "03",
+    title: "Run when you need a code",
+    body: "Unlock your vault, choose a person and a purpose, and start a run. A worker drives the GOV.UK flow and pauses for the 2FA code texted or emailed to you.",
+  },
+  {
+    n: "04",
+    title: "Get sealed results",
+    body: "The share code and the eVisa PDF come back sealed to your key and are decrypted in your browser. You download the PDF and copy the code — nobody else can.",
+  },
+];
+
+const features = [
+  {
+    title: "No Telegram required",
+    body: "Sign in with an email magic link. Already use the bot? Link your Telegram account in a click and keep both.",
+  },
+  {
+    title: "End-to-end encryption by default",
+    body: "Document numbers, dates of birth, share codes and PDFs are encrypted to a key only your passphrase unlocks.",
+  },
+  {
+    title: "Live progress, real 2FA",
+    body: "Watch each step stream in real time. When GOV.UK asks for a code, you type the one you received — the run waits for you.",
+  },
+  {
+    title: "The real PDF and share code",
+    body: "Not a screenshot. The genuine downloadable eVisa PDF plus the 9-character share code, named clearly per person.",
+  },
+  {
+    title: "Self-host in minutes",
+    body: "One docker compose up brings up the app and its database. No managed cloud, no third-party key custody.",
+  },
+  {
+    title: "Open source, auditable",
+    body: "MIT licensed. The crypto, the worker, and the API are all in the open for you to read and verify.",
+  },
+];
+---
+
+<Layout
+  title="eVisaFlow — your UK eVisa share code, end-to-end encrypted"
+  description="Retrieve your UK eVisa share code and PDF automatically, with end-to-end encryption you control. No Telegram needed, self-hostable, open source."
+  brandSuffix={false}
+>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container hero__inner">
+      <div class="hero__copy stack-lg">
+        <p class="eyebrow rise rise-1">UK eVisa share codes, without the busywork</p>
+        <h1 class="hero__title rise rise-2">
+          Your eVisa share code and PDF, <span class="hero__title-accent"
+            >sealed to a key only you hold.</span
+          >
+        </h1>
+        <p class="lead hero__lead rise rise-3">
+          eVisaFlow drives the GOV.UK <em>&ldquo;view and prove&rdquo;</em> flow for
+          you and returns the genuine share code and downloadable PDF. Your documents
+          are encrypted end-to-end &mdash; the server stores nothing it can read.
+        </p>
+        <div class="hero__actions rise rise-4">
+          <a href="/login" class="btn btn--accent btn--lg">Get started free</a>
+          <a href="/security" class="btn btn--ghost btn--lg">How the encryption works</a>
+        </div>
+        <p class="hero__note rise rise-4">
+          <span class="seal-dot" aria-hidden="true"></span>
+          Free to self-host. No Telegram account required.
+        </p>
+      </div>
+
+      <aside class="hero__panel rise rise-3" aria-label="Example run result">
+        <div class="run-card">
+          <div class="run-card__head">
+            <span class="badge badge--brand">Run complete</span>
+            <span class="run-card__time">in 1m 48s</span>
+          </div>
+          <dl class="run-card__grid">
+            <div>
+              <dt>Share code</dt>
+              <dd class="run-card__code">W4F&nbsp;5KQ&nbsp;9TX</dd>
+            </div>
+            <div>
+              <dt>Valid until</dt>
+              <dd>14 Aug 2026</dd>
+            </div>
+          </dl>
+          <ul class="run-card__steps">
+            <li data-done>Identity verified</li>
+            <li data-done>Two-factor code accepted</li>
+            <li data-done>eVisa PDF sealed to your key</li>
+          </ul>
+          <div class="run-card__file">
+            <span class="run-card__file-icon" aria-hidden="true">PDF</span>
+            <span class="run-card__file-name">EVISA_Okafor_Ada_2026-05-30.pdf</span>
+            <span class="badge badge--accent">Decrypted locally</span>
+          </div>
+        </div>
+        <p class="hero__panel-caption">
+          Illustrative result. Real codes and names never appear server-side.
+        </p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- What it does -->
+  <section class="section" aria-labelledby="what-heading">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">What it does</p>
+        <h2 id="what-heading">The GOV.UK flow, automated and encrypted</h2>
+        <p class="lead">
+          Getting a share code by hand means logging in, answering security
+          questions, waiting for a code, and saving a PDF &mdash; every single
+          time. eVisaFlow does the clicking and waits with you for the one step
+          only you can do.
+        </p>
+      </div>
+
+      <div class="grid grid-3 feature-grid">
+        {
+          features.map((feature) => (
+            <article class="card card--feature stack">
+              <h3 class="feature-grid__title">{feature.title}</h3>
+              <p>{feature.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="section section--steps" aria-labelledby="how-heading">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-heading">Four steps, your key throughout</h2>
+        <p class="lead">
+          The only moment your documents exist in the clear is inside the worker's
+          memory during a run you started &mdash; never written to a disk, a log,
+          or a database.
+        </p>
+      </div>
+
+      <ol class="steps">
+        {
+          steps.map((step) => (
+            <li class="steps__item">
+              <span class="steps__n" aria-hidden="true">
+                {step.n}
+              </span>
+              <div class="stack">
+                <h3 class="steps__title">{step.title}</h3>
+                <p>{step.body}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <!-- Who it's for -->
+  <section class="section" aria-labelledby="who-heading">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Who it's for</p>
+        <h2 id="who-heading">Built for the people who need it most</h2>
+      </div>
+      <div class="grid grid-3">
+        {
+          audiences.map((audience) => (
+            <article class="card stack">
+              <h3 class="audience__title">{audience.title}</h3>
+              <p>{audience.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Self-host vs cloud -->
+  <section class="section section--split" aria-labelledby="deploy-heading">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Two ways to run it</p>
+        <h2 id="deploy-heading">Self-host it, or use the hosted version</h2>
+      </div>
+      <div class="grid grid-2 split">
+        <article class="card split__card split__card--primary stack-lg">
+          <div class="split__top">
+            <span class="badge badge--brand">Recommended</span>
+            <h3>Self-host</h3>
+          </div>
+          <p>
+            Run eVisaFlow on your own machine or server with Docker. The app and
+            its Postgres database come up together; you hold the keys, the data,
+            and the logs. Nothing is shared with us.
+          </p>
+          <ul class="split__list">
+            <li>One <code>docker compose up</code> to start</li>
+            <li>Email magic-link or Telegram login</li>
+            <li>End-to-end encryption with your own passphrase</li>
+            <li>Free and open source, forever</li>
+          </ul>
+          <a href="/self-host" class="link-arrow">Read the self-host guide</a>
+        </article>
+
+        <article class="card split__card stack-lg">
+          <div class="split__top">
+            <span class="badge">Coming soon</span>
+            <h3>Hosted cloud</h3>
+          </div>
+          <p>
+            Prefer not to run a server? A hosted version on
+            <code>evisaflow.uk</code> will offer a free tier and a paid plan for
+            heavier use &mdash; with the same client-held-key encryption as the
+            self-hosted app on its private tier.
+          </p>
+          <ul class="split__list">
+            <li>Free tier for occasional use</li>
+            <li>Private tier keeps client-held-key E2EE</li>
+            <li>No setup, no maintenance</li>
+            <li>Same open-source core underneath</li>
+          </ul>
+          <a href="/pricing" class="link-arrow">See planned pricing</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Security teaser / CTA -->
+  <section class="section" aria-labelledby="trust-heading">
+    <div class="container">
+      <div class="cta-band">
+        <div class="cta-band__copy stack">
+          <p class="eyebrow">Honest by design</p>
+          <h2 id="trust-heading" class="cta-band__title">
+            We tell you exactly where your data is &mdash; and isn't.
+          </h2>
+          <p class="lead">
+            Zero plaintext at rest. The worker holds your document number and date
+            of birth only transiently, in memory, during a run you authorise. We
+            never store, log, or persist them. You alone hold the passphrase.
+          </p>
+        </div>
+        <div class="cta-band__actions">
+          <a href="/security" class="btn btn--lg">Read the security model</a>
+          <a href="/login" class="btn btn--ghost btn--lg">Create your vault</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  /* ---- Hero ------------------------------------------------------------- */
+  .hero {
+    padding-block: var(--sp-8) var(--sp-7);
+    border-bottom: 1px solid var(--border);
+  }
+  @media (min-width: 60rem) {
+    .hero {
+      padding-block: var(--sp-9) var(--sp-8);
+    }
+  }
+  .hero__inner {
+    display: grid;
+    gap: var(--sp-7);
+    align-items: center;
+  }
+  @media (min-width: 60rem) {
+    .hero__inner {
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: var(--sp-8);
+    }
+  }
+  .hero__title {
+    font-size: var(--fs-3xl);
+  }
+  .hero__title-accent {
+    color: var(--brand);
+  }
+  .hero__lead {
+    max-width: 50ch;
+  }
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
+  .hero__note {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--fg-soft);
+    font-weight: 550;
+  }
+
+  /* Result panel (illustrative run card). */
+  .hero__panel {
+    align-self: stretch;
+  }
+  .run-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-5);
+    position: relative;
+    overflow: hidden;
+  }
+  .run-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--brand), var(--accent));
+  }
+  .run-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-5);
+  }
+  .run-card__time {
+    font-size: var(--fs-sm);
+    color: var(--fg-faint);
+  }
+  .run-card__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-4);
+    margin: 0 0 var(--sp-5);
+  }
+  .run-card__grid dt {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-faint);
+    font-weight: 700;
+  }
+  .run-card__grid dd {
+    margin: var(--sp-1) 0 0;
+    font-weight: 600;
+  }
+  .run-card__code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-lg);
+    letter-spacing: 0.06em;
+    color: var(--brand);
+  }
+  .run-card__steps {
+    list-style: none;
+    margin: 0 0 var(--sp-5);
+    padding: 0;
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .run-card__steps li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--fg-soft);
+  }
+  .run-card__steps li[data-done]::before {
+    content: "\2713";
+    display: grid;
+    place-items: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: none;
+    border-radius: 50%;
+    background: var(--c-ok-100);
+    color: var(--c-ok-700);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .run-card__file {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-sunken);
+  }
+  .run-card__file-icon {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    color: var(--on-brand);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .run-card__file-name {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .hero__panel-caption {
+    margin-top: var(--sp-3);
+    text-align: center;
+    font-size: var(--fs-xs);
+    color: var(--fg-faint);
+  }
+
+  /* ---- Section heads ---------------------------------------------------- */
+  .section-head {
+    max-width: var(--container-narrow);
+    margin-bottom: var(--sp-7);
+  }
+  .section-head h2 {
+    margin-top: var(--sp-3);
+  }
+  .section-head .lead {
+    margin-top: var(--sp-4);
+  }
+
+  /* ---- Feature grid ----------------------------------------------------- */
+  .feature-grid__title {
+    font-size: var(--fs-lg);
+  }
+
+  /* ---- Steps ------------------------------------------------------------ */
+  .section--steps {
+    background: var(--bg-sunken);
+    border-block: 1px solid var(--border);
+  }
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-5);
+    counter-reset: step;
+  }
+  @media (min-width: 48rem) {
+    .steps {
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--sp-6);
+    }
+  }
+  .steps__item {
+    display: flex;
+    gap: var(--sp-4);
+    padding: var(--sp-5);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .steps__item li + li {
+    margin: 0;
+  }
+  .steps__n {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+    flex: none;
+  }
+  .steps__title {
+    font-size: var(--fs-lg);
+  }
+
+  /* ---- Audiences -------------------------------------------------------- */
+  .audience__title {
+    font-size: var(--fs-lg);
+  }
+
+  /* ---- Split (self-host vs cloud) -------------------------------------- */
+  .split__card--primary {
+    border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+    box-shadow: var(--shadow);
+  }
+  .split__top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+  }
+  .split__top h3 {
+    font-size: var(--fs-xl);
+  }
+  .split__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-3);
+  }
+  .split__list li {
+    position: relative;
+    padding-left: 1.6rem;
+    color: var(--fg-soft);
+  }
+  .split__list li::before {
+    content: "\2713";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--brand);
+    font-weight: 700;
+  }
+
+  /* ---- CTA band --------------------------------------------------------- */
+  .cta-band {
+    display: grid;
+    gap: var(--sp-6);
+    align-items: center;
+    padding: var(--sp-7);
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(
+        40rem 30rem at 110% -20%,
+        color-mix(in srgb, var(--accent) 22%, transparent),
+        transparent 60%
+      ),
+      var(--c-brand-900);
+    color: #e9f4f2;
+    box-shadow: var(--shadow-lg);
+  }
+  @media (min-width: 54rem) {
+    .cta-band {
+      grid-template-columns: 1.6fr 1fr;
+      padding: var(--sp-8);
+    }
+  }
+  .cta-band__title {
+    color: #ffffff;
+  }
+  .cta-band .eyebrow {
+    color: var(--accent);
+  }
+  .cta-band .lead {
+    color: #cfe4e1;
+  }
+  .cta-band__actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  /* On the dark band, the ghost button needs light borders/text. */
+  .cta-band .btn--ghost {
+    --_fg: #eaf5f3;
+    --_bd: rgba(233, 244, 242, 0.4);
+  }
+  .cta-band .btn--ghost:hover {
+    background: rgba(233, 244, 242, 0.1);
+    color: #ffffff;
+    border-color: rgba(233, 244, 242, 0.7);
+  }
+</style>

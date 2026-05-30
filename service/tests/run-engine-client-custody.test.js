@@ -9,6 +9,7 @@ import {
   generateBoxKeypair,
   openSealed,
   ready,
+  unpackArtifactEnvelope,
 } from "../dist/crypto/seal.js";
 import { insertRun } from "../dist/db/runs.js";
 import { schema } from "../dist/db/schema.js";
@@ -39,6 +40,14 @@ const TEST_SCHEMA = `evisaflow_clientcustody_${process.pid}_${Date.now().toStrin
 const SECRET_DOC_NUMBER = "SECRETDOCNUM12345";
 const SECRET_DOB = "1987-06-05";
 const SECRET_SHARE_CODE = "SECRETSHARECODE99";
+// The member's identity, as it appears in a REAL artifact filename
+// (`EVISA_{Surname}_{GivenName}_{expiry}.pdf`). This is plaintext-at-rest PII
+// that must never reach `run_artifacts.filename`; it is sealed inside the
+// artifact envelope instead. Used to guard against the filename-leak regression.
+const SECRET_SURNAME = "SECRETSURNAMEXYZ";
+const SECRET_GIVEN_NAME = "SECRETGIVENNAMEQ";
+const SECRET_PDF_FILENAME = `EVISA_${SECRET_SURNAME}_${SECRET_GIVEN_NAME}_2031-03-03.pdf`;
+const SECRET_HTML_FILENAME = `EVISA_STATUS_${SECRET_SURNAME}_${SECRET_GIVEN_NAME}.html`;
 
 const SCHEMA_DDL = `
 CREATE TABLE users (
@@ -279,7 +288,8 @@ describe("RunEngine client custody (E2EE) — sealed outputs + persistence", {
       pdf: {
         kind: "bytes",
         bytes: new TextEncoder().encode(`EVISA-PDF::${SECRET_SHARE_CODE}`),
-        filename: "EVISA_Private.pdf",
+        // Identity-bearing filename, like a real run produces.
+        filename: SECRET_PDF_FILENAME,
         contentType: "application/pdf",
         byteLength: 0,
       },
@@ -288,7 +298,7 @@ describe("RunEngine client custody (E2EE) — sealed outputs + persistence", {
         html: {
           kind: "bytes",
           bytes: new TextEncoder().encode(`CHECKER-HTML::${SECRET_DOC_NUMBER}`),
-          filename: "checker.html",
+          filename: SECRET_HTML_FILENAME,
           contentType: "text/html",
           byteLength: 0,
           standalone: true,
@@ -361,26 +371,35 @@ describe("RunEngine client custody (E2EE) — sealed outputs + persistence", {
       artifacts.map((a) => a.artifact.kind),
       ["pdf", "checker_html"]
     );
+    // The live event carries the true (identity-bearing) filename to the client
+    // over TLS — that is fine; it is the AT-REST copy that must be name-free.
+    assert.equal(artifacts[0].artifact.filename, SECRET_PDF_FILENAME);
     for (const ev of artifacts) {
       const blob = ev.artifact.sealed;
       assert.equal(blob.alg, "box_seal", "artifact sealed with box_seal");
       assert.ok(blob.bytes instanceof Uint8Array);
-      // The sealed bytes are NOT the plaintext (the plaintext PDF carried the
-      // share code; the sealed form must not).
+      // The sealed bytes leak neither the payload (share code / doc number) nor
+      // the identity-bearing filename sealed inside the envelope.
       const asText = new TextDecoder().decode(blob.bytes);
       assert.ok(!asText.includes(SECRET_SHARE_CODE));
       assert.ok(!asText.includes(SECRET_DOC_NUMBER));
+      assert.ok(!asText.includes(SECRET_SURNAME));
       // The client opens each artifact with its private key.
       openSealed(blob.bytes, recipient.publicKey, recipient.privateKey);
     }
-    const openedPdf = new TextDecoder().decode(
+    // Opening the PDF blob yields the envelope: the true filename + raw bytes.
+    const openedPdfEnvelope = unpackArtifactEnvelope(
       openSealed(
         artifacts[0].artifact.sealed.bytes,
         recipient.publicKey,
         recipient.privateKey
       )
     );
-    assert.equal(openedPdf, `EVISA-PDF::${SECRET_SHARE_CODE}`);
+    assert.equal(openedPdfEnvelope.filename, SECRET_PDF_FILENAME);
+    assert.equal(
+      new TextDecoder().decode(openedPdfEnvelope.bytes),
+      `EVISA-PDF::${SECRET_SHARE_CODE}`
+    );
 
     // Wait for the internal (async, best-effort) DB-persistence subscriber to
     // record the terminal status before asserting the persisted form.
@@ -411,25 +430,62 @@ describe("RunEngine client custody (E2EE) — sealed outputs + persistence", {
     );
     assert.equal(openedFromDb, SECRET_SHARE_CODE);
 
-    // ---- run_artifacts: sealed bytes only, box_seal, openable ----
+    // ---- run_artifacts: sealed bytes only, box_seal, NEUTRAL filename ----
     const stored = await store.listForRun(run.id);
     assert.equal(stored.length, 2, "both byte artifacts persisted");
     assert.deepEqual(
       stored.map((a) => a.kind),
       ["evisa_pdf", "checker_html"]
     );
+    // The AT-REST filename is a neutral, kind-derived placeholder — never the
+    // identity-bearing one (that lives sealed inside the envelope).
+    assert.deepEqual(
+      stored.map((a) => a.filename),
+      ["evisa.pdf", "checker.html"],
+      "stored filenames are neutral placeholders, not the real (identity) names"
+    );
     for (const a of stored) {
       assert.equal(a.sealedAlg, "box_seal");
       assert.ok(Buffer.isBuffer(a.bytes));
-      const opened = new TextDecoder().decode(
+      // Opening the stored blob yields the envelope; the real filename + payload
+      // are recoverable by the client even for a later async fetch.
+      const envelope = unpackArtifactEnvelope(
         openSealed(new Uint8Array(a.bytes), recipient.publicKey, recipient.privateKey)
       );
-      // The opened artifact matches the original plaintext we sealed.
+      assert.ok(
+        envelope.filename === SECRET_PDF_FILENAME ||
+          envelope.filename === SECRET_HTML_FILENAME,
+        "the real filename is recoverable from the sealed envelope"
+      );
+      const opened = new TextDecoder().decode(envelope.bytes);
       assert.ok(opened.startsWith("EVISA-PDF::") || opened.startsWith("CHECKER-HTML::"));
     }
 
     // ---- HARD NEGATIVE TEST: no plaintext anywhere persisted or logged ----
-    const secrets = [SECRET_SHARE_CODE, SECRET_DOC_NUMBER, SECRET_DOB];
+    // Includes the identity strings that appear in REAL artifact filenames: a
+    // client-custody run must not write the surname/given-name (nor the doc#,
+    // DOB, or share code) into ANY column at rest — the filename is sealed inside
+    // the artifact envelope, and `run_artifacts.filename` holds only a neutral
+    // placeholder. This guards against the filename-leak regression.
+    const secrets = [
+      SECRET_SHARE_CODE,
+      SECRET_DOC_NUMBER,
+      SECRET_DOB,
+      SECRET_SURNAME,
+      SECRET_GIVEN_NAME,
+    ];
+
+    // Every run_artifacts row (kind/filename/sealed bytes/...). The bytes are
+    // sealed and the filename is a neutral placeholder, so no secret appears.
+    const artifactsDump = JSON.stringify(
+      (await pool.query("SELECT * FROM run_artifacts")).rows
+    );
+    for (const secret of secrets) {
+      assert.ok(
+        !artifactsDump.includes(secret),
+        `run_artifacts table must not contain plaintext: ${secret}`
+      );
+    }
 
     // Every runs column (as text) — scan the whole row, not just the share code.
     const runsDump = JSON.stringify((await pool.query("SELECT * FROM runs")).rows);

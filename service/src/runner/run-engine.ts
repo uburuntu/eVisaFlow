@@ -261,6 +261,25 @@ function collectByteArtifacts(result: CreateShareCodeResult): Array<{
 }
 
 /**
+ * A neutral, non-identifying filename for a client-custody artifact's at-rest
+ * row. The real filename embeds the member's identity and is sealed inside the
+ * artifact envelope; only this generic, kind-derived name is stored in plaintext
+ * in `run_artifacts.filename`, so the column leaks nothing about the applicant.
+ */
+function neutralArtifactFilename(kind: SealedArtifactRef["kind"]): string {
+  switch (kind) {
+    case "pdf":
+      return "evisa.pdf";
+    case "checker_html":
+      return "checker.html";
+    case "checker_pdf":
+      return "checker.pdf";
+    default:
+      return "artifact";
+  }
+}
+
+/**
  * Custody-aware output handling. The {@link CustodyProvider} chosen from
  * `input.custody` decides how every output is protected before it leaves the
  * worker; the engine never branches on the algorithm beyond that one selection.
@@ -271,12 +290,15 @@ function collectByteArtifacts(result: CreateShareCodeResult): Array<{
  *   bytes for delivery.
  * - **client** (the web app, E2EE): anonymous `crypto_box_seal` to
  *   `recipientPublicKey`. `completed` carries ONLY the sealed share code — never
- *   a plaintext `shareCode`. Each `artifact_ready` carries `box_seal` bytes, and
- *   the sealed artifact is persisted via the {@link ArtifactStore} (sealed bytes
- *   only). No plaintext output ever leaves the worker for a client-custody run.
+ *   a plaintext `shareCode`. Each `artifact_ready` carries `box_seal` bytes (the
+ *   artifact's true filename is sealed INSIDE that envelope), and the sealed
+ *   artifact is persisted via the {@link ArtifactStore} with a NEUTRAL,
+ *   kind-derived filename — so neither the bytes nor the filename leak identity
+ *   at rest. No plaintext output ever leaves the worker for a client-custody run.
  *
- * INVARIANT: the plaintext `result.shareCode` is read only to seal it; for
- * client custody it is never published, persisted, or logged.
+ * INVARIANT: the plaintext `result.shareCode` and the identity-bearing artifact
+ * filename are read only to seal them; for client custody they are never
+ * published at rest, persisted in cleartext, or logged.
  */
 async function publishOutputs(
   input: EnqueueRunInput,
@@ -296,14 +318,22 @@ async function publishOutputs(
       "RunEngine: recipientPublicKey is required for client custody (cannot seal outputs)"
     );
   }
-  const ctx = { recipientPublicKey: input.recipientPublicKey };
+  const recipientPublicKey = input.recipientPublicKey;
 
   // Publish artifacts BEFORE the terminal `completed` event. `completed` is a
   // terminal bus event: it flushes and ends every subscriber, so anything
   // published after it (including the DB-persistence subscriber and SSE
   // clients) would be dropped.
   for (const artifact of collectByteArtifacts(result)) {
-    const sealed = deps.provider.sealArtifact(artifact.bytes, ctx);
+    // Pass the true filename in the seal context: for client custody it is
+    // sealed INTO the artifact envelope (identity-bearing — real names embed the
+    // member's surname/given-name + visa expiry, and the checker fallback can
+    // embed the share code) and never stored in plaintext; server custody
+    // ignores it.
+    const sealed = deps.provider.sealArtifact(artifact.bytes, {
+      recipientPublicKey,
+      filename: artifact.filename,
+    });
     const ref: SealedArtifactRef = {
       kind: artifact.kind,
       filename: artifact.filename,
@@ -311,15 +341,24 @@ async function publishOutputs(
       byteLength: artifact.bytes.byteLength,
       sealed,
     };
+    // The live event carries the true filename to the connected client over TLS
+    // (in RAM, opened in-browser — never at rest); the AT-REST copy below is
+    // name-free for client custody.
     publish({ type: "artifact_ready", artifact: ref });
     // Persist the SEALED artifact (sealed bytes only) for CLIENT custody — this
     // is the E2EE delivery path: the web client fetches the sealed blob later and
-    // opens it in-browser, and the store never sees plaintext. Server custody
-    // (the trusted bot) keeps today's behavior: it streams the unsealed bytes
-    // straight to Telegram via `artifact_ready` and persists nothing here.
+    // opens it in-browser, and the store never sees plaintext. The persisted
+    // `filename` is a NEUTRAL placeholder (the real one is sealed inside the
+    // envelope), so no identity leaks into `run_artifacts.filename` at rest.
+    // Server custody (the trusted bot) keeps today's behavior: it streams the
+    // unsealed bytes straight to Telegram via `artifact_ready` and persists
+    // nothing here.
     if (isClient && deps.artifactStore) {
       try {
-        await deps.artifactStore.putSealed(input.runId, ref);
+        await deps.artifactStore.putSealed(input.runId, {
+          ...ref,
+          filename: neutralArtifactFilename(artifact.kind),
+        });
       } catch (err) {
         // Persistence is best-effort: a storage hiccup must not break the live
         // run. The sealed bytes were already delivered via `artifact_ready`.
@@ -331,7 +370,9 @@ async function publishOutputs(
     }
   }
 
-  const sealedShareCode = deps.provider.sealShareCode(result.shareCode, ctx);
+  const sealedShareCode = deps.provider.sealShareCode(result.shareCode, {
+    recipientPublicKey,
+  });
   publish({
     type: "completed",
     validUntil: result.validUntil,

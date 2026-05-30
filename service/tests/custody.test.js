@@ -8,6 +8,7 @@ import {
   openSealed,
   ready,
   stringToBytes,
+  unpackArtifactEnvelope,
 } from "../dist/crypto/seal.js";
 
 const serverKeyHex = randomBytes(32).toString("hex");
@@ -62,18 +63,30 @@ test("client custody seals so only the matching private key opens", async () => 
   );
 });
 
-test("client custody seals artifact bytes to the recipient public key", async () => {
+test("client custody seals the filename + bytes into the artifact envelope", async () => {
   await ready();
   const recipient = generateBoxKeypair();
   const provider = clientCustody();
   const bytes = stringToBytes("pdf-bytes-stand-in");
+  // A filename that embeds identity, exactly the kind that must not be at rest.
+  const filename = "EVISA_SMITH_JOHN_2031-03-03.pdf";
 
-  const blob = provider.sealArtifact(bytes, { recipientPublicKey: recipient.publicKey });
+  const blob = provider.sealArtifact(bytes, {
+    recipientPublicKey: recipient.publicKey,
+    filename,
+  });
   assert.equal(blob.alg, "box_seal");
   assert.notDeepEqual(blob.bytes, bytes);
+  // The sealed bytes leak neither the payload nor the identity-bearing filename.
+  const sealedText = new TextDecoder().decode(blob.bytes);
+  assert.ok(!sealedText.includes("SMITH"));
+  assert.ok(!sealedText.includes("pdf-bytes-stand-in"));
 
+  // The client opens the blob and unpacks the original filename AND bytes.
   const opened = openSealed(blob.bytes, recipient.publicKey, recipient.privateKey);
-  assert.deepEqual(opened, bytes);
+  const unpacked = unpackArtifactEnvelope(opened);
+  assert.equal(unpacked.filename, filename);
+  assert.deepEqual(unpacked.bytes, bytes);
 });
 
 test("client custody requires a recipient public key to seal", () => {

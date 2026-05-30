@@ -1,6 +1,6 @@
 import type { RunCustody, SealedBlob } from "../runner/run-types.js";
 import { decrypt, encrypt } from "./encryption.js";
-import { sealToPublicKey, stringToBytes } from "./seal.js";
+import { packArtifactEnvelope, sealToPublicKey, stringToBytes } from "./seal.js";
 
 export type { RunCustody } from "../runner/run-types.js";
 
@@ -11,6 +11,14 @@ export interface SealContext {
    * sealed to it via `crypto_box_seal`); ignored by server custody.
    */
   recipientPublicKey?: Uint8Array;
+  /**
+   * The artifact's true filename. Real filenames embed the member's identity
+   * (surname/given-name + visa expiry, and the checker fallback can embed the
+   * share code), so for client custody it is sealed INTO the artifact envelope
+   * via {@link packArtifactEnvelope} and never persisted in plaintext. Only used
+   * by `sealArtifact`; ignored by `sealShareCode` and by server custody.
+   */
+  filename?: string;
 }
 
 /**
@@ -92,8 +100,13 @@ export function clientCustody(): CustodyProvider {
     sealShareCode(plain: string, ctx: SealContext): SealedBlob {
       return seal(stringToBytes(plain), ctx);
     },
+    // Seal the filename INTO the payload (an identity-bearing string at rest
+    // otherwise) so only sealed, name-free bytes ever leave the worker. The
+    // client opens the blob and unpacks `{ filename, bytes }` even for an async
+    // fetch with no live event. `filename` defaults to "" if absent (the engine
+    // always supplies one).
     sealArtifact(bytes: Uint8Array, ctx: SealContext): SealedBlob {
-      return seal(bytes, ctx);
+      return seal(packArtifactEnvelope(ctx.filename ?? "", bytes), ctx);
     },
     // openForDelivery is intentionally omitted: the server cannot open client
     // ciphertext, and must not appear able to.

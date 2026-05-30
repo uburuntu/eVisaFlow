@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertPublicKey,
   bytesToString,
   fromBase64,
   generateBoxKeypair,
   openSealed,
+  packArtifactEnvelope,
   ready,
   sealToPublicKey,
   stringToBytes,
   toBase64,
+  unpackArtifactEnvelope,
 } from "../dist/crypto/seal.js";
 
 test("keypair → seal → open round-trips the plaintext", async () => {
@@ -58,6 +61,47 @@ test("sealToPublicKey needs only the public key (anonymous sender)", async () =>
   // A different key pair cannot open it.
   const stranger = generateBoxKeypair();
   assert.throws(() => openSealed(sealed, stranger.publicKey, stranger.privateKey));
+});
+
+test("assertPublicKey rejects a malformed key before sealing", async () => {
+  await ready();
+  const { publicKey } = generateBoxKeypair();
+  assert.doesNotThrow(() => assertPublicKey(publicKey));
+  // An empty Uint8Array is truthy (length 0) but not a valid 32-byte key.
+  assert.throws(() => assertPublicKey(new Uint8Array(0)), /32 bytes/);
+  assert.throws(() => assertPublicKey(new Uint8Array(16)), /32 bytes/);
+  // sealToPublicKey validates too, with the same clear message.
+  assert.throws(
+    () => sealToPublicKey(stringToBytes("x"), new Uint8Array(0)),
+    /recipientPublicKey must be 32 bytes/
+  );
+});
+
+test("artifact envelope packs/unpacks filename + bytes", async () => {
+  await ready();
+  const filename = "EVISA_SMITH_JOHN_2031-03-03.pdf";
+  const bytes = stringToBytes("%PDF-1.7 ...binary... payload");
+
+  const envelope = packArtifactEnvelope(filename, bytes);
+  const { filename: outName, bytes: outBytes } = unpackArtifactEnvelope(envelope);
+  assert.equal(outName, filename);
+  assert.deepEqual(outBytes, bytes);
+
+  // Round-trips through a seal/open so the client can recover both async.
+  const { publicKey, privateKey } = generateBoxKeypair();
+  const sealed = sealToPublicKey(packArtifactEnvelope(filename, bytes), publicKey);
+  const opened = unpackArtifactEnvelope(openSealed(sealed, publicKey, privateKey));
+  assert.equal(opened.filename, filename);
+  assert.deepEqual(opened.bytes, bytes);
+
+  // An empty filename is allowed (defensive default).
+  const empty = unpackArtifactEnvelope(packArtifactEnvelope("", bytes));
+  assert.equal(empty.filename, "");
+  assert.deepEqual(empty.bytes, bytes);
+
+  // A bad magic/version is rejected.
+  assert.throws(() => unpackArtifactEnvelope(stringToBytes("not an envelope")), /magic/);
+  assert.throws(() => unpackArtifactEnvelope(new Uint8Array(4)), /too short/);
 });
 
 test("base64 helpers round-trip sealed bytes for TEXT storage", async () => {

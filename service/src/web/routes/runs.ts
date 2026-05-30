@@ -2,17 +2,19 @@ import type { Applicant, Purpose, TwoFactorMethod } from "evisa-flow";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { makeRequireUser } from "../../auth/session.js";
+import { fromBase64 } from "../../crypto/seal.js";
 import type { Db } from "../../db/client.js";
 import { getFamilyMemberById } from "../../db/family-members.js";
-import { getRunById, insertRun, listRunsForUser } from "../../db/runs.js";
+import { type DbRun, getRunById, insertRun, listRunsForUser } from "../../db/runs.js";
 import { getVault } from "../../db/user-vault.js";
 import type { Env } from "../../env.js";
 import type { ArtifactStore, StoredArtifact } from "../../runner/artifact-store.js";
 import type { RunEngine } from "../../runner/run-engine.js";
+import type { RunEvent } from "../../runner/run-types.js";
 import type { Logger } from "../../utils/logger.js";
 import type { EntitlementService } from "../entitlements.js";
 import type { WebFastifyInstance } from "../server.js";
-import { streamRunEvents } from "../sse.js";
+import { streamRunEvents, streamTerminalRunEvent } from "../sse.js";
 
 /**
  * Run lifecycle routes for the E2EE web app: create a run from an inline,
@@ -119,6 +121,57 @@ function isUniqueViolation(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   const causeCode = (err as { cause?: { code?: string } })?.cause?.code;
   return code === "23505" || causeCode === "23505";
+}
+
+/** DB statuses that mean the run is finished and will publish no more events. */
+const TERMINAL_DB_STATUSES = new Set(["success", "failed", "cancelled", "interrupted"]);
+
+/**
+ * Reconstructs the terminal {@link RunEvent} for an already-finished run from its
+ * persisted row, so a client that connects (or reconnects) AFTER the in-memory
+ * bus topic has been torn down still learns the final state instead of hanging on
+ * a dead, never-ending subscription.
+ *
+ * - `success` → `completed`, rebuilding `sealedShareCode` from the stored
+ *   `encrypted_share_code` + `share_code_alg` (only the SEALED form is persisted;
+ *   client custody stores base64 `box_seal` bytes, server custody an `aesgcm`
+ *   `cipher` string). The plaintext share code is never stored, so it is never
+ *   present here. `share_code_alg` defaults to `box_seal` (web runs are always
+ *   client custody); a run with no share code yields a `completed` with no sealed
+ *   payload.
+ * - `failed`/`cancelled`/`interrupted` → `failed`, carrying the persisted
+ *   `error_code`/`error_message` and the `cause` for cancelled/interrupted.
+ *
+ * Returns null for a non-terminal run (the caller then subscribes live instead).
+ */
+function terminalEventForRun(run: DbRun): RunEvent | null {
+  if (!TERMINAL_DB_STATUSES.has(run.status)) return null;
+  if (run.status === "success") {
+    const alg: "aesgcm" | "box_seal" =
+      run.share_code_alg === "aesgcm" ? "aesgcm" : "box_seal";
+    const sealedShareCode =
+      run.encrypted_share_code === null
+        ? // No share code persisted: surface a completed with an empty sealed blob
+          // of the run's algorithm (the client treats a missing payload as "none").
+          { alg }
+        : alg === "box_seal"
+          ? { alg, bytes: fromBase64(run.encrypted_share_code) }
+          : { alg, cipher: run.encrypted_share_code };
+    return {
+      type: "completed",
+      validUntil: run.valid_until ?? undefined,
+      sealedShareCode,
+    };
+  }
+  return {
+    type: "failed",
+    code: run.error_code ?? "FAILED",
+    message: run.error_message ?? "Run failed",
+    terminal: true,
+    ...(run.status === "cancelled" || run.status === "interrupted"
+      ? { cause: run.status }
+      : {}),
+  };
 }
 
 export function registerRunRoutes(app: WebFastifyInstance, deps: RunRoutesDeps): void {
@@ -244,10 +297,29 @@ export function registerRunRoutes(app: WebFastifyInstance, deps: RunRoutesDeps):
     const user = request.user;
     if (!user) return reply.code(401).send({ error: "unauthorized" });
 
-    const runId = await authorizeRun(request, reply, user.id);
-    if (!runId) return reply; // 404 already sent
+    const { id } = request.params as { id: string };
+    const run = await getRunById(db, id, user.id);
+    if (!run) {
+      return reply.code(404).send({ error: "not_found" });
+    }
 
-    const events = engine.subscribe(runId);
+    // If the run already finished and the in-memory bus has no live topic for it
+    // (a reconnect after the terminal-grace window, or a fresh process after a
+    // restart), `subscribe()` would hand back a brand-new, never-ending topic and
+    // the SSE connection would hang forever. Detect that case — terminal in the DB
+    // AND no live snapshot — and deliver the reconstructed terminal frame once,
+    // then close, so a late client learns the final state instantly. A run still
+    // within the grace window keeps a snapshot, so the normal subscribe path below
+    // (which replays the full backlog) is used and `Last-Event-ID` resume works.
+    if (!engine.getSnapshot(run.id)) {
+      const terminal = terminalEventForRun(run);
+      if (terminal) {
+        streamTerminalRunEvent(request, reply, terminal);
+        return reply;
+      }
+    }
+
+    const events = engine.subscribe(run.id);
     await streamRunEvents(request, reply, events, { log });
     return reply;
   });

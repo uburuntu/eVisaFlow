@@ -3,6 +3,7 @@ import http from "node:http";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { updateRunStatus } from "../dist/db/runs.js";
 import { schema } from "../dist/db/schema.js";
 import { createInMemoryRunBus } from "../dist/runner/run-bus.js";
 import { createWebServer } from "../dist/web/server.js";
@@ -1064,5 +1065,160 @@ describe("web run lifecycle routes (fastify.inject + SSE)", {
       frames.map((f) => f.type),
       ["phase", "completed"]
     );
+  });
+
+  // Regression: connecting to SSE for a run that already finished AND whose
+  // in-memory bus topic has been torn down (a reconnect after the terminal-grace
+  // window, or a fresh process) must NOT hang on a dead, never-ending
+  // subscription. The route reconstructs the terminal frame from the persisted
+  // run and closes the stream immediately.
+  it("SSE for a completed run after bus teardown replays the terminal frame from the DB and closes", async () => {
+    const cookie = await signIn("late-success@example.com");
+    await createVault(cookie);
+    const memberId = await createMember(cookie, "LateOk");
+    const runId = (
+      await app.inject({
+        method: "POST",
+        url: "/api/runs",
+        headers: { cookie },
+        payload: createRunPayload(memberId),
+      })
+    ).json().runId;
+
+    // Persist a terminal success row with ONLY a sealed (box_seal) share code,
+    // exactly as the engine's persistence subscriber would. The stub engine does
+    // not persist, so we write it directly.
+    await updateRunStatus(db, runId, {
+      status: "success",
+      encrypted_share_code: Buffer.from("sealed-share-code-bytes").toString("base64"),
+      share_code_alg: "box_seal",
+      custody: "client",
+      valid_until: "2031-03-03",
+    });
+
+    // Drive + terminate the bus topic, then wait past the stub's 1000ms
+    // terminalGraceMs so the topic is torn down and getSnapshot() is undefined.
+    engine.emit(runId, {
+      type: "completed",
+      validUntil: "2031-03-03",
+      sealedShareCode: { alg: "box_seal", bytes: new Uint8Array([7]) },
+    });
+    // The terminal snapshot lingers during the grace window, then is torn down.
+    assert.ok(engine.getSnapshot(runId), "snapshot present during grace window");
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(engine.getSnapshot(runId), undefined, "topic torn down after grace");
+
+    const port = await ensureListening();
+    const frames = [];
+    // Guard so a regression (the hang) fails fast instead of timing out the suite.
+    const result = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("SSE stream did not close")), 4000);
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: `/api/runs/${runId}/events`,
+          method: "GET",
+          headers: { cookie, accept: "text/event-stream" },
+        },
+        (res) => {
+          let buffer = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            buffer += chunk;
+            const drained = drainSseRecords(buffer);
+            buffer = drained.rest;
+            for (const { event } of drained.records) frames.push(event);
+          });
+          res.on("end", () => {
+            clearTimeout(timer);
+            resolve(res.statusCode);
+          });
+          res.on("error", reject);
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    assert.equal(result, 200);
+    assert.deepEqual(
+      frames.map((f) => f.type),
+      ["completed"]
+    );
+    const completed = frames[0];
+    // valid_until is read back from the DB as a full timestamptz; the
+    // reconstruction passes it through verbatim.
+    assert.match(completed.validUntil, /^2031-03-03/);
+    assert.equal(completed.sealedShareCode.alg, "box_seal");
+    // The reconstructed sealed share code carries ONLY sealed bytes, never plaintext.
+    assert.ok(completed.sealedShareCode.bytes, "sealed bytes present");
+    assert.ok(
+      !("shareCode" in completed),
+      "no plaintext share code in reconstructed frame"
+    );
+  });
+
+  it("SSE for a cancelled run after bus teardown replays a terminal failed frame and closes", async () => {
+    const cookie = await signIn("late-cancel@example.com");
+    await createVault(cookie);
+    const memberId = await createMember(cookie, "LateCancel");
+    const runId = (
+      await app.inject({
+        method: "POST",
+        url: "/api/runs",
+        headers: { cookie },
+        payload: createRunPayload(memberId),
+      })
+    ).json().runId;
+
+    await updateRunStatus(db, runId, {
+      status: "cancelled",
+      error_code: "CANCELLED",
+      error_message: "Cancelled for LateCancel.",
+    });
+
+    // No bus activity at all for this run → getSnapshot is undefined from the
+    // start (models a fresh process that never saw the run live).
+    assert.equal(engine.getSnapshot(runId), undefined);
+
+    const port = await ensureListening();
+    const frames = [];
+    const result = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("SSE stream did not close")), 4000);
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: `/api/runs/${runId}/events`,
+          method: "GET",
+          headers: { cookie, accept: "text/event-stream" },
+        },
+        (res) => {
+          let buffer = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            buffer += chunk;
+            const drained = drainSseRecords(buffer);
+            buffer = drained.rest;
+            for (const { event } of drained.records) frames.push(event);
+          });
+          res.on("end", () => {
+            clearTimeout(timer);
+            resolve(res.statusCode);
+          });
+          res.on("error", reject);
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    assert.equal(result, 200);
+    assert.equal(frames.length, 1);
+    assert.equal(frames[0].type, "failed");
+    assert.equal(frames[0].code, "CANCELLED");
+    assert.equal(frames[0].cause, "cancelled");
+    assert.equal(frames[0].terminal, true);
   });
 });

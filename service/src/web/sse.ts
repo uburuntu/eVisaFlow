@@ -71,6 +71,37 @@ function formatFrame(id: number, event: RunEvent): string {
 }
 
 /**
+ * Streams a SINGLE terminal {@link RunEvent} and immediately ends the response.
+ *
+ * Used when a run is already finished and its in-memory bus topic has been torn
+ * down (a reconnect after the bus's terminal-grace window, or a fresh process):
+ * `subscribe()` would otherwise hand back a brand-new, never-ending topic and the
+ * connection would hang forever. Instead the caller reconstructs the terminal
+ * event from the persisted run and we deliver it once, then close — so a late
+ * client learns the final state instantly, exactly like a live terminal frame.
+ *
+ * The frame is given id `0` and honors `Last-Event-ID`: a client that already
+ * saw this terminal event (id >= 0) gets an empty, immediately-closed stream
+ * rather than a duplicate.
+ */
+export function streamTerminalRunEvent(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  event: RunEvent
+): void {
+  const lastSeenId = readLastEventId(request);
+  reply.hijack();
+  const res = reply.raw;
+  res.writeHead(200, SSE_HEADERS);
+  res.write(": connected\n\n");
+  // The single synthesized frame is id 0 (a reconnect that already has it skips).
+  if (lastSeenId < 0) {
+    res.write(formatFrame(0, event));
+  }
+  res.end();
+}
+
+/**
  * Streams an `AsyncIterable<RunEvent>` to the client as `text/event-stream` until
  * the stream ends (the run reaches a terminal event) or the client disconnects.
  *

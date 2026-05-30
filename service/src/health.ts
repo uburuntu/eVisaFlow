@@ -13,9 +13,6 @@ export interface HealthSnapshot {
   db?: {
     ready: boolean;
   };
-  supabase?: {
-    ready: boolean;
-  };
   queue: {
     active: number;
     waiting: number;

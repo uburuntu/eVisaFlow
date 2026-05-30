@@ -13,7 +13,7 @@ test("health server reports live and ready status", async () => {
     shuttingDown: false,
     startedAt: new Date(0).toISOString(),
     telegram: { ready: true, username: "bot" },
-    supabase: { ready: true },
+    db: { ready: true },
     queue: { active: 0, waiting: 0 },
   }));
 

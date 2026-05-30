@@ -34,6 +34,10 @@ export function createLogger(opts?: { verbose?: boolean }) {
         "*.caption",
         "*.token",
         "*.TELEGRAM_BOT_TOKEN",
+        // DATABASE_URL embeds the Postgres password in the connection string;
+        // redact it so an accidental env/error dump never leaks credentials
+        // (the redactedEnvSummary path already strips them on purpose).
+        "*.DATABASE_URL",
         "*.ENCRYPTION_KEY",
         "*.shareCode",
         "*.dateOfBirth",

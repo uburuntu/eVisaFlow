@@ -1,17 +1,81 @@
-# eVisaFlow Telegram Bot
+# eVisaFlow service (self-hostable web app + optional Telegram bot)
 
-Telegram bot that automates UK eVisa share code retrieval for families. Built on top of the [evisa-flow](https://github.com/uburuntu/eVisaFlow) npm package.
+The eVisaFlow service automates UK eVisa share code retrieval for families. It is
+**web-first**: a Fastify API + SSE + a built Astro/React frontend, all on one
+in-process run engine driving Playwright. The **Telegram bot is opt-in** — a
+pure-web self-host runs with **no Telegram account**. Built on top of the
+[evisa-flow](https://github.com/uburuntu/eVisaFlow) npm package.
 
 ## Features
 
-- Add up to 6 family members with encrypted document storage
-- On-demand share code retrieval via `/run`
-- Automatic monthly reminders with "I'm Ready" button
-- eVisa PDF plus status-check HTML/PDF delivery directly in Telegram
-- Concurrent queue with per-user serialization and queue position updates
-- Health/readiness endpoint for container deployments
+- Web app: end-to-end-encrypted (client-held key) member storage, live run screen
+  with in-browser 2FA, and in-browser artifact decryption
+- Optional Telegram bot: add up to 6 family members, on-demand `/run`, automatic
+  monthly reminders, and PDF/checker delivery in chat
+- Concurrent queue with per-user serialization and queue-position updates
+- Health/readiness endpoints (`/ready`, `/live`) for container deployments
 
-## Setup
+## Self-host quickstart (one command, web-first)
+
+Bring up the whole app — a **bundled Postgres** plus the web server — with a
+single command. No Telegram account is required.
+
+**Requirements:** Docker with Compose v2 (`docker compose`). Nothing else.
+
+```bash
+# 1. Clone
+git clone https://github.com/uburuntu/eVisaFlow.git
+cd eVisaFlow
+
+# 2. Configure: copy the example env and set a session secret
+cp service/.env.selfhost.example service/.env
+# Generate a secret and put it in service/.env as SESSION_SECRET=...
+node -e "console.log('SESSION_SECRET='+require('crypto').randomBytes(32).toString('hex'))"
+
+# 3. Start (builds the image on first run, applies DB migrations automatically)
+docker compose -f service/docker-compose.selfhost.yml up
+
+# 4. Open the app
+open http://localhost:8080      # or just visit it in a browser
+```
+
+`SESSION_SECRET` is the only value you must set for a pure-web install — the
+compose file supplies the database connection, `DEPLOYMENT_MODE=selfhost`, and
+`ENABLE_BOT=false` for you. The bundled Postgres data persists in a named Docker
+volume; migrations run on every boot and are idempotent. Stop with `Ctrl-C` (or
+`docker compose -f service/docker-compose.selfhost.yml down`).
+
+> SAFETY: the bundled Postgres is for local/self-host use. Never point the app at
+> a managed/production database, and never commit `service/.env` (it is
+> gitignored). Secrets are supplied at runtime only — nothing is baked into the
+> image.
+
+### Enabling the Telegram bot (optional)
+
+The bot is off by default. To also run it, edit `service/.env`:
+
+```bash
+ENABLE_BOT=true
+TELEGRAM_BOT_TOKEN=...   # from @BotFather
+ENCRYPTION_KEY=...       # 32-byte hex (server-custody AES for the bot)
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Then restart: `docker compose -f service/docker-compose.selfhost.yml up`. Web
+runs stay client-custody (end-to-end encrypted) and never use `ENCRYPTION_KEY`;
+it is required only for the bot's server-custody storage.
+
+### Bot-only deployment (external database)
+
+To run against a database you manage (e.g. Supabase) instead of the bundled
+Postgres, use `docker-compose.yml`, which omits the database service and reads
+`DATABASE_URL` from `service/.env`:
+
+```bash
+docker compose -f service/docker-compose.yml up -d
+```
+
+## Setup (manual / non-Docker)
 
 ### 1. Create a Telegram Bot
 
@@ -57,30 +121,29 @@ neither the tables nor the ledger, so every migration runs normally.
 cp .env.example .env
 ```
 
-Fill in the values:
+Fill in the values (see `.env.example` for the full, commented set):
 
 | Variable | Description |
 |----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | From BotFather |
-| `DATABASE_URL` | Postgres connection string (self-host: bundled Postgres; Supabase: project Postgres connection string). Use a local/ephemeral DB for dev/test only. |
-| `ENCRYPTION_KEY` | Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `DATABASE_URL` | Postgres connection string. **Required.** Self-host with the bundled Postgres uses the compose default; Supabase uses the project Postgres connection string. Use a local/ephemeral DB for dev/test only. |
+| `SESSION_SECRET` | Signs the session cookie. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Optional for the bot/dev; required by the self-host compose. |
+| `PORT` | Single port for the web UI, API, and `/live` / `/ready` probes (default: 8080) |
+| `PUBLIC_BASE_URL` | Externally reachable origin (no trailing slash) used to build magic-link URLs |
+| `ENABLE_BOT` | `true` to run the Telegram bot (default: `false`). When true, `TELEGRAM_BOT_TOKEN` and `ENCRYPTION_KEY` are required. |
+| `TELEGRAM_BOT_TOKEN` | From BotFather. Required only when `ENABLE_BOT=true`. |
+| `ENCRYPTION_KEY` | Server-custody AES key for the bot. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Required only when `ENABLE_BOT=true`. |
 | `QUEUE_CONCURRENCY` | Max parallel browsers (default: 2) |
 | `EVISA_HEADLESS` | Run browser automation headlessly (default: true) |
 | `EVISA_DIAGNOSTICS_MODE` | `off`, `sanitized`, `raw`, or `sanitized_on_failure` (default) |
-| `HEALTH_PORT` | HTTP health port for `/live` and `/ready` (default: 8080) |
 | `SCHEDULER_CRON` | Cron expression for daily check (default: `0 9 * * *`) |
 | `SCHEDULE_INTERVAL_DAYS` | Days between scheduled runs per user (default: 30) |
 | `WEB_DIST_PATH` | Path to the built web bundle served at this same origin. Optional — defaults to the workspace `web/dist`. If the build is absent the API still runs (a hint is logged). |
 
 ### 4. Run
 
-#### With Docker (recommended)
-
-```bash
-docker compose up -d
-```
-
-#### Without Docker
+For Docker, use the [self-host quickstart](#self-host-quickstart-one-command-web-first)
+above (bundled Postgres) or `docker-compose.yml` (external database). To run
+directly on the host without Docker:
 
 ```bash
 # Install dependencies (including Playwright)

@@ -20,6 +20,25 @@ const BooleanFromEnv = z.preprocess(
   z.boolean({ error: "Expected true/false, 1/0, yes/no, or on/off" })
 );
 
+/**
+ * Treats an empty or whitespace-only string as "unset" (undefined).
+ *
+ * `.env` files (and docker-compose `env_file:`) routinely carry placeholder lines
+ * like `TELEGRAM_BOT_TOKEN=` so an operator can fill them in later. Those inject an
+ * EMPTY STRING, which a bare `z.string().min(1).optional()` would REJECT (it is a
+ * present-but-too-short string, not `undefined`) — crashing, for example, a
+ * bot-less self-host that ships those blank lines. Mapping "" → undefined makes a
+ * blank assignment behave exactly like an omitted one, so `.optional()` and the
+ * conditional `superRefine` (which only requires these when ENABLE_BOT) work as
+ * intended. Non-empty values pass through untouched for normal validation.
+ */
+const emptyToUndefined = (value: unknown): unknown =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
+
+/** An optional env string that treats a blank assignment (`KEY=`) as unset. */
+const optionalEnvString = (schema: z.ZodString) =>
+  z.preprocess(emptyToUndefined, schema.optional());
+
 const DiagnosticsModeSchema = z.enum(["off", "sanitized", "raw", "sanitized_on_failure"]);
 
 const DeploymentModeSchema = z.enum(["selfhost", "cloud"]);
@@ -40,8 +59,10 @@ const envSchema = z
     ENABLE_BOT: BooleanFromEnv.default(false),
     // Telegram bot token from @BotFather. REQUIRED ONLY when ENABLE_BOT is true
     // (enforced by the superRefine below); a pure-web deployment needs no bot, so
-    // it is optional here and validated conditionally.
-    TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+    // it is optional here and validated conditionally. A blank `TELEGRAM_BOT_TOKEN=`
+    // line (common in shipped .env files) is treated as unset, not as an invalid
+    // empty token, so a bot-less self-host carrying the placeholder still boots.
+    TELEGRAM_BOT_TOKEN: optionalEnvString(z.string().min(1)),
     // Portable Postgres connection string for the Drizzle + pg handle and the
     // migration runner. This is the single source of database truth: for a Supabase
     // deployment it is the project's Postgres connection string, and for self-host
@@ -53,11 +74,15 @@ const envSchema = z
     // uses server custody; web runs are client-custody and seal to the user's
     // public key, so a bot-less web deployment needs NO server key. REQUIRED ONLY
     // when ENABLE_BOT is true (enforced by the superRefine below).
-    ENCRYPTION_KEY: z
-      .string()
-      .length(64)
-      .regex(/^[0-9a-f]+$/i, "Must be 64 hex characters (32 bytes)")
-      .optional(),
+    // A blank `ENCRYPTION_KEY=` placeholder is treated as unset (see
+    // optionalEnvString); the value is validated as 64 hex chars only when present,
+    // and required only when ENABLE_BOT (superRefine).
+    ENCRYPTION_KEY: optionalEnvString(
+      z
+        .string()
+        .length(64)
+        .regex(/^[0-9a-f]+$/i, "Must be 64 hex characters (32 bytes)")
+    ),
     QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
     EVISA_HEADLESS: BooleanFromEnv.default(true),
     EVISA_DIAGNOSTICS_MODE: DiagnosticsModeSchema.default("sanitized_on_failure"),
@@ -102,14 +127,25 @@ const envSchema = z
       .int()
       .min(1)
       .default(30 * 24 * 60),
+    // Secret used to sign the session cookie (via @fastify/cookie). The session
+    // itself is a high-entropy random token stored only as a SHA-256 hash, so the
+    // scheme is already secure WITHOUT a secret; the signature adds tamper
+    // detection on the cookie. OPTIONAL by design so the minimal self-host
+    // (DATABASE_URL only) and the existing bot deployment keep working unchanged.
+    // The self-host compose REQUIRES it (and the `.env.selfhost.example`
+    // documents generating one) so a production install always signs its cookies.
+    // Must be reasonably long when set; >=20 bytes is recommended by
+    // @fastify/cookie for the default HMAC. A blank `SESSION_SECRET=` line is
+    // treated as unset (cookies unsigned) rather than an invalid short secret.
+    SESSION_SECRET: optionalEnvString(z.string().min(32)),
     // Magic-link token lifetime. Short by design (a bearer credential in an email):
     // 15 minutes by default. Tokens are single-use and hashed at rest regardless.
     MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().min(1).default(15),
     // Optional SMTP transport for magic-link email. When SMTP_URL is set the
     // smtpMailer is selected (and SMTP_FROM is required); otherwise a consoleMailer
     // logs the link for dev/self-host without SMTP. Telegram Login needs neither.
-    SMTP_URL: z.string().min(1).optional(),
-    SMTP_FROM: z.string().min(1).optional(),
+    SMTP_URL: optionalEnvString(z.string().min(1)),
+    SMTP_FROM: optionalEnvString(z.string().min(1)),
     // Filesystem path to the built Astro web assets (`web/dist`) the Fastify
     // server serves at the single origin, with an SPA fallback for `/app/*`.
     // Optional: when unset, `index.ts` defaults to the workspace `web/dist`
@@ -195,6 +231,10 @@ export function redactedEnvSummary(env: Env): Record<string, unknown> {
     artifactTtlMinutes: env.ARTIFACT_TTL_MINUTES,
     publicBaseUrl: env.PUBLIC_BASE_URL,
     sessionTtlMinutes: env.SESSION_TTL_MINUTES,
+    // Report only whether the session-cookie signing secret is configured, never
+    // the value. Unsigned (false) is acceptable for the bot/dev; the self-host
+    // compose sets it so production cookies are signed.
+    sessionSecretConfigured: Boolean(env.SESSION_SECRET),
     magicLinkTtlMinutes: env.MAGIC_LINK_TTL_MINUTES,
     // SMTP_URL/SMTP_FROM may embed credentials, so report only whether email is
     // configured (which mailer the app selected), never the values themselves.

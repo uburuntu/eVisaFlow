@@ -181,4 +181,18 @@ make snapshots
 make fixtures
 ```
 
-The Telegram bot service lives in [service/](./service).
+## Self-host the web app
+
+The [service/](./service) directory is a self-hostable, web-first app (Fastify
+API + SSE + a built Astro/React frontend) with an **opt-in** Telegram bot — it
+runs with no Telegram account. One command brings up a bundled Postgres plus the
+app:
+
+```bash
+cp service/.env.selfhost.example service/.env   # then set SESSION_SECRET
+docker compose -f service/docker-compose.selfhost.yml up
+# open http://localhost:8080
+```
+
+See the [self-host quickstart](./service/README.md#self-host-quickstart-one-command-web-first)
+for details, including how to enable the Telegram bot.

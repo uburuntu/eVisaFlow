@@ -76,6 +76,17 @@ export interface WebServerDeps {
    * the path (or its `index.html`) is absent.
    */
   webDistPath?: string;
+  /**
+   * Secret for signing the session cookie (`@fastify/cookie`'s `secret`). OPTIONAL:
+   * the session token is already a high-entropy random value stored only as a
+   * hash, so cookies work unsigned when this is omitted (tests, the bot, dev). When
+   * provided, the cookie plugin exposes `request.unsignCookie`/`reply.signCookie`
+   * and signing can be requested per cookie via `{ signed: true }`. Passing it here
+   * does NOT change how existing unsigned cookies are set or read — it only enables
+   * the signing capability — so behavior is unchanged when set. `index.ts` passes
+   * `SESSION_SECRET`; the self-host compose requires it.
+   */
+  sessionSecret?: string;
 }
 
 /**
@@ -123,7 +134,12 @@ export function createWebServer(deps: WebServerDeps): WebFastifyInstance {
     bodyLimit: 1 * 1024 * 1024,
   });
 
-  app.register(cookie);
+  // Session cookie parsing. When a `sessionSecret` is supplied the plugin also
+  // enables cookie signing (`request.unsignCookie`/`{ signed: true }`); without it
+  // cookies are parsed unsigned. Either way the session token itself is an
+  // unguessable random value persisted only as a hash, so omitting the secret
+  // (tests, bot, dev) is safe — the self-host compose sets it for production.
+  app.register(cookie, deps.sessionSecret ? { secret: deps.sessionSecret } : {});
   app.register(cors, {
     // Same-origin only by default for self-host (the SPA is served by this same
     // server). `credentials` lets the browser send the session cookie when an

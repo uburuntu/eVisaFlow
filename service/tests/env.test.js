@@ -13,6 +13,7 @@ const ENV_KEYS = [
   "HEALTH_PORT",
   "SCHEDULER_CRON",
   "SCHEDULE_INTERVAL_DAYS",
+  "SESSION_SECRET",
 ];
 
 // Web-first defaults: only DATABASE_URL is required for a pure-web (bot-off)
@@ -132,6 +133,49 @@ test("bot token and encryption key are NOT required when ENABLE_BOT is false", a
   });
 });
 
+test("blank bot/SMTP/session placeholders are treated as unset (bot off)", async () => {
+  // A real .env (and docker-compose env_file) routinely ships blank placeholder
+  // lines like `TELEGRAM_BOT_TOKEN=`. With the bot OFF these must be read as unset
+  // — NOT as invalid empty strings — so a pure-web self-host carrying the
+  // placeholders still boots. (Regression: empty strings used to fail .min().)
+  await withEnv(
+    {
+      ...baseEnv,
+      ENABLE_BOT: "false",
+      TELEGRAM_BOT_TOKEN: "",
+      ENCRYPTION_KEY: "",
+      SESSION_SECRET: "",
+    },
+    async () => {
+      const { loadEnv } = await importFreshEnv();
+      const env = loadEnv();
+      assert.equal(env.ENABLE_BOT, false);
+      assert.equal(env.TELEGRAM_BOT_TOKEN, undefined);
+      assert.equal(env.ENCRYPTION_KEY, undefined);
+      assert.equal(env.SESSION_SECRET, undefined);
+    }
+  );
+});
+
+test("blank bot credentials with the bot ON give the conditional required error", async () => {
+  // Blank (not omitted) token/key + ENABLE_BOT=true must surface the friendly
+  // "required when ENABLE_BOT is true" message, not a raw length error.
+  await withEnv(
+    { ...baseEnv, ENABLE_BOT: "true", TELEGRAM_BOT_TOKEN: "", ENCRYPTION_KEY: "" },
+    async () => {
+      const { loadEnv } = await importFreshEnv();
+      assert.throws(
+        () => loadEnv(),
+        /TELEGRAM_BOT_TOKEN is required when ENABLE_BOT is true/
+      );
+      assert.throws(
+        () => loadEnv(),
+        /ENCRYPTION_KEY is required when ENABLE_BOT is true/
+      );
+    }
+  );
+});
+
 test("loadEnv parses explicit false booleans", async () => {
   await withEnv({ ...baseEnv, EVISA_HEADLESS: "false" }, async () => {
     const { loadEnv } = await importFreshEnv();
@@ -192,5 +236,35 @@ test("redactedEnvSummary omits secrets and reports deployment shape", async () =
     assert.equal(summary.botEnabled, true);
     assert.equal("TELEGRAM_BOT_TOKEN" in summary, false);
     assert.equal("ENCRYPTION_KEY" in summary, false);
+  });
+});
+
+test("SESSION_SECRET is optional, validated for length, and never surfaced", async () => {
+  // Optional: the minimal web deployment parses without it.
+  await withEnv(baseEnv, async () => {
+    const { loadEnv, redactedEnvSummary } = await importFreshEnv();
+    const env = loadEnv();
+    assert.equal(env.SESSION_SECRET, undefined);
+    // Reported as an un-configured (false) flag — never the value.
+    assert.equal(redactedEnvSummary(env).sessionSecretConfigured, false);
+  });
+
+  // Too short → rejected (>=32 chars enforced).
+  await withEnv({ ...baseEnv, SESSION_SECRET: "short" }, async () => {
+    const { loadEnv } = await importFreshEnv();
+    assert.throws(() => loadEnv(), /SESSION_SECRET/);
+  });
+
+  // A long-enough secret parses; the summary reports configured=true but the
+  // value itself is never present in the summary.
+  const secret = "x".repeat(32);
+  await withEnv({ ...baseEnv, SESSION_SECRET: secret }, async () => {
+    const { loadEnv, redactedEnvSummary } = await importFreshEnv();
+    const env = loadEnv();
+    assert.equal(env.SESSION_SECRET, secret);
+    const summary = redactedEnvSummary(env);
+    assert.equal(summary.sessionSecretConfigured, true);
+    assert.equal("SESSION_SECRET" in summary, false);
+    assert.equal(JSON.stringify(summary).includes(secret), false);
   });
 });

@@ -171,6 +171,10 @@ async function main(): Promise<void> {
     // fallback for /app/*. Path is the WEB_DIST_PATH override or the workspace
     // default; missing builds degrade gracefully (API stays up, hint logged).
     webDistPath: resolveWebDistPath(env),
+    // Sign the session cookie when a secret is configured (optional; the self-host
+    // compose sets it). Unset on the bot/dev path → cookies remain unsigned, which
+    // is safe given the hashed random-token session model.
+    sessionSecret: env.SESSION_SECRET,
   });
   try {
     await app.listen({ port: env.PORT, host: "0.0.0.0" });

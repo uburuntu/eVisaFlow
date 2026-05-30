@@ -125,7 +125,8 @@ Fill in the values (see `.env.example` for the full, commented set):
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | Postgres connection string. **Required.** Self-host with the bundled Postgres uses the compose default; Supabase uses the project Postgres connection string. Use a local/ephemeral DB for dev/test only. |
+| `DEPLOYMENT_MODE` | `selfhost` (default) or `cloud`. `selfhost` is the web-first, one-`docker compose up` profile (no billing/provider-mailer/R2); `cloud` is reserved for the later paid tier. |
+| `DATABASE_URL` | Postgres connection string. **Required.** Self-host with the bundled Postgres uses the compose default; Supabase uses the project Postgres connection string. The migration runner applies the schema on startup. Use a local/ephemeral DB for dev/test only. |
 | `SESSION_SECRET` | Signs the session cookie. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Optional for the bot/dev; required by the self-host compose. |
 | `PORT` | Single port for the web UI, API, and `/live` / `/ready` probes (default: 8080) |
 | `PUBLIC_BASE_URL` | Externally reachable origin (no trailing slash) used to build magic-link URLs |
@@ -226,19 +227,54 @@ API_PROXY_TARGET=http://localhost:9000 pnpm --filter @evisaflow/web dev
 ## Architecture
 
 ```
-Telegram ←→ grammY Bot (long polling) ←→ eVisaFlow (Playwright)
-                  │
-                  ↓
-            Postgres (Drizzle + pg)
+Browser (Astro/React, E2EE) ─┐
+   API + SSE (same origin)    │
+                              ├─→ Fastify ─→ RunEngine ─→ eVisaFlow (Playwright)
+Telegram ←→ grammY Bot ───────┘      │ (single in-process queue)
+  (opt-in, ENABLE_BOT)               ↓
+                              Postgres (Drizzle + pg)
 ```
 
-- **Long polling + health server** — Telegram updates use long polling; `/live` and `/ready` expose container health
-- **Queue** — max 2 concurrent Playwright browsers (configurable)
-- **Encryption** — AES-256-GCM for document numbers
+- **Web-first, single origin** — one Fastify process serves the built `web/dist`,
+  the `/api/*` routes, SSE, and the `/live` / `/ready` health probes on one `PORT`
+- **Opt-in Telegram bot** — when `ENABLE_BOT=true`, the grammY bot (long polling)
+  subscribes to the **same** in-process `RunEngine`; off by default
+- **Queue** — max 2 concurrent Playwright browsers (configurable), per-user
+  serialization, single stateful worker (the 2FA code reaches the exact process)
+- **Custody** — web runs are client-custody (E2EE; sealed to the user's public key
+  via `crypto_box_seal`); the bot path uses server-custody AES-256-GCM
+- **Persistence** — portable Postgres via `DATABASE_URL`; the baseline-safe
+  migration runner applies migrations `001`–`006` on start
 - **Scheduling** — per-user 30-day cycle (load spread evenly)
 
 ## Deploy Notes
 
-The GitHub deploy workflow builds an immutable service image, runs `node dist/preflight.js` in that image, then replaces the live container only if Telegram and Postgres readiness checks pass. If the new container fails `/ready`, the workflow restores the previous container.
+The GitHub deploy workflow (`.github/workflows/deploy.yml`) builds an immutable
+**combined web + service image**, then on the host: runs `node dist/preflight.js`
+in that image (a side-effect-free connectivity gate — DB always, Telegram only
+when `ENABLE_BOT`), applies database migrations explicitly with
+`node dist/db/migrate.js` (idempotent and baseline-safe, so it is a no-op when
+already migrated), and only then swaps the live container. The image's
+`HEALTHCHECK` probes Fastify `/ready` on `PORT`; the workflow waits up to ~90s for
+`healthy` and **rolls back to the previous container** if the new one fails
+`/ready` or times out.
 
-Before merging deploy changes, make sure the server has the current `.env` values from `.env.example` (in particular `DATABASE_URL` — the `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` pair is no longer used), and that the deployment user can run Docker Compose. The schema is applied automatically by the migration runner on startup, so there is no manual SQL step.
+Runtime config is supplied via the `DOTENV_FILE` secret (written to the
+container's `.env` on the host — **never baked into the image**). It must contain:
+
+- `DATABASE_URL` — Postgres connection string. **Required.** This replaces the old
+  `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` pair, which are no longer used.
+- `SESSION_SECRET` — ≥32 chars; signs the web session cookie. **Required.**
+- `PUBLIC_BASE_URL` — the externally reachable origin (no trailing slash) used to
+  build magic-link URLs. **Required** in production.
+- `PORT` — optional (default 8080); the single port the app, the web UI, and the
+  `/ready` / `/live` probes share.
+
+For the **Telegram-bot** deployment, also set `ENABLE_BOT=true`,
+`TELEGRAM_BOT_TOKEN` (from @BotFather), and `ENCRYPTION_KEY` (32-byte hex,
+server-custody AES). A pure-web deployment leaves `ENABLE_BOT` off and needs
+neither — web runs are client-custody (E2EE) and never use `ENCRYPTION_KEY`.
+
+The deployment user must be able to run Docker. The schema is applied by the
+migration runner (both the explicit deploy step and on container start), so there
+is no manual SQL step.

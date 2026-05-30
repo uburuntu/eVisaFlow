@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - service/**
+      # The combined image bundles the built web frontend (web/dist), so a
+      # frontend-only change must rebuild and redeploy too.
+      - web/**
       - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
       - .node-version
@@ -42,6 +45,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The COMBINED web + service image: service/Dockerfile builds the Astro/React
+      # frontend (web/dist) AND the Fastify service into one container that serves
+      # the web app, the API, SSE, and the health probes, and (when ENABLE_BOT=true)
+      # also runs the Telegram bot. NOTHING secret is baked in — all config is
+      # supplied at runtime from the DOTENV_FILE secret below. Tags stay under the
+      # historical `service-*` names so they line up with release.yml and the live
+      # container; the image is combined regardless of the tag prefix.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -51,6 +61,23 @@ jobs:
             ghcr.io/uburuntu/evisaflow:service-${{ github.sha }}
             ghcr.io/uburuntu/evisaflow:service-latest
 
+      # The DOTENV_FILE secret is written to the container's runtime .env on the
+      # server (below). For the deploy to pass preflight + the /ready health gate it
+      # MUST contain:
+      #   - DATABASE_URL      Postgres connection string (Drizzle + pg). REQUIRED.
+      #                       Replaces the old SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
+      #                       pair, which are no longer used.
+      #   - SESSION_SECRET    >=32 chars; signs the web session cookie. REQUIRED.
+      #   - PUBLIC_BASE_URL   externally reachable origin (no trailing slash), used
+      #                       to build magic-link URLs. REQUIRED in production.
+      #   - PORT              optional (default 8080); the single port the app, the
+      #                       web UI, and the /ready and /live probes share.
+      # For the Telegram-bot deployment, ALSO set:
+      #   - ENABLE_BOT=true
+      #   - TELEGRAM_BOT_TOKEN  from @BotFather
+      #   - ENCRYPTION_KEY      32-byte hex, server-custody AES for the bot's runs
+      # A pure-web deployment leaves ENABLE_BOT unset/false and needs neither the
+      # bot token nor the server encryption key (web runs are client-custody E2EE).
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
         with:
@@ -69,7 +96,20 @@ jobs:
               echo "DEPLOY_GHCR_TOKEN is empty; pulling from GHCR without login"
             fi
             docker pull "$IMAGE_REF"
+
+            # Preflight: a side-effect-free connectivity gate (DB always; Telegram
+            # only when ENABLE_BOT). Runs the explicit `node dist/preflight.js`
+            # command, which the entrypoint passes through WITHOUT migrating.
             docker run --rm --env-file ~/eVisaFlowBot/.env "$IMAGE_REF" node dist/preflight.js
+
+            # Apply database migrations explicitly BEFORE swapping the container, so
+            # the schema is in place (and any failure is surfaced) before the live
+            # container is touched. The runner owns a schema_migrations ledger, is
+            # idempotent and baseline-safe (auto-baselines a pre-existing 001-003),
+            # so this is a no-op when already migrated. The container's own
+            # entrypoint also migrates on start, making the start-time migration a
+            # verified no-op — belt and braces, never a double-apply.
+            docker run --rm --env-file ~/eVisaFlowBot/.env "$IMAGE_REF" node dist/db/migrate.js
 
             docker rm -f eVisaFlowBot-previous 2>/dev/null || true
             if docker inspect eVisaFlowBot >/dev/null 2>&1; then
@@ -84,6 +124,10 @@ jobs:
               --restart unless-stopped \
               --stop-timeout 30 \
               "$IMAGE_REF"
+            # Health gate: the image HEALTHCHECK probes Fastify /ready on PORT, which
+            # is 200 only once the DB is ready (and, with ENABLE_BOT, Telegram + the
+            # runner). Wait up to ~90s (45 x 2s) for healthy; on unhealthy or timeout,
+            # roll back to the previous container.
             for i in $(seq 1 45); do
               status="$(docker inspect --format='{{.State.Health.Status}}' eVisaFlowBot 2>/dev/null || echo starting)"
               if [ "$status" = "healthy" ]; then

@@ -64,6 +64,13 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      # Type-check the frontend (.astro/.ts/.tsx). The root `typecheck` only covers
+      # the lib + service; this makes a type/template break in the web app fail CI.
+      - name: Typecheck web app
+        run: pnpm --filter @evisaflow/web check
+
+      # Builds the lib, the service, AND the web app (build = build:service +
+      # build:web), so a frontend build break (Astro/React) fails CI here.
       - name: Build
         run: pnpm run build
 
@@ -73,6 +80,11 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+      # Frontend unit tests (vitest): the in-browser crypto/vault round-trips, the
+      # API client, and the app units. A frontend logic break fails CI here.
+      - name: Test web app
+        run: pnpm --filter @evisaflow/web test
 
       - name: Package dry-run
         run: pnpm run pack:dry

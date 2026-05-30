@@ -16,6 +16,7 @@ import type { EntitlementService } from "./entitlements.js";
 import type { Mailer } from "./mailer.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerMemberRoutes } from "./routes/members.js";
+import { registerRunRoutes } from "./routes/runs.js";
 import { registerVaultRoutes } from "./routes/vault.js";
 
 /**
@@ -90,11 +91,12 @@ export type WebFastifyInstance = FastifyInstance<
  * - `GET /ready` → 200 only when fully ready and not shutting down.
  *
  * The body of both is the full {@link HealthSnapshot}. Authentication routes
- * (magic-link + Telegram Login + session lifecycle) are mounted via
- * {@link registerAuthRoutes}. Vault, member, run, and SSE routes mount in later
- * Phase 4 steps; the `deps` shape already carries everything those routes need
- * (db, engine, mailer, entitlements, artifactStore) so adding them does not
- * change this signature.
+ * (magic-link + Telegram Login + session lifecycle) mount via
+ * {@link registerAuthRoutes}; vault, member, and run lifecycle (create + SSE +
+ * 2FA code + cancel + sealed-artifact + history) routes mount via
+ * {@link registerVaultRoutes}/{@link registerMemberRoutes}/{@link registerRunRoutes}.
+ * The `deps` shape carries everything those routes need (db, engine, mailer,
+ * entitlements, artifactStore, env).
  */
 export function createWebServer(deps: WebServerDeps): WebFastifyInstance {
   const app = Fastify({
@@ -157,6 +159,20 @@ export function createWebServer(deps: WebServerDeps): WebFastifyInstance {
   registerMemberRoutes(app, {
     db: deps.db,
     entitlements: deps.entitlements,
+    log: deps.log,
+  });
+
+  // Run lifecycle routes: create (inline plaintext applicant, never logged or
+  // persisted) → SSE event stream → 2FA code submit → cancel → sealed-artifact
+  // listing/streaming → history. Every per-run route authorizes ownership via
+  // `runs.user_id`. These need the engine, entitlements, artifact store, and env
+  // (headless/diagnostics) — all already carried on `deps`.
+  registerRunRoutes(app, {
+    db: deps.db,
+    engine: deps.engine,
+    entitlements: deps.entitlements,
+    artifactStore: deps.artifactStore,
+    env: deps.env,
     log: deps.log,
   });
 

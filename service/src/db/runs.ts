@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { runEvents, runs } from "./schema.js";
 
@@ -83,6 +83,67 @@ export async function insertRun(
     })
     .returning();
   return toDbRun(row);
+}
+
+/**
+ * Fetches a single run scoped to its owner. Returns null when the run does not
+ * exist OR belongs to a different user — the two are indistinguishable, which is
+ * what the web routes rely on to answer 404 for a cross-user id without leaking
+ * that the run exists. This is the ownership gate for every per-run route
+ * (events/code/cancel/artifacts).
+ */
+export async function getRunById(
+  db: Db,
+  runId: string,
+  userId: string
+): Promise<DbRun | null> {
+  const [row] = await db
+    .select()
+    .from(runs)
+    .where(and(eq(runs.id, runId), eq(runs.userId, userId)))
+    .limit(1);
+  return row ? toDbRun(row) : null;
+}
+
+/** A run-history row for the dashboard. Deliberately omits ALL secret material. */
+export interface RunHistoryItem {
+  id: string;
+  familyMemberId: string;
+  status: string;
+  trigger: string;
+  custody: string | null;
+  validUntil: string | null;
+  errorCode: string | null;
+  createdAt: string;
+}
+
+/**
+ * Lists a user's run history, newest first. Returns only non-secret status fields
+ * — never the (sealed) share code or any applicant data — so it is safe to hand
+ * straight to the client. Scoped to `userId`; a user only ever sees their own runs.
+ */
+export async function listRunsForUser(
+  db: Db,
+  userId: string,
+  options: { limit?: number } = {}
+): Promise<RunHistoryItem[]> {
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const rows = await db
+    .select({
+      id: runs.id,
+      familyMemberId: runs.familyMemberId,
+      status: runs.status,
+      trigger: runs.trigger,
+      custody: runs.custody,
+      validUntil: runs.validUntil,
+      errorCode: runs.errorCode,
+      createdAt: runs.createdAt,
+    })
+    .from(runs)
+    .where(eq(runs.userId, userId))
+    .orderBy(desc(runs.createdAt))
+    .limit(limit);
+  return rows;
 }
 
 export async function updateRunStatus(

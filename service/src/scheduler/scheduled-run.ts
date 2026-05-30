@@ -1,7 +1,7 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Bot } from "grammy";
 import { InlineKeyboard } from "grammy";
 import type { MyContext } from "../bot/context.js";
+import type { Db } from "../db/client.js";
 import { getActiveFamilyMembers } from "../db/family-members.js";
 import { advanceSchedule, getUsersDueForSchedule } from "../db/users.js";
 import type { Env } from "../env.js";
@@ -13,7 +13,7 @@ function escapeHtml(text: string): string {
 
 export async function runScheduledChecks(
   bot: Bot<MyContext>,
-  db: SupabaseClient,
+  db: Db,
   env: Env,
   log: Logger
 ): Promise<void> {
@@ -21,6 +21,16 @@ export async function runScheduledChecks(
   log.info({ count: dueUsers.length }, "Users due for scheduled refresh");
 
   for (const user of dueUsers) {
+    // Scheduled refreshes are delivered over Telegram, so skip web-only users
+    // (telegram_id null since migration 004). Advance their schedule so they are
+    // not re-selected every tick. Existing bot users always have a telegram_id,
+    // so their behaviour is unchanged.
+    if (user.telegram_id === null) {
+      await advanceSchedule(db, user.id, env.SCHEDULE_INTERVAL_DAYS);
+      continue;
+    }
+    const telegramId = user.telegram_id;
+
     const members = await getActiveFamilyMembers(db, user.id);
     if (members.length === 0) {
       await advanceSchedule(db, user.id, env.SCHEDULE_INTERVAL_DAYS);
@@ -31,7 +41,7 @@ export async function runScheduledChecks(
 
     try {
       await bot.api.sendMessage(
-        user.telegram_id,
+        telegramId,
         [
           "<b>Scheduled Share Code Refresh</b>",
           "",
@@ -42,17 +52,14 @@ export async function runScheduledChecks(
         {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
-            .text("I'm Ready", `schedule_ready:${user.telegram_id}`)
-            .text("Skip This Time", `schedule_skip:${user.telegram_id}`),
+            .text("I'm Ready", `schedule_ready:${telegramId}`)
+            .text("Skip This Time", `schedule_skip:${telegramId}`),
         }
       );
 
       await advanceSchedule(db, user.id, env.SCHEDULE_INTERVAL_DAYS);
     } catch (err) {
-      log.warn(
-        { err, telegramId: user.telegram_id },
-        "Failed to send scheduled notification"
-      );
+      log.warn({ err, telegramId }, "Failed to send scheduled notification");
     }
   }
 }

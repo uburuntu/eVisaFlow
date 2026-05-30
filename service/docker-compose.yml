@@ -1,3 +1,13 @@
+# Bot-oriented deployment: brings up ONLY the app, expecting an EXTERNAL Postgres
+# (e.g. Supabase) via DATABASE_URL in service/.env. Use this when running the
+# Telegram bot against a database you manage.
+#
+# For a one-command, web-first self-host with a BUNDLED Postgres and no Telegram
+# account required, use docker-compose.selfhost.yml instead:
+#   docker compose -f service/docker-compose.selfhost.yml up
+#
+# Both paths share the same image (service/Dockerfile) and the same `/ready`
+# health probe on PORT; this file just omits the bundled database.
 services:
   bot:
     build:
@@ -7,12 +17,14 @@ services:
     volumes:
       - downloads:/app/service/downloads
     healthcheck:
+      # Fastify `/ready` on PORT (health folded onto the single web port). With the
+      # bot enabled this also gates on Telegram + the runner being ready.
       test:
         [
           "CMD",
           "node",
           "-e",
-          "const port=process.env.HEALTH_PORT||8080; fetch('http://127.0.0.1:'+port+'/ready').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))",
+          "const port=process.env.PORT||8080; fetch('http://127.0.0.1:'+port+'/ready').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

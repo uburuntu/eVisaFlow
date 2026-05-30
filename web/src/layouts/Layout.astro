@@ -1,0 +1,48 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import Seo from "../components/Seo.astro";
+import "../styles/global.css";
+
+/**
+ * Base page layout: HTML scaffold, SEO <head>, skip link, sticky header, the
+ * page `<main>` (slotted), and the footer. Every marketing/SEO page composes
+ * this. The `noindex` flag is threaded to <Seo> for non-public shells.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** Don't append "— eVisaFlow" to the title (home page is already branded). */
+  brandSuffix?: boolean;
+  noindex?: boolean;
+  /** Extra class on <main> (e.g. for full-bleed login layouts). */
+  mainClass?: string;
+}
+const {
+  title,
+  description,
+  brandSuffix = true,
+  noindex = false,
+  mainClass,
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <Seo
+      title={title}
+      description={description}
+      brandSuffix={brandSuffix}
+      noindex={noindex}
+    />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <Header />
+    <main id="main" class:list={[mainClass]}>
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

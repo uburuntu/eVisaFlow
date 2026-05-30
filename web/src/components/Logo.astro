@@ -1,0 +1,75 @@
+---
+/**
+ * eVisaFlow wordmark + brand mark.
+ *
+ * The mark is an inline SVG (no network request, scales crisply, inherits
+ * `currentColor` for the strokes): a rounded shield — protection / trust — with
+ * a small filled "seal" disc, echoing the wax-seal / `crypto_box_seal` motif
+ * that runs through the product's security story. Decorative, so it is
+ * `aria-hidden`; the adjacent text carries the accessible name.
+ */
+interface Props {
+  /** Render only the mark (no wordmark text) — e.g. tight header on mobile. */
+  markOnly?: boolean;
+  class?: string;
+}
+const { markOnly = false, class: className } = Astro.props;
+---
+
+<span class:list={["logo", className]}>
+  <svg
+    class="logo__mark"
+    viewBox="0 0 32 32"
+    width="28"
+    height="28"
+    role="img"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path
+      d="M16 2.5 5 6.6v8.2c0 6.7 4.5 11.7 11 14.7 6.5-3 11-8 11-14.7V6.6L16 2.5Z"
+      fill="none"
+      stroke="var(--brand)"
+      stroke-width="2"
+      stroke-linejoin="round"
+    ></path>
+    <path
+      d="M11 16.2l3.4 3.4L21.5 12"
+      fill="none"
+      stroke="var(--brand)"
+      stroke-width="2.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+    <circle cx="24.5" cy="8" r="3.4" fill="var(--accent)"></circle>
+  </svg>
+  {
+    !markOnly && (
+      <span class="logo__word">
+        eVisa<span class="logo__word-accent">Flow</span>
+      </span>
+    )
+  }
+</span>
+
+<style>
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    line-height: 1;
+  }
+  .logo__mark {
+    flex: none;
+  }
+  .logo__word {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+  .logo__word-accent {
+    color: var(--brand);
+  }
+</style>

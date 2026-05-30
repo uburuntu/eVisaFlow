@@ -1,12 +1,14 @@
 import { conversations } from "@grammyjs/conversations";
 import { sequentialize } from "@grammyjs/runner";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { Bot, type Context, session } from "grammy";
+import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
+import type { RunEngine } from "../runner/run-engine.js";
 import type { Logger } from "../utils/logger.js";
 import { registerCommands } from "./commands/index.js";
 import type { MyContext, SessionData } from "./context.js";
 import { twoFactorMiddleware } from "./middleware/two-factor.js";
+import type { TwoFactorAdapter } from "./two-factor-adapter.js";
 
 function updateSummary(ctx: Context): Record<string, unknown> {
   const update = ctx.update;
@@ -40,9 +42,11 @@ const sequentialKey = (ctx: Context): string[] | undefined => {
 
 export function createBot(
   token: string,
-  db: SupabaseClient,
+  db: Db,
   env: Env,
-  log: Logger
+  log: Logger,
+  engine: RunEngine,
+  twoFactor: TwoFactorAdapter
 ): Bot<MyContext> {
   const bot = new Bot<MyContext>(token);
 
@@ -53,6 +57,8 @@ export function createBot(
     ctx.db = db;
     ctx.env = env;
     ctx.log = log;
+    ctx.engine = engine;
+    ctx.twoFactor = twoFactor;
     return next();
   });
 

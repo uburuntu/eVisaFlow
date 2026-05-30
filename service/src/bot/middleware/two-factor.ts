@@ -1,5 +1,4 @@
 import type { NextFunction } from "grammy";
-import { hasPending, submitCode } from "../../runner/two-factor-store.js";
 import type { MyContext } from "../context.js";
 
 const CODE_ACK_DELETE_DELAY_MS = 30_000;
@@ -28,14 +27,14 @@ export async function twoFactorMiddleware(
     if (
       chatId !== undefined &&
       /^\d{4,8}$/.test(text) &&
-      hasPending(ctx.from.id, chatId)
+      ctx.twoFactor.hasPending(ctx.from.id, chatId)
     ) {
-      const accepted = submitCode({
-        telegramId: ctx.from.id,
+      const accepted = ctx.twoFactor.submit(
+        ctx.from.id,
         chatId,
-        code: text,
-        replyToMessageId: ctx.message.reply_to_message?.message_id,
-      });
+        text,
+        ctx.message.reply_to_message?.message_id
+      );
       if (!accepted) {
         await ctx.reply(
           "Reply to the active 2FA prompt so I know which run this code belongs to."

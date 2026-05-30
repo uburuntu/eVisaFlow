@@ -1,0 +1,104 @@
+# One-command, web-first self-host for eVisaFlow.
+#
+#   cd eVisaFlow
+#   cp service/.env.selfhost.example service/.env       # then set SESSION_SECRET
+#   docker compose -f service/docker-compose.selfhost.yml up
+#   open http://localhost:8080
+#
+# This bundles its OWN Postgres (the `postgres` service below) so there is nothing
+# external to provision — `docker compose up` brings up the database AND the app,
+# applies migrations on boot, and serves the web app + API on one port. It runs
+# WITHOUT a Telegram account: the bot is OPT-IN (ENABLE_BOT, off by default), so a
+# pure-web install never needs a bot token or the server encryption key.
+#
+# To ALSO run the Telegram bot, set in service/.env:
+#   ENABLE_BOT=true
+#   TELEGRAM_BOT_TOKEN=...      # from @BotFather
+#   ENCRYPTION_KEY=...          # 32-byte hex (server-custody AES for the bot)
+#
+# SAFETY: the bundled Postgres is for LOCAL/self-host use. Never point this app at
+# a managed/production database, and never bake secrets into the image — every
+# secret here is supplied at runtime from service/.env (which is gitignored).
+
+services:
+  # Bundled database. Data persists in the named volume `pg-data`; the app waits
+  # for `pg_isready` (service_healthy) before starting, so the first boot's
+  # migrations never race the database.
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Local-only default. Override in service/.env for anything beyond a laptop.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-evisaflow}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-evisaflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # The eVisaFlow app: Fastify web API + SSE + the built Astro/React frontend, on
+  # the single in-process run engine (and the Telegram bot when ENABLE_BOT=true),
+  # driving Playwright Chromium. The image entrypoint runs DB migrations first.
+  app:
+    build:
+      # Build context is the repo ROOT (the Dockerfile copies root lib + web + service).
+      context: ..
+      dockerfile: service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Operator-supplied settings (SESSION_SECRET, PUBLIC_BASE_URL, PORT, and — only
+    # if ENABLE_BOT=true — TELEGRAM_BOT_TOKEN/ENCRYPTION_KEY) come from this file.
+    # See service/.env.selfhost.example. SESSION_SECRET MUST be set.
+    env_file:
+      - .env
+    # Compose-controlled, web-first defaults. These OVERRIDE env_file so the app
+    # always points at the bundled Postgres on the internal network and runs in the
+    # self-host, bot-optional shape regardless of what .env happens to contain.
+    environment:
+      DEPLOYMENT_MODE: selfhost
+      # Opt-in bot: default OFF here, but `${ENABLE_BOT:-false}` lets service/.env
+      # flip it on (along with the bot token + encryption key) without editing this
+      # file. With it off, no Telegram account is required.
+      ENABLE_BOT: ${ENABLE_BOT:-false}
+      # Always the bundled Postgres over the compose network (service name + 5432),
+      # never an external/production DB. Credentials match the postgres service.
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-evisaflow}
+    # Publish the app port to the host. The container binds PORT (default 8080);
+    # the same value is used inside the healthcheck below.
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    # Sealed run artifacts live in Postgres; this volume only holds transient
+    # Playwright downloads. Kept so the layout matches the bot deployment.
+    volumes:
+      - downloads:/app/service/downloads
+    # Readiness probe → Fastify `/ready` on PORT. For a bot-less web deployment
+    # this is 200 once the database is ready; with the bot it also requires
+    # Telegram. The Dockerfile defines an equivalent HEALTHCHECK; this restates it
+    # so the port tracks `${PORT}` from service/.env.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const port=process.env.PORT||8080; fetch('http://127.0.0.1:'+port+'/ready').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    # Match the in-process 15s graceful drain (plus headroom) so in-flight runs are
+    # marked interrupted cleanly on `docker compose down`.
+    stop_grace_period: 30s
+
+volumes:
+  pg-data:
+  downloads:

@@ -33,8 +33,11 @@ export async function membersCommand(ctx: MyContext): Promise<void> {
   }
 
   const lines = members.map((m, i) => {
-    const typeLabel = TYPE_LABELS[m.auth_type] ?? m.auth_type;
-    return `${i + 1}. <b>${escapeHtml(m.display_name)}</b>  —  ${typeLabel}  —  ${m.preferred_2fa_method.toUpperCase()}`;
+    // Bot members are always server custody, so these are populated; fall back
+    // defensively since the columns became nullable for client rows in 005.
+    const typeLabel = m.auth_type ? (TYPE_LABELS[m.auth_type] ?? m.auth_type) : "—";
+    const method2fa = m.preferred_2fa_method?.toUpperCase() ?? "—";
+    return `${i + 1}. <b>${escapeHtml(m.display_name)}</b>  —  ${typeLabel}  —  ${method2fa}`;
   });
 
   const kb = new InlineKeyboard();

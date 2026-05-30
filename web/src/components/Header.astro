@@ -1,0 +1,233 @@
+---
+import Logo from "./Logo.astro";
+
+/**
+ * Site header: wordmark, primary navigation, and the sign-in call to action.
+ *
+ * The nav is a real <nav> with an aria-current marker on the active link. On
+ * narrow screens it collapses behind an accessible disclosure button (a tiny
+ * inline script toggles `aria-expanded` + a class; no framework needed and it
+ * degrades to all links visible if JS is off, since the panel is only hidden via
+ * a class the script also removes on toggle).
+ */
+const links = [
+  { href: "/", label: "Home" },
+  { href: "/security", label: "Security" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/docs", label: "Docs" },
+  { href: "/self-host", label: "Self-host" },
+];
+
+const here = Astro.url.pathname.replace(/\/+$/, "") || "/";
+const isActive = (href: string) => (href === "/" ? here === "/" : here.startsWith(href));
+---
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a href="/" class="site-header__brand" aria-label="eVisaFlow home">
+      <Logo />
+    </a>
+
+    <button
+      type="button"
+      class="site-header__toggle"
+      aria-expanded="false"
+      aria-controls="primary-nav"
+      data-nav-toggle
+    >
+      <span class="visually-hidden">Toggle navigation menu</span>
+      <span class="site-header__toggle-bars" aria-hidden="true"></span>
+    </button>
+
+    <nav id="primary-nav" class="site-nav" aria-label="Primary" data-nav-panel>
+      <ul class="site-nav__list">
+        {
+          links.map((link) => (
+            <li>
+              <a
+                href={link.href}
+                class="site-nav__link"
+                aria-current={isActive(link.href) ? "page" : undefined}
+              >
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <a href="/login" class="btn btn--accent site-nav__cta">Sign in</a>
+    </nav>
+  </div>
+</header>
+
+<script>
+  // Progressive-enhancement disclosure for the mobile nav. If this script never
+  // runs, the panel stays visible (the collapsed state is applied by the class
+  // this toggles), so navigation is never trapped.
+  const toggle = document.querySelector<HTMLButtonElement>("[data-nav-toggle]");
+  const panel = document.querySelector<HTMLElement>("[data-nav-panel]");
+  if (toggle && panel) {
+    const setOpen = (open: boolean) => {
+      toggle.setAttribute("aria-expanded", String(open));
+      panel.classList.toggle("is-open", open);
+    };
+    // Start collapsed only once JS confirms it can reopen the panel.
+    panel.classList.add("is-collapsible");
+    toggle.addEventListener("click", () => {
+      setOpen(toggle.getAttribute("aria-expanded") !== "true");
+    });
+    // Close on Escape and when a link is chosen.
+    panel.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest("a")) setOpen(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setOpen(false);
+    });
+  }
+</script>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: saturate(140%) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-header__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    min-height: 4.25rem;
+  }
+  .site-header__brand {
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+  }
+
+  .site-header__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    background: transparent;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .site-header__toggle-bars,
+  .site-header__toggle-bars::before,
+  .site-header__toggle-bars::after {
+    display: block;
+    width: 1.15rem;
+    height: 2px;
+    background: var(--fg);
+    border-radius: 2px;
+    position: relative;
+    transition: transform 160ms ease, opacity 160ms ease;
+  }
+  .site-header__toggle-bars::before,
+  .site-header__toggle-bars::after {
+    content: "";
+    position: absolute;
+    left: 0;
+  }
+  .site-header__toggle-bars::before {
+    top: -6px;
+  }
+  .site-header__toggle-bars::after {
+    top: 6px;
+  }
+  .site-header__toggle[aria-expanded="true"] .site-header__toggle-bars {
+    background: transparent;
+  }
+  .site-header__toggle[aria-expanded="true"] .site-header__toggle-bars::before {
+    transform: translateY(6px) rotate(45deg);
+  }
+  .site-header__toggle[aria-expanded="true"] .site-header__toggle-bars::after {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .site-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-5);
+  }
+  .site-nav__list {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .site-nav__list li + li {
+    margin: 0;
+  }
+  .site-nav__link {
+    display: inline-block;
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius);
+    color: var(--fg-soft);
+    text-decoration: none;
+    font-weight: 550;
+    font-size: var(--fs-sm);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .site-nav__link:hover {
+    background: var(--bg-sunken);
+    color: var(--fg);
+  }
+  .site-nav__link[aria-current="page"] {
+    color: var(--brand);
+    background: var(--brand-tint);
+  }
+  .site-nav__cta {
+    white-space: nowrap;
+  }
+
+  /* Mobile: collapse the nav behind the toggle. */
+  @media (max-width: 53.99rem) {
+    .site-header__toggle {
+      order: 3;
+    }
+    .site-nav.is-collapsible {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--sp-3);
+      padding: var(--sp-5);
+      background: var(--bg-raised);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      display: none;
+    }
+    .site-nav.is-collapsible.is-open {
+      display: flex;
+    }
+    .site-nav__list {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--sp-1);
+    }
+    .site-nav__link {
+      padding: 0.7rem 0.8rem;
+      font-size: var(--fs-base);
+    }
+    .site-nav__cta {
+      text-align: center;
+    }
+  }
+
+  @media (min-width: 54rem) {
+    .site-header__toggle {
+      display: none;
+    }
+  }
+</style>

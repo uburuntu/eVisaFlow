@@ -1,0 +1,288 @@
+---
+import PageHeader from "../components/PageHeader.astro";
+import Layout from "../layouts/Layout.astro";
+
+/**
+ * /security — the honest end-to-end-encryption boundary, stated plainly.
+ *
+ * This page deliberately does NOT claim "zero knowledge" or "we can never see
+ * anything". It states the real, defensible guarantee: zero plaintext at rest;
+ * the worker holds plaintext only transiently, in RAM, during a run the user
+ * authorises; outputs are sealed to the user's key; the user alone holds the
+ * passphrase. Over-promising would be both dishonest and a security risk.
+ */
+
+const guarantees = [
+  {
+    title: "Zero plaintext at rest",
+    body: "Your document numbers, dates of birth, share codes and PDFs are never written to a database, a disk, or a log in a form anyone can read. Stored data is always ciphertext sealed to your key.",
+  },
+  {
+    title: "Plaintext only transiently, only during your run",
+    body: "To drive the GOV.UK browser, a worker must briefly hold your document number and date of birth in memory — for the duration of a run you started, and no longer. It is never persisted, never logged, and discarded when the run ends.",
+  },
+  {
+    title: "Outputs sealed to your key",
+    body: "The share code and eVisa PDF are sealed to your public key the moment they're produced — so even a delayed or scheduled delivery needs no passphrase on the server. Only your browser, with your private key, can open them.",
+  },
+  {
+    title: "You alone hold the passphrase",
+    body: "Your passphrase never leaves your browser. It unlocks your private key locally. Lose it and only your recovery kit can restore access — there is no server-side reset, because the server has nothing to reset.",
+  },
+];
+
+const lifecycle = [
+  {
+    label: "In your browser",
+    body: "A passphrase derives a key (Argon2id) that unwraps your private key. Document numbers and dates of birth are sealed to your own public key before they ever leave the page.",
+  },
+  {
+    label: "In transit",
+    body: "To start a run, your browser decrypts the chosen person locally and sends that applicant inline, once, over TLS. It is used to drive the run and nothing more.",
+  },
+  {
+    label: "In the worker",
+    body: "A single worker pins the live browser session and holds the applicant in memory for the run. It writes no plaintext to disk, database, or logs, and seals every output to your key.",
+  },
+  {
+    label: "Back in your browser",
+    body: "Sealed results are fetched and opened with your private key. The share code is shown, the PDF becomes a download. Nothing decrypted is ever uploaded back.",
+  },
+];
+---
+
+<Layout
+  title="Security model"
+  description="eVisaFlow's honest end-to-end encryption boundary: zero plaintext at rest, transient in-memory use only during an authorised run, outputs sealed to your key, and a passphrase only you hold."
+>
+  <section class="section">
+    <div class="container">
+      <PageHeader
+        eyebrow="Security, stated honestly"
+        title="Where your data is — and where it isn't"
+        lead="We would rather tell you the precise truth than market a slogan. Here is exactly how eVisaFlow protects your documents, and the one boundary we are upfront about."
+      />
+    </div>
+  </section>
+
+  <!-- The headline boundary -->
+  <section class="section--tight">
+    <div class="container container--narrow">
+      <blockquote class="boundary">
+        <p>
+          <strong>Zero plaintext at rest.</strong> The worker holds plaintext only
+          transiently, in memory, during a run you authorise. Outputs are sealed to
+          your key. <strong>You alone hold the passphrase</strong> &mdash; lose it,
+          and only the recovery kit restores access.
+        </p>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- Four guarantees -->
+  <section class="section" aria-labelledby="guarantees-heading">
+    <div class="container">
+      <h2 id="guarantees-heading" class="section-title">Our four guarantees</h2>
+      <div class="grid grid-2">
+        {
+          guarantees.map((item) => (
+            <article class="card card--feature stack">
+              <h3 class="guarantee__title">{item.title}</h3>
+              <p>{item.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Data lifecycle -->
+  <section class="section section--alt" aria-labelledby="lifecycle-heading">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">The journey of your data</p>
+        <h2 id="lifecycle-heading">Follow a single run, end to end</h2>
+      </div>
+      <ol class="lifecycle">
+        {
+          lifecycle.map((stage, index) => (
+            <li class="lifecycle__item">
+              <div class="lifecycle__marker" aria-hidden="true">
+                {index + 1}
+              </div>
+              <div class="stack">
+                <h3 class="lifecycle__label">{stage.label}</h3>
+                <p>{stage.body}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <!-- The honest caveat, expanded -->
+  <section class="section">
+    <div class="container container--prose prose">
+      <h2>The one boundary we are upfront about</h2>
+      <p>
+        eVisaFlow is not magic, and we will not pretend it is. To complete the
+        GOV.UK &ldquo;view and prove your immigration status&rdquo; flow, a real
+        browser has to type your document number and date of birth into the real
+        government website. That means a worker must hold those values in plain
+        form, in memory, for the length of the run.
+      </p>
+      <p>
+        What we promise is everything around that moment:
+      </p>
+      <ul>
+        <li>
+          The applicant is <strong>decrypted in your browser</strong>, not on the
+          server, and sent inline only when you press start.
+        </li>
+        <li>
+          It lives <strong>only in the worker's RAM</strong> for that run &mdash;
+          it is never written to a database, a disk, or a log.
+        </li>
+        <li>
+          When the run ends, that memory is released. Nothing persists except the
+          results, and the results are <strong>sealed to your key</strong>.
+        </li>
+      </ul>
+      <p>
+        This is the difference between <em>&ldquo;we can't read your data&rdquo;</em>
+        (a claim no automation of a third-party site can honestly make) and
+        <em>&ldquo;we never keep your data, and what we return only you can
+        open&rdquo;</em> &mdash; which is exactly what eVisaFlow does.
+      </p>
+
+      <h2>How the cryptography works</h2>
+      <p>
+        Everything below runs in your browser with the audited libsodium library.
+        It is byte-compatible with what the server stores, so re-logging in on a
+        new device reproduces your key from your passphrase alone.
+      </p>
+      <ul>
+        <li>
+          <strong>Your key pair:</strong> an X25519 key pair is generated locally.
+          The public key is uploaded; the private key never is.
+        </li>
+        <li>
+          <strong>Your passphrase:</strong> stretched with Argon2id into a key that
+          wraps (encrypts) your private key. The passphrase and the unwrapped
+          private key never leave the page.
+        </li>
+        <li>
+          <strong>Sealing:</strong> documents and outputs are sealed with anonymous
+          public-key encryption to your key, so even a scheduled delivery needs no
+          passphrase server-side &mdash; and the server holds no key to open them.
+        </li>
+        <li>
+          <strong>Your recovery kit:</strong> a one-time, high-entropy code wraps a
+          second copy of your private key. Keep it safe; it is the only way back in
+          if you forget your passphrase.
+        </li>
+      </ul>
+
+      <h2>What the server can and cannot do</h2>
+      <p>
+        The server stores your public key, your passphrase-wrapped private key
+        (which it cannot unwrap), your sealed documents, and your sealed results.
+        It can run the automation you ask for and hand back sealed bytes. It
+        <strong>cannot</strong> read your documents at rest, cannot open your
+        results, and cannot recover your passphrase. There is deliberately no
+        server-side decryption path for client-held-key data.
+      </p>
+
+      <div class="prose__cta">
+        <a href="/login" class="btn">Create your vault</a>
+        <a href="/self-host" class="btn btn--ghost">Run it on your own server</a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .boundary {
+    margin: 0;
+    padding: var(--sp-6);
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+    border-left: 4px solid var(--accent);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow);
+  }
+  .boundary p {
+    margin: 0;
+    font-size: var(--fs-md);
+    line-height: var(--lh-normal);
+    color: var(--fg);
+  }
+
+  .section-title {
+    margin-bottom: var(--sp-6);
+  }
+  .guarantee__title {
+    font-size: var(--fs-lg);
+  }
+
+  .section--alt {
+    background: var(--bg-sunken);
+    border-block: 1px solid var(--border);
+  }
+  .section-head {
+    max-width: var(--container-narrow);
+    margin-bottom: var(--sp-7);
+  }
+  .section-head h2 {
+    margin-top: var(--sp-3);
+  }
+
+  .lifecycle {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-4);
+  }
+  @media (min-width: 54rem) {
+    .lifecycle {
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--sp-5);
+    }
+  }
+  .lifecycle__item {
+    display: flex;
+    gap: var(--sp-4);
+    padding: var(--sp-5);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .lifecycle__item li + li {
+    margin: 0;
+  }
+  .lifecycle__marker {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: none;
+    border-radius: 50%;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.15rem;
+  }
+  .lifecycle__label {
+    font-size: var(--fs-md);
+  }
+
+  .prose__cta {
+    margin-top: var(--sp-7);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
+</style>

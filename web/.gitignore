@@ -1,0 +1,18 @@
+# build output
+dist/
+
+# generated types / Astro cache
+.astro/
+
+# dependencies
+node_modules/
+
+# logs / local env
+*.log
+.env
+.env.local
+.env.*.local
+
+# temporary local helpers (not part of the package)
+.verify-and-commit.sh
+.finish-*.sh

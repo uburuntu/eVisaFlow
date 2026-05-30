@@ -1,14 +1,14 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Bot } from "grammy";
 import cron, { type ScheduledTask } from "node-cron";
 import type { MyContext } from "../bot/context.js";
+import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
 import type { Logger } from "../utils/logger.js";
 import { runScheduledChecks } from "./scheduled-run.js";
 
 export function startScheduler(
   bot: Bot<MyContext>,
-  db: SupabaseClient,
+  db: Db,
   env: Env,
   log: Logger
 ): ScheduledTask {

@@ -1,0 +1,183 @@
+---
+import Logo from "./Logo.astro";
+
+/**
+ * Site footer: brand summary, grouped navigation, and the project's open-source
+ * provenance. Mirrors the honest positioning used across the site (self-host
+ * first, E2EE, transparent about the run-time plaintext boundary).
+ */
+const year = new Date().getFullYear();
+
+interface FooterLink {
+  href: string;
+  label: string;
+  external?: boolean;
+}
+interface FooterGroup {
+  heading: string;
+  links: FooterLink[];
+}
+
+const groups: FooterGroup[] = [
+  {
+    heading: "Product",
+    links: [
+      { href: "/", label: "Overview" },
+      { href: "/security", label: "Security model" },
+      { href: "/pricing", label: "Pricing" },
+    ],
+  },
+  {
+    heading: "Run it yourself",
+    links: [
+      { href: "/self-host", label: "Self-host guide" },
+      { href: "/docs", label: "Documentation" },
+      {
+        href: "https://github.com/uburuntu/eVisaFlow",
+        label: "Source on GitHub",
+        external: true,
+      },
+    ],
+  },
+  {
+    heading: "Account",
+    links: [
+      { href: "/login", label: "Sign in" },
+      { href: "/login", label: "Create a vault" },
+    ],
+  },
+];
+---
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-footer__brand">
+      <a href="/" aria-label="eVisaFlow home" class="site-footer__brand-link">
+        <Logo />
+      </a>
+      <p class="site-footer__tagline">
+        Retrieve your UK eVisa share code and PDF without the form-filling — with
+        end-to-end encryption you control, and a server that never keeps your
+        documents.
+      </p>
+      <p class="site-footer__os">
+        <span class="seal-dot" aria-hidden="true"></span>
+        Open source, MIT licensed, self-hostable.
+      </p>
+    </div>
+
+    <nav class="site-footer__nav" aria-label="Footer">
+      {
+        groups.map((group) => (
+          <div class="site-footer__group">
+            <h2 class="site-footer__heading">{group.heading}</h2>
+            <ul class="site-footer__list">
+              {group.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    class="site-footer__link"
+                    {...(link.external
+                      ? { rel: "noopener", target: "_blank" }
+                      : {})}
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </nav>
+  </div>
+
+  <div class="container site-footer__bottom">
+    <p>&copy; {year} eVisaFlow. Not affiliated with GOV.UK or the Home Office.</p>
+    <p>Built for families navigating the UK immigration system.</p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: var(--sp-9);
+    border-top: 1px solid var(--border);
+    background: var(--bg-sunken);
+  }
+  .site-footer__inner {
+    display: grid;
+    gap: var(--sp-7);
+    padding-block: var(--sp-8) var(--sp-6);
+  }
+  @media (min-width: 48rem) {
+    .site-footer__inner {
+      grid-template-columns: 1.3fr 2fr;
+      gap: var(--sp-8);
+    }
+  }
+  .site-footer__brand-link {
+    display: inline-block;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+  }
+  .site-footer__tagline {
+    margin-top: var(--sp-4);
+    max-width: 32ch;
+    color: var(--fg-soft);
+    font-size: var(--fs-sm);
+  }
+  .site-footer__os {
+    margin-top: var(--sp-4);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .site-footer__nav {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--sp-6);
+  }
+  .site-footer__heading {
+    font-family: var(--font-sans);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+  }
+  .site-footer__list {
+    list-style: none;
+    margin: var(--sp-4) 0 0;
+    padding: 0;
+  }
+  .site-footer__list li + li {
+    margin-top: var(--sp-3);
+  }
+  .site-footer__link {
+    color: var(--fg-soft);
+    text-decoration: none;
+    font-size: var(--fs-sm);
+  }
+  .site-footer__link:hover {
+    color: var(--brand);
+    text-decoration: underline;
+  }
+
+  .site-footer__bottom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding-block: var(--sp-5);
+    border-top: 1px solid var(--border);
+    color: var(--fg-faint);
+    font-size: var(--fs-xs);
+  }
+  .site-footer__bottom p {
+    margin: 0;
+  }
+</style>

@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/playwright:v1.59.1-jammy
+ARG PLAYWRIGHT_VERSION=1.62.0
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble
 
 WORKDIR /app
 
@@ -8,10 +9,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY service/package.json ./service/package.json
 RUN pnpm install --frozen-lockfile
 
-COPY tsconfig.json biome.json ./
+COPY tsconfig.json ./
 COPY src ./src
-COPY bin ./bin
-COPY scripts ./scripts
 COPY service/tsconfig.json ./service/tsconfig.json
 COPY service/src ./service/src
 

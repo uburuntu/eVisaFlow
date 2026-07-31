@@ -28,7 +28,8 @@
 
 ## Data safety
 - Do not commit personal data. Use sample values in code/config.
-- `scripts/debug-flow.js` is gitignored for local credentials.
+- `scripts/debug-flow.example.js` is the tracked sample; `scripts/debug-flow.js` is
+  gitignored for local credentials.
 - `downloads/debug/*.html` is gitignored. Copy/sanitize snapshots into `tests/fixtures/`.
 - To refresh fixtures after updating snapshots:
   - Capture new HTML in `downloads/debug/`

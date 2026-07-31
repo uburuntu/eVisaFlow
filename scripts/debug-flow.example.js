@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { EVisaClient } from "../dist/index.js";
 
-// ⚠️  IMPORTANT: Replace these with your actual details for testing
-// This file is gitignored to prevent committing personal data
+// Copy this sample to scripts/debug-flow.js and replace the applicant details there.
+// The local script is gitignored to prevent committing personal data.
 // Sample data format:
 const applicant = {
   identityDocument: { type: "passport", number: "123456789" },
@@ -13,7 +13,7 @@ const askForCode = async (method) => {
   console.log(`\n⚠️  Two-factor authentication required via ${method.toUpperCase()}`);
   console.log("Please check your phone/email and enter the 6-digit code:");
 
-  const readline = await import("readline");
+  const readline = await import("node:readline");
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

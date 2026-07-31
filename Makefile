@@ -44,6 +44,10 @@ smoke:
 	pnpm run smoke:live
 
 debug-flow: build
+	@test -f scripts/debug-flow.js || { \
+		printf '%s\n' 'Missing scripts/debug-flow.js. Start from scripts/debug-flow.example.js and add local test details.'; \
+		exit 1; \
+	}
 	node scripts/debug-flow.js
 
 fixtures:

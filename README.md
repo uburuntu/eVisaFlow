@@ -13,7 +13,7 @@ schedule, and send PDFs/checker artifacts back in Telegram.
 
 ## Quick Start
 
-Requirements: Node.js 22+ and Playwright Chromium.
+Requirements: Node.js 22.12+ and Playwright Chromium.
 
 ```bash
 npx evisa-flow
@@ -180,5 +180,8 @@ make smoke
 make snapshots
 make fixtures
 ```
+
+For a headed local run, create the ignored `scripts/debug-flow.js` from
+`scripts/debug-flow.example.js`, add local test details, and run `make debug-flow`.
 
 The Telegram bot service lives in [service/](./service).

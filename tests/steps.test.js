@@ -285,7 +285,7 @@ describe("DocumentTypeStep execute", () => {
     },
     {
       type: "ukvi",
-      customerNumber: "1234-5678-9012-3456",
+      customerNumber: "KX00000000",
       expectedValue: "CUSTOMER_REFERENCE",
     },
   ];
@@ -340,8 +340,8 @@ describe("DocumentNumberStep execute", () => {
     },
     {
       fixture: "step-document-number-ukvi.html",
-      auth: { type: "ukvi", customerNumber: "1234-5678-9012-3456" },
-      expectedValue: "1234-5678-9012-3456",
+      auth: { type: "ukvi", customerNumber: "KX00000000" },
+      expectedValue: "KX00000000",
     },
   ];
 

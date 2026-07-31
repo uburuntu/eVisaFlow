@@ -6,7 +6,16 @@ import { sanitizeUrl } from "./sanitize-url.js";
 const START_URL =
   "https://www.gov.uk/evisa/view-evisa-get-share-code-prove-immigration-status";
 const STATUS_URL = "https://view-immigration-status.service.gov.uk/status";
-const SYNTHETIC_PASSPORT_NUMBER = "000000000";
+const DOCUMENT_CASES = [
+  { label: "Passport", value: "PASSPORT", number: "000000000" },
+  { label: "National identity card", value: "ID_CARD", number: "000000000" },
+  { label: "BRC or BRP", value: "BRC_CARD", number: "ZZZ000000" },
+  {
+    label: "UKVI customer number",
+    value: "CUSTOMER_REFERENCE",
+    number: "KX00000000",
+  },
+];
 
 const firstHeading = async (page) =>
   (
@@ -35,33 +44,51 @@ const continueFlow = async (page) => {
   await page.getByRole("button", { name: /^Continue$/i }).click();
 };
 
-const run = async () => {
-  const browser = await chromium.launch({
-    headless: process.env.HEADED !== "1",
-  });
-  const page = await browser.newPage();
+const exerciseDocumentFlow = async (browser, documentCase, includeLanding) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const label = `${documentCase.label} flow`;
 
   try {
-    await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await assertClassified(page, "entry_page", "GOV.UK entry page");
+    if (includeLanding) {
+      await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await assertClassified(page, "entry_page", "GOV.UK entry page");
+      await page.locator(`a[href^="${STATUS_URL}"]`).first().click();
+    } else {
+      await page.goto(STATUS_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    }
+    await assertClassified(page, "document_type", `${label}: document type`);
 
-    await page.locator(`a[href^="${STATUS_URL}"]`).first().click();
-    await assertClassified(page, "document_type", "Home Office auth entry");
-
-    await page.locator('input[name="documentType"][value="PASSPORT"]').check();
+    await page
+      .locator(`input[name="documentType"][value="${documentCase.value}"]`)
+      .check();
     await continueFlow(page);
-    await assertClassified(page, "document_number", "Document number form");
+    await assertClassified(page, "document_number", `${label}: document number`);
 
-    await page.locator('input[name="documentNumber"]').fill(SYNTHETIC_PASSPORT_NUMBER);
+    await page.locator('input[name="documentNumber"]').fill(documentCase.number);
     await continueFlow(page);
-    await assertClassified(page, "date_of_birth", "Date of birth form");
+    await assertClassified(page, "date_of_birth", `${label}: date of birth`);
 
     // This impossible date exercises GOV.UK validation without an authentication attempt.
     await page.locator('input[name="dob-day"]').fill("31");
     await page.locator('input[name="dob-month"]').fill("2");
     await page.locator('input[name="dob-year"]').fill("1900");
     await continueFlow(page);
-    await assertClassified(page, "auth_error", "Synthetic input rejection");
+    await assertClassified(page, "auth_error", `${label}: synthetic rejection`);
+  } finally {
+    await context.close();
+  }
+};
+
+const run = async () => {
+  const browser = await chromium.launch({
+    headless: process.env.HEADED !== "1",
+  });
+
+  try {
+    for (const [index, documentCase] of DOCUMENT_CASES.entries()) {
+      await exerciseDocumentFlow(browser, documentCase, index === 0);
+    }
   } finally {
     await browser.close();
   }

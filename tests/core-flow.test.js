@@ -87,10 +87,10 @@ const authCases = [
   {
     type: "ukvi",
     expectedDocumentType: "CUSTOMER_REFERENCE",
-    number: "1234-5678-9012-3456",
+    number: "KX00000000",
     numberLabel: "UKVI customer number",
     credentials: {
-      auth: { type: "ukvi", customerNumber: "1234-5678-9012-3456" },
+      auth: { type: "ukvi", customerNumber: "KX00000000" },
     },
   },
 ];

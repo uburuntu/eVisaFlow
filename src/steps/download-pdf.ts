@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import {
-  EVISA_ARTIFACT_PREFIX,
+  EVISA_SHARE_CODE_ARTIFACT_PREFIX,
   formatArtifactDateSegment,
   parseGovUkDate,
   sanitizeSegment,
@@ -56,7 +56,7 @@ export class DownloadPdfStep extends BaseStep {
     }
     const { givenName, surname } = splitName(rawName);
     const expirySegment = formatArtifactDateSegment(validUntil);
-    const defaultFilename = `${EVISA_ARTIFACT_PREFIX}_${sanitizeSegment(
+    const defaultFilename = `${EVISA_SHARE_CODE_ARTIFACT_PREFIX}_${sanitizeSegment(
       surname
     )}_${sanitizeSegment(givenName)}_${expirySegment}.pdf`;
 

@@ -37,7 +37,7 @@
   - Commit `tests/fixtures/*.html`
 
 ## PDF filename format
-- Default output: `eVisa_{Surname}_{Name}_{YYYY-MM-DD}.pdf`
+- Default output: `eVisa_Share_Code_{Surname}_{Name}_{YYYY-MM-DD}.pdf`
 - In file mode, `artifacts.pdf.path` overrides the output path as a literal string (no templating).
 - `artifacts.pdf.mode: "bytes"` returns the PDF in memory without writing a caller-visible file; `maxBytes` defaults to 10 MiB.
 

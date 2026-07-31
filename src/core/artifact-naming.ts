@@ -16,6 +16,7 @@ const MONTHS = new Map(
 );
 
 export const EVISA_ARTIFACT_PREFIX = "eVisa";
+export const EVISA_SHARE_CODE_ARTIFACT_PREFIX = `${EVISA_ARTIFACT_PREFIX}_Share_Code`;
 export const EVISA_STATUS_ARTIFACT_PREFIX = `${EVISA_ARTIFACT_PREFIX}_Status`;
 
 export const sanitizeSegment = (value: string | undefined): string => {

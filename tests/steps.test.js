@@ -501,7 +501,10 @@ describe("DownloadPdfStep", () => {
 
     assert.equal(result.shareCode, "SGN CH2 7PL");
     assert.equal(result.validUntil.toISOString().slice(0, 10), "2030-01-01");
-    assert.equal(result.pdfPath.endsWith("eVisa_Sample_Alex_2030-01-01.pdf"), true);
+    assert.equal(
+      result.pdfPath.endsWith("eVisa_Share_Code_Sample_Alex_2030-01-01.pdf"),
+      true
+    );
     assert.equal(await readFile(result.pdfPath, "utf-8"), "%PDF-1.4\n% test pdf\n");
     await page.close();
   });
@@ -548,7 +551,7 @@ describe("DownloadPdfStep", () => {
 
     assert.equal(result.shareCode, "SGN CH2 7PL");
     assert.equal(result.pdfPath, undefined);
-    assert.equal(result.pdfFilename, "eVisa_Sample_Alex_2030-01-01.pdf");
+    assert.equal(result.pdfFilename, "eVisa_Share_Code_Sample_Alex_2030-01-01.pdf");
     assert.equal(
       result.pdfBytes.byteLength,
       Buffer.byteLength("%PDF-1.4\n% bytes pdf\n")

@@ -50,6 +50,9 @@ let activeCount = 0;
 let concurrency = 2;
 
 export function setConcurrency(n: number): void {
+  if (!Number.isInteger(n) || n < 1) {
+    throw new RangeError("Queue concurrency must be a positive integer");
+  }
   concurrency = n;
   processQueue();
 }
@@ -58,19 +61,8 @@ export function hasJob(key: string): boolean {
   return jobsByKey.has(key);
 }
 
-/** Returns the current number of waiting items. */
-export function getPosition(): number {
-  return queue.length;
-}
-
 export function getQueueStats(): { active: number; waiting: number } {
   return { active: activeCount, waiting: queue.length };
-}
-
-export function getActiveJobIds(): string[] {
-  return Array.from(jobsById.values())
-    .filter((job) => job.state === "running")
-    .map((job) => job.id);
 }
 
 export function getJobInfo(
@@ -207,7 +199,15 @@ export async function waitForIdle(timeoutMs: number): Promise<boolean> {
 
 function notifyPositions(): void {
   for (let i = 0; i < queue.length; i += 1) {
-    void queue[i].onPositionUpdate(i + 1);
+    notifyPosition(queue[i], i + 1);
+  }
+}
+
+function notifyPosition(item: QueueItem, position: number): void {
+  try {
+    void Promise.resolve(item.onPositionUpdate(position)).catch(() => {});
+  } catch {
+    // Position notifications are best-effort and must not stall the queue.
   }
 }
 
@@ -219,14 +219,14 @@ function processQueue(): void {
     }
 
     const [item] = queue.splice(nextIndex, 1);
-    if (!item || item.state !== "queued") {
+    if (item?.state !== "queued") {
       continue;
     }
 
     item.state = "running";
     activeCount += 1;
     activeTelegramIds.add(item.telegramId);
-    void item.onPositionUpdate(0);
+    notifyPosition(item, 0);
     notifyPositions();
 
     let completionError: Error | undefined;

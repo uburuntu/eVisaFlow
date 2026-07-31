@@ -6,10 +6,7 @@ import { getActiveFamilyMembers } from "../db/family-members.js";
 import { advanceSchedule, getUsersDueForSchedule } from "../db/users.js";
 import type { Env } from "../env.js";
 import type { Logger } from "../utils/logger.js";
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "../utils/messages.js";
 
 export async function runScheduledChecks(
   bot: Bot<MyContext>,

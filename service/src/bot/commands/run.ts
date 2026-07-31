@@ -23,12 +23,8 @@ import {
   hasJob,
   QueueJobCancelledError,
 } from "../../runner/queue.js";
-import { MessageTracker } from "../../utils/messages.js";
+import { escapeHtml, MessageTracker } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 function formatElapsed(ms: number): string {
   const s = Math.round(ms / 1000);

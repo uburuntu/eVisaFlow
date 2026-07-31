@@ -1,4 +1,5 @@
 import { upsertUser } from "../../db/users.js";
+import { escapeHtml } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
 
 export async function startCommand(ctx: MyContext): Promise<void> {
@@ -34,8 +35,4 @@ export async function startCommand(ctx: MyContext): Promise<void> {
     ].join("\n"),
     { parse_mode: "HTML" }
   );
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

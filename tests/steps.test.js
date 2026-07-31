@@ -167,6 +167,29 @@ describe("page classification", () => {
     assert.equal(classification.evidence.includes("url:share-preview"), true);
   });
 
+  test("prioritizes authentication errors over the underlying form", async () => {
+    const page = await context.newPage();
+    await page.setContent(`
+      <main>
+        <div class="govuk-error-summary">The date of birth must be a real date</div>
+        <form>
+          <input name="dob-day">
+          <input name="dob-month">
+          <input name="dob-year">
+        </form>
+      </main>
+    `);
+
+    const classification = classifyPage(await createPageSnapshot(page));
+    await page.close();
+
+    assert.equal(classification.kind, "auth_error");
+    assert.equal(
+      classification.alternatives.some(({ kind }) => kind === "date_of_birth"),
+      true
+    );
+  });
+
   test("snapshots form controls outside main content", async () => {
     const page = await context.newPage();
     await page.setContent(

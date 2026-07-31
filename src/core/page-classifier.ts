@@ -93,10 +93,10 @@ export const classifyPage = (snapshot: PageSnapshot): PageClassification => {
       errorText
     )
   ) {
-    push(scores, "auth_error", 95, "govuk-error-summary:auth-error");
+    push(scores, "auth_error", 100, "govuk-error-summary:auth-error");
   }
   if (/service unavailable|sorry, there is a problem/i.test(text)) {
-    push(scores, "service_unavailable", 90, "body:service-unavailable");
+    push(scores, "service_unavailable", 100, "body:service-unavailable");
   }
 
   if (

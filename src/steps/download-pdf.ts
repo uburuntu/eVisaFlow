@@ -1,5 +1,10 @@
 import { basename } from "node:path";
-import { parseGovUkDate, sanitizeSegment, splitName } from "../core/artifact-naming.js";
+import {
+  formatArtifactDateSegment,
+  parseGovUkDate,
+  sanitizeSegment,
+  splitName,
+} from "../core/artifact-naming.js";
 import {
   ensureParentDirectory,
   readDownloadBytes,
@@ -13,11 +18,6 @@ import { BaseStep } from "./base-step.js";
 const shareCodeRegex = /\b([A-Z0-9]{3}\s+[A-Z0-9]{3}\s+[A-Z0-9]{3})\b/i;
 const validUntilRegex =
   /valid until\s+(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})/i;
-
-const formatDate = (date: Date | undefined): string => {
-  if (!date || Number.isNaN(date.getTime())) return "UNKNOWN";
-  return date.toISOString().slice(0, 10);
-};
 
 export class DownloadPdfStep extends BaseStep {
   id = "download-pdf";
@@ -54,7 +54,7 @@ export class DownloadPdfStep extends BaseStep {
       logger.warn("Name not available; it was not extracted from summary page");
     }
     const { givenName, surname } = splitName(rawName);
-    const expirySegment = formatDate(validUntil);
+    const expirySegment = formatArtifactDateSegment(validUntil);
     const defaultFilename = `EVISA_${sanitizeSegment(surname)}_${sanitizeSegment(
       givenName
     )}_${expirySegment}.pdf`;

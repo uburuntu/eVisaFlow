@@ -1,7 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Locator, Page } from "playwright";
-import { parseGovUkDate, sanitizeSegment, splitName } from "./core/artifact-naming.js";
+import {
+  formatArtifactDateSegment,
+  parseGovUkDate,
+  sanitizeSegment,
+  splitName,
+} from "./core/artifact-naming.js";
 import {
   ensureParentDirectory,
   readDownloadBytes,
@@ -146,14 +151,6 @@ export const formatShareCode = (value: string): string => {
   return `${normalized.slice(0, 3)} ${normalized.slice(3, 6)} ${normalized.slice(6)}`;
 };
 
-const formatDateSegment = (value: string | undefined): string => {
-  const date = parseGovUkDate(value);
-  if (!date || Number.isNaN(date.getTime())) {
-    return "UNKNOWN";
-  }
-  return date.toISOString().slice(0, 10);
-};
-
 const mergedCheckDetails = (
   details: ShareCodeCheckDetails | undefined
 ): Required<ShareCodeCheckDetails> => ({
@@ -290,12 +287,14 @@ const defaultArtifactBasename = (
   shareCode: string
 ): string => {
   const { givenName, surname } = splitName(summary?.name);
-  const expirySegment = formatDateSegment(summary?.validUntil);
+  const artifactDate =
+    parseGovUkDate(summary?.validUntil) ?? parseGovUkDate(summary?.checkDate);
+  const dateSegment = formatArtifactDateSegment(artifactDate);
   const identitySegment =
     givenName === "UNKNOWN" && surname === "UNKNOWN"
       ? normalizeShareCode(shareCode)
       : `${sanitizeSegment(surname)}_${sanitizeSegment(givenName)}`;
-  return `EVISA_STATUS_${identitySegment}_${expirySegment}`;
+  return `EVISA_STATUS_${identitySegment}_${dateSegment}`;
 };
 
 const addArtifact = (

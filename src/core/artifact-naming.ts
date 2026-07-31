@@ -54,6 +54,17 @@ export const splitName = (
   };
 };
 
+export const formatArtifactDateSegment = (
+  date: Date | undefined,
+  capturedAt: Date = new Date()
+): string => {
+  // Indefinite statuses have no expiry; their capture date keeps filenames sortable.
+  const resolved = date && !Number.isNaN(date.getTime()) ? date : capturedAt;
+  return Number.isNaN(resolved.getTime())
+    ? "UNKNOWN"
+    : resolved.toISOString().slice(0, 10);
+};
+
 export const parseGovUkDate = (value: string | undefined): Date | undefined => {
   const match = value
     ?.trim()

@@ -1,6 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { parseGovUkDate, sanitizeSegment, splitName } from "../core/artifact-naming.js";
+import {
+  formatArtifactDateSegment,
+  parseGovUkDate,
+  sanitizeSegment,
+  splitName,
+} from "../core/artifact-naming.js";
 import { ensureParentDirectory, resolveOutputPath } from "../core/artifacts.js";
 import type { StepContext } from "../core/internal-types.js";
 import { captureStandaloneHtml } from "../core/standalone-html.js";
@@ -24,19 +29,11 @@ type OptionsWithCheckerHtml = StepContext["options"] & {
   };
 };
 
-const formatDateSegment = (value: string | undefined): string => {
-  const date = parseGovUkDate(value);
-  if (!date || Number.isNaN(date.getTime())) {
-    return "UNKNOWN";
-  }
-  return date.toISOString().slice(0, 10);
-};
-
 const statusHtmlBasename = (summary: Record<string, string>): string => {
   const { givenName, surname } = splitName(summary.Name);
   return `EVISA_STATUS_${sanitizeSegment(surname)}_${sanitizeSegment(
     givenName
-  )}_${formatDateSegment(summary["Valid until"])}`;
+  )}_${formatArtifactDateSegment(parseGovUkDate(summary["Valid until"]))}`;
 };
 
 export class ProveStatusStep extends BaseStep {

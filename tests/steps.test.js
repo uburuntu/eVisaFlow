@@ -10,6 +10,7 @@ import {
   DocumentNumberStep,
   DocumentTypeStep,
   DownloadPdfStep,
+  formatArtifactDateSegment,
   ProveStatusStep,
   SummaryStep,
   sanitizeSegment,
@@ -83,6 +84,16 @@ test("filename segments remain usable for non-ASCII names", () => {
   assert.equal(sanitizeSegment("Elodie"), "Elodie");
   assert.equal(sanitizeSegment("Élodie"), "Elodie");
   assert.equal(sanitizeSegment("李"), "UNKNOWN");
+});
+
+test("artifact filenames use the capture date for indefinite status", () => {
+  const capturedAt = new Date("2026-08-01T12:00:00Z");
+
+  assert.equal(
+    formatArtifactDateSegment(new Date("2030-01-01T00:00:00Z"), capturedAt),
+    "2030-01-01"
+  );
+  assert.equal(formatArtifactDateSegment(undefined, capturedAt), "2026-08-01");
 });
 
 describe("page classification", () => {
@@ -266,6 +277,56 @@ describe("ProveStatusStep execute", () => {
     assert.match(statusHtml, /<img[^>]+id="photo"/);
     assert.match(statusHtml, /data:image\/gif;base64/);
     assert.equal(statusHtml.includes("session-timeout-start"), false);
+    await page.close();
+  });
+
+  test("uses the capture date for indefinite-status HTML filenames", async () => {
+    const page = await context.newPage();
+    await page.setContent(`
+      <main>
+        <h1>Your immigration status</h1>
+        <dl class="govuk-summary-list">
+          <div class="govuk-summary-list__row">
+            <dt class="govuk-summary-list__key">Name</dt>
+            <dd class="govuk-summary-list__value">Alex Sample</dd>
+          </div>
+          <div class="govuk-summary-list__row">
+            <dt class="govuk-summary-list__key">Status</dt>
+            <dd class="govuk-summary-list__value">Settled status</dd>
+          </div>
+        </dl>
+        <a href="#next">Get a share code</a>
+      </main>
+    `);
+    const extractedData = {};
+
+    const step = new ProveStatusStep();
+    await step.execute({
+      ...baseContext,
+      page,
+      options: {
+        ...baseContext.options,
+        checker: {
+          enabled: true,
+          html: {
+            enabled: true,
+            mode: "bytes",
+            directory: "",
+            maxBytes: 2 * 1024 * 1024,
+            inlineImages: true,
+            inlineStyles: true,
+          },
+        },
+      },
+      extractedData,
+    });
+
+    assert.equal(extractedData.checkerHtml?.kind, "bytes");
+    assert.match(
+      extractedData.checkerHtml.filename,
+      /^EVISA_STATUS_Sample_Alex_\d{4}-\d{2}-\d{2}\.html$/
+    );
+    assert.equal(extractedData.checkerHtml.filename.includes("UNKNOWN"), false);
     await page.close();
   });
 });

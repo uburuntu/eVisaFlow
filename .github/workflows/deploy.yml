@@ -4,15 +4,14 @@ on:
   push:
     branches: [main]
     paths:
+      - .dockerignore
       - service/**
-      - .github/workflows/ci.yml
       - .github/workflows/deploy.yml
-      - .node-version
-      - biome.json
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - src/**
+      - tsconfig.json
       - Dockerfile
       - service/Dockerfile
   workflow_dispatch:
@@ -30,11 +29,19 @@ jobs:
     name: Build & Deploy
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
     permissions:
       packages: write
       contents: read
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
@@ -42,34 +49,68 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/uburuntu/evisaflow
+          tags: |
+            type=raw,value=service-${{ github.sha }}
+            type=raw,value=service-latest
+
       - uses: docker/build-push-action@v6
+        id: push
         with:
           context: .
           file: service/Dockerfile
           push: true
-          tags: |
-            ghcr.io/uburuntu/evisaflow:service-${{ github.sha }}
-            ghcr.io/uburuntu/evisaflow:service-latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=deploy-service
+          cache-to: type=gha,mode=max,scope=deploy-service
+
+      - name: Attest service image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/uburuntu/evisaflow
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: DOTENV_FILE,DEPLOY_GHCR_TOKEN,IMAGE_REF
+          envs: DOTENV_FILE,DEPLOY_GHCR_TOKEN,DEPLOY_GHCR_USER,IMAGE_REF
           script: |
             set -eu
             mkdir -p ~/eVisaFlowBot
-            echo "$DOTENV_FILE" > ~/eVisaFlowBot/.env
+            printf '%s\n' "$DOTENV_FILE" > ~/eVisaFlowBot/.env
             chmod 600 ~/eVisaFlowBot/.env
+            ghcr_logged_in=false
+            cleanup_registry() {
+              if [ "$ghcr_logged_in" = true ]; then
+                docker logout ghcr.io >/dev/null 2>&1 || true
+              fi
+            }
+            trap cleanup_registry EXIT
             if [ -n "${DEPLOY_GHCR_TOKEN:-}" ]; then
-              printf '%s' "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u uburuntu --password-stdin
+              printf '%s' "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USER" --password-stdin
+              ghcr_logged_in=true
             else
               echo "DEPLOY_GHCR_TOKEN is empty; pulling from GHCR without login"
             fi
             docker pull "$IMAGE_REF"
             docker run --rm --env-file ~/eVisaFlowBot/.env "$IMAGE_REF" node dist/preflight.js
+
+            rollback() {
+              docker rm -f eVisaFlowBot 2>/dev/null || true
+              if docker inspect eVisaFlowBot-previous >/dev/null 2>&1; then
+                docker rename eVisaFlowBot-previous eVisaFlowBot
+                docker start eVisaFlowBot
+              fi
+            }
 
             docker rm -f eVisaFlowBot-previous 2>/dev/null || true
             if docker inspect eVisaFlowBot >/dev/null 2>&1; then
@@ -77,39 +118,40 @@ jobs:
               docker rename eVisaFlowBot eVisaFlowBot-previous
             fi
 
-            docker run -d \
-              --name eVisaFlowBot \
-              --env-file ~/eVisaFlowBot/.env \
-              -v evisaflow-downloads:/app/service/downloads \
-              --restart unless-stopped \
-              --stop-timeout 30 \
-              "$IMAGE_REF"
-            for i in $(seq 1 45); do
+            if ! docker run -d \
+                --name eVisaFlowBot \
+                --env-file ~/eVisaFlowBot/.env \
+                -v evisaflow-downloads:/app/service/downloads \
+                --restart unless-stopped \
+                --stop-timeout 30 \
+                "$IMAGE_REF"; then
+              echo "Failed to start replacement container; restoring previous service"
+              rollback
+              exit 1
+            fi
+            attempt=1
+            while [ "$attempt" -le 45 ]; do
               status="$(docker inspect --format='{{.State.Health.Status}}' eVisaFlowBot 2>/dev/null || echo starting)"
               if [ "$status" = "healthy" ]; then
                 echo "Service is healthy"
                 docker rm eVisaFlowBot-previous 2>/dev/null || true
+                cleanup_registry
+                trap - EXIT
                 exit 0
               fi
               if [ "$status" = "unhealthy" ]; then
                 docker logs --tail 200 eVisaFlowBot
-                docker rm -f eVisaFlowBot
-                if docker inspect eVisaFlowBot-previous >/dev/null 2>&1; then
-                  docker rename eVisaFlowBot-previous eVisaFlowBot
-                  docker start eVisaFlowBot
-                fi
+                rollback
                 exit 1
               fi
               sleep 2
+              attempt=$((attempt + 1))
             done
             docker logs --tail 200 eVisaFlowBot
-            docker rm -f eVisaFlowBot
-            if docker inspect eVisaFlowBot-previous >/dev/null 2>&1; then
-              docker rename eVisaFlowBot-previous eVisaFlowBot
-              docker start eVisaFlowBot
-            fi
+            rollback
             exit 1
         env:
           DOTENV_FILE: ${{ secrets.DOTENV_FILE }}
           DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN || github.token }}
+          DEPLOY_GHCR_USER: ${{ github.actor }}
           IMAGE_REF: ghcr.io/uburuntu/evisaflow:service-${{ github.sha }}

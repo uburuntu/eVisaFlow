@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Locator, Page } from "playwright";
 import {
+  EVISA_STATUS_ARTIFACT_PREFIX,
   formatArtifactDateSegment,
   parseGovUkDate,
   sanitizeSegment,
@@ -294,7 +295,7 @@ const defaultArtifactBasename = (
     givenName === "UNKNOWN" && surname === "UNKNOWN"
       ? normalizeShareCode(shareCode)
       : `${sanitizeSegment(surname)}_${sanitizeSegment(givenName)}`;
-  return `EVISA_STATUS_${identitySegment}_${dateSegment}`;
+  return `${EVISA_STATUS_ARTIFACT_PREFIX}_${identitySegment}_${dateSegment}`;
 };
 
 const addArtifact = (

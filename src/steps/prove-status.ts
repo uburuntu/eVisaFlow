@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import {
+  EVISA_STATUS_ARTIFACT_PREFIX,
   formatArtifactDateSegment,
   parseGovUkDate,
   sanitizeSegment,
@@ -31,9 +32,11 @@ type OptionsWithCheckerHtml = StepContext["options"] & {
 
 const statusHtmlBasename = (summary: Record<string, string>): string => {
   const { givenName, surname } = splitName(summary.Name);
-  return `EVISA_STATUS_${sanitizeSegment(surname)}_${sanitizeSegment(
-    givenName
-  )}_${formatArtifactDateSegment(parseGovUkDate(summary["Valid until"]))}`;
+  return `${EVISA_STATUS_ARTIFACT_PREFIX}_${sanitizeSegment(
+    surname
+  )}_${sanitizeSegment(givenName)}_${formatArtifactDateSegment(
+    parseGovUkDate(summary["Valid until"])
+  )}`;
 };
 
 export class ProveStatusStep extends BaseStep {

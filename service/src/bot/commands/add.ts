@@ -2,6 +2,7 @@ import { InlineKeyboard } from "grammy";
 import { encrypt } from "../../crypto/encryption.js";
 import { addFamilyMember, countActiveFamilyMembers } from "../../db/family-members.js";
 import { getUserByTelegramId } from "../../db/users.js";
+import { escapeHtml } from "../../utils/messages.js";
 import type { MyContext, MyConversation } from "../context.js";
 
 const AUTH_TYPES = [
@@ -31,10 +32,6 @@ class AddCancelled extends Error {
     super("Add member cancelled");
     this.name = "AddCancelled";
   }
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function cancelKeyboard(): InlineKeyboard {

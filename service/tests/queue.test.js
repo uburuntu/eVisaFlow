@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   cancelJob,
   enqueue,
-  getPosition,
   getQueueStats,
   QueueJobCancelledError,
   resetQueueForTests,
@@ -60,7 +59,6 @@ test("queue enforces configured concurrency and drains waiting items", async () 
 
   await flush();
   assert.deepEqual(getQueueStats(), { active: 1, waiting: 2 });
-  assert.equal(getPosition(), 2);
 
   releaseFirst();
   await Promise.all([second.handle.done, third.handle.done]);
@@ -231,5 +229,42 @@ test("queue rejects active jobs when they are cancelled", async () => {
   await assert.rejects(firstHandle.done, QueueJobCancelledError);
   releaseRun?.();
   await second.handle.done;
+  assert.deepEqual(getQueueStats(), { active: 0, waiting: 0 });
+});
+
+test("queue rejects invalid concurrency", () => {
+  resetQueueForTests();
+  assert.throws(() => setConcurrency(0), /positive integer/);
+  assert.throws(() => setConcurrency(1.5), /positive integer/);
+});
+
+test("queue ignores position notification failures", async () => {
+  resetQueueForTests();
+  setConcurrency(1);
+
+  const syncFailure = enqueue({
+    id: "run-notify-sync",
+    key: "notify:sync",
+    telegramId: 701,
+    memberName: "Alex",
+    execute: async () => {},
+    onPositionUpdate() {
+      throw new Error("sync notification failed");
+    },
+  });
+  await syncFailure.handle.done;
+
+  const asyncFailure = enqueue({
+    id: "run-notify-async",
+    key: "notify:async",
+    telegramId: 702,
+    memberName: "Sam",
+    execute: async () => {},
+    async onPositionUpdate() {
+      throw new Error("async notification failed");
+    },
+  });
+  await asyncFailure.handle.done;
+
   assert.deepEqual(getQueueStats(), { active: 0, waiting: 0 });
 });

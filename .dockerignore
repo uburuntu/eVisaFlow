@@ -1,10 +1,16 @@
 node_modules
 dist
+.astro
 downloads
 snapshots
 tests
 .git
 .github
+.DS_Store
 .env
 .env.local
+config.json
+scripts/debug-flow.js
+test-credentials.json
+*.pdf
 *.log

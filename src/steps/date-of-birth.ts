@@ -4,17 +4,6 @@ import { BaseStep } from "./base-step.js";
 export class DateOfBirthStep extends BaseStep {
   id = "date-of-birth";
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const dateInputs = page.locator(
-      'input[name="dob-day"], input[name="dob-month"], input[name="dob-year"]'
-    );
-    if ((await dateInputs.count().catch(() => 0)) >= 3) {
-      return true;
-    }
-
-    return this.hasHeading(page, /What is your date of birth\?/i);
-  }
-
   async execute(context: StepContext): Promise<void> {
     const { page, credentials, logger } = context;
     const { day, month, year } = credentials.dateOfBirth;

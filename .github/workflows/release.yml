@@ -9,6 +9,10 @@ on:
       - package.json
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   tag:
     name: Tag Package Version
@@ -113,6 +117,7 @@ jobs:
       id-token: write
       contents: write
       packages: write
+      attestations: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -141,13 +146,12 @@ jobs:
         with:
           run_install: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Enable Corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -155,7 +159,21 @@ jobs:
       - name: Build
         run: pnpm run build:lib
 
+      - name: Check npm publication
+        id: npm
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "${name}@${version} is already published; continuing release recovery"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm (OIDC trusted publishing)
+        if: steps.npm.outputs.published != 'true'
         run: npm publish --provenance --access public --no-git-checks
 
       - name: Log in to GHCR
@@ -165,6 +183,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -172,20 +193,49 @@ jobs:
           images: ghcr.io/uburuntu/evisaflow
 
       - name: Build and push CLI Docker image
+        id: push-cli
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-cli
+          cache-to: type=gha,mode=max,scope=release-cli
+
+      - name: Docker metadata for service image
+        id: service-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/uburuntu/evisaflow
+          tags: type=raw,value=service-${{ github.ref_name }}
 
       - name: Build and push service Docker image
+        id: push-service
         uses: docker/build-push-action@v6
         with:
           context: .
           file: service/Dockerfile
           push: true
-          tags: ghcr.io/uburuntu/evisaflow:service-${{ github.ref_name }}
+          tags: ${{ steps.service-meta.outputs.tags }}
+          labels: ${{ steps.service-meta.outputs.labels }}
+          cache-from: type=gha,scope=release-service
+          cache-to: type=gha,mode=max,scope=release-service
+
+      - name: Attest CLI image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/uburuntu/evisaflow
+          subject-digest: ${{ steps.push-cli.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest service image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/uburuntu/evisaflow
+          subject-digest: ${{ steps.push-service.outputs.digest }}
+          push-to-registry: true
 
       - name: Create GitHub release
         env:

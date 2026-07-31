@@ -28,7 +28,8 @@
 
 ## Data safety
 - Do not commit personal data. Use sample values in code/config.
-- `scripts/debug-flow.js` is gitignored for local credentials.
+- `scripts/debug-flow.example.js` is the tracked sample; `scripts/debug-flow.js` is
+  gitignored for local credentials.
 - `downloads/debug/*.html` is gitignored. Copy/sanitize snapshots into `tests/fixtures/`.
 - To refresh fixtures after updating snapshots:
   - Capture new HTML in `downloads/debug/`
@@ -36,7 +37,7 @@
   - Commit `tests/fixtures/*.html`
 
 ## PDF filename format
-- Default output: `EVISA_{Surname}_{Name}_{YYYY-MM-DD}.pdf`
+- Default output: `eVisa Share Code - {Name} {Surname} - Expires {YYYY-MM-DD}.pdf`
 - In file mode, `artifacts.pdf.path` overrides the output path as a literal string (no templating).
 - `artifacts.pdf.mode: "bytes"` returns the PDF in memory without writing a caller-visible file; `maxBytes` defaults to 10 MiB.
 

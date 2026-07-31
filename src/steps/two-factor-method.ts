@@ -5,14 +5,6 @@ import { BaseStep } from "./base-step.js";
 export class TwoFactorMethodStep extends BaseStep {
   id = "two-factor-method";
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    if (await this.hasLocator(page.locator('input[name="deliveryMethod"]'))) {
-      return true;
-    }
-
-    return this.hasHeading(page, /receive a security code/i);
-  }
-
   private async chooseMethod(
     context: StepContext,
     preferred?: TwoFactorMethod

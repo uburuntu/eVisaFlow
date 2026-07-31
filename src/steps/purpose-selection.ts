@@ -11,14 +11,6 @@ export class PurposeSelectionStep extends BaseStep {
     immigration_status_other: "somethingElse",
   } as const;
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    if (await this.hasLocator(page.locator('input[name="listedPurpose"]'))) {
-      return true;
-    }
-
-    return this.hasHeading(page, /Why do you need a share code\?/i);
-  }
-
   async execute(context: StepContext): Promise<void> {
     const { page, logger, purpose } = context;
     const label = PURPOSE_LABELS[purpose];

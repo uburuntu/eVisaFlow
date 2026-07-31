@@ -54,21 +54,6 @@ export async function getActiveFamilyMembers(
   return data ?? [];
 }
 
-export async function getFamilyMemberById(
-  db: SupabaseClient,
-  memberId: string,
-  userId: string
-): Promise<DbFamilyMember | null> {
-  const { data, error } = await db
-    .from("family_members")
-    .select()
-    .eq("id", memberId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
 export async function deactivateFamilyMember(
   db: SupabaseClient,
   memberId: string,

@@ -257,7 +257,7 @@ describe("share-code checker flow", () => {
             '<div class="govuk-summary-list__row"><dt class="govuk-summary-list__key">Date of birth</dt><dd class="govuk-summary-list__value">31 March 1980</dd></div>',
             '<div class="govuk-summary-list__row"><dt class="govuk-summary-list__key">Nationality</dt><dd class="govuk-summary-list__value">Testland</dd></div>',
             '<div class="govuk-summary-list__row"><dt class="govuk-summary-list__key">Status</dt><dd class="govuk-summary-list__value">Settled status</dd></div>',
-            '<div class="govuk-summary-list__row"><dt class="govuk-summary-list__key">Valid until</dt><dd class="govuk-summary-list__value">23 July 2026</dd></div>',
+            '<div class="govuk-summary-list__row"><dt class="govuk-summary-list__key">Valid from</dt><dd class="govuk-summary-list__value">23 July 2026</dd></div>',
             "</dl>",
             '<p id="checkCompanyName">Self</p>',
             '<p id="checkJobTitle">Traveller</p>',
@@ -329,16 +329,25 @@ describe("share-code checker flow", () => {
     assert.equal(formatShareCode("ABCDEF123"), "ABC DEF 123");
     assert.equal(result.shareCode, "ABC DEF 123");
     assert.equal(result.summary?.name, "Ada Lovelace");
+    assert.equal(result.summary?.validUntil, undefined);
     assert.equal(result.summary?.checkReferenceNumber, "CHECK-123");
     assert.deepEqual(result.summary?.can, ["travel in and out of the country"]);
     assert.deepEqual(result.summary?.cannot, ["They cannot access public funds."]);
     assert.equal(result.html?.kind, "bytes");
+    assert.equal(
+      result.html?.filename,
+      "eVisa Status - Ada Lovelace - Checked 2026-05-19.html"
+    );
     assert.equal(result.html?.standalone, true);
     assert.match(
       Buffer.from(result.html.bytes).toString("utf-8"),
       /data:image\/png;base64,/
     );
     assert.equal(result.pdf?.kind, "bytes");
+    assert.equal(
+      result.pdf?.filename,
+      "eVisa Status - Ada Lovelace - Checked 2026-05-19.pdf"
+    );
     assert.equal(Buffer.from(result.pdf.bytes).subarray(0, 5).toString(), "%PDF-");
   });
 

@@ -1,4 +1,10 @@
 export { ConfigSchema } from "../config.js";
+export {
+  formatArtifactDateSegment,
+  parseGovUkDate,
+  sanitizeSegment,
+  splitName,
+} from "../core/artifact-naming.js";
 export type { StepContext } from "../core/internal-types.js";
 export {
   classifyPage,

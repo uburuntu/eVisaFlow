@@ -1,5 +1,8 @@
 import type { Api } from "grammy";
 
+export const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** Tracks message IDs for cleanup after a flow completes. */
 export class MessageTracker {
   private chatId: number;
@@ -14,15 +17,6 @@ export class MessageTracker {
   /** Track a message to be deleted later. */
   track(messageId: number): void {
     this.transient.push(messageId);
-  }
-
-  /** Delete a single message immediately (e.g. user's sensitive input). */
-  async deleteNow(messageId: number): Promise<void> {
-    try {
-      await this.api.deleteMessage(this.chatId, messageId);
-    } catch {
-      // Message may already be gone
-    }
   }
 
   /** Delete all tracked transient messages. Call in finally block. */

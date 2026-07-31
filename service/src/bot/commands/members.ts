@@ -4,6 +4,7 @@ import {
   getActiveFamilyMembers,
 } from "../../db/family-members.js";
 import { getUserByTelegramId } from "../../db/users.js";
+import { escapeHtml } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -12,10 +13,6 @@ const TYPE_LABELS: Record<string, string> = {
   brc: "BRC",
   ukvi: "UKVI",
 };
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 export async function membersCommand(ctx: MyContext): Promise<void> {
   if (!ctx.from) return;

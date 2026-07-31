@@ -1,11 +1,16 @@
 import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
+import {
+  EVISA_STATUS_ARTIFACT_PREFIX,
+  formatArtifactDateSegment,
+  sanitizeSegment,
+  splitName,
+} from "../core/artifact-naming.js";
 import { ensureParentDirectory, resolveOutputPath } from "../core/artifacts.js";
 import type { StepContext } from "../core/internal-types.js";
 import { captureStandaloneHtml } from "../core/standalone-html.js";
 import type { ArtifactRef, EVisaPhase, HtmlOutputMode } from "../types.js";
 import { BaseStep } from "./base-step.js";
-import { parseGovUkDate, sanitizeSegment, splitName } from "./download-pdf.js";
 
 interface CheckerHtmlArtifact {
   enabled: boolean;
@@ -24,37 +29,15 @@ type OptionsWithCheckerHtml = StepContext["options"] & {
   };
 };
 
-const formatDateSegment = (value: string | undefined): string => {
-  const date = parseGovUkDate(value);
-  if (!date || Number.isNaN(date.getTime())) {
-    return "UNKNOWN";
-  }
-  return date.toISOString().slice(0, 10);
-};
-
 const statusHtmlBasename = (summary: Record<string, string>): string => {
   const { givenName, surname } = splitName(summary.Name);
-  return `EVISA_STATUS_${sanitizeSegment(surname)}_${sanitizeSegment(
+  return `${EVISA_STATUS_ARTIFACT_PREFIX} - ${sanitizeSegment(
     givenName
-  )}_${formatDateSegment(summary["Valid until"])}`;
+  )} ${sanitizeSegment(surname)} - Checked ${formatArtifactDateSegment(undefined)}`;
 };
 
 export class ProveStatusStep extends BaseStep {
   id = "prove-status";
-
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const link = page.getByRole("link", { name: /Get a share code/i });
-    const href = page.locator('a[href$="/get-share-code"], a[href="/get-share-code"]');
-    const hasGetShareCode =
-      (await link.count().catch(() => 0)) > 0 || (await href.count().catch(() => 0)) > 0;
-
-    return (
-      hasGetShareCode &&
-      ((await this.hasHeading(page, /Your immigration status/i)) ||
-        (await this.hasHeading(page, /Prove your status/i)) ||
-        (await this.hasLocator(page.locator(".govuk-summary-list__row"))))
-    );
-  }
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger, options } = context;

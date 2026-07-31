@@ -39,22 +39,6 @@ const inferMethod = async (page: import("playwright").Page): Promise<TwoFactorMe
 export class TwoFactorCodeStep extends BaseStep {
   id = "two-factor-code";
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const hasCodeInput = await this.hasLocator(
-      page.locator(
-        'input[name="verificationCode"], input#verificationCode, input[name="code"], input#code'
-      )
-    );
-    if (!hasCodeInput) {
-      return false;
-    }
-
-    return (
-      (await this.hasHeading(page, /Check your (phone|email)/i)) ||
-      (await this.hasText(page, /Security code/i))
-    );
-  }
-
   async execute(context: StepContext): Promise<void> {
     const { page, logger, options } = context;
     const method = await inferMethod(page);

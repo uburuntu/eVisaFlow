@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { chromium } from "playwright";
-import { DocumentTypeStep, EntryPageStep } from "../dist/unstable/testing.js";
+import { classifyPage, createPageSnapshot } from "../dist/unstable/testing.js";
+import { sanitizeUrl } from "./sanitize-url.js";
 
 const START_URL =
   "https://www.gov.uk/evisa/view-evisa-get-share-code-prove-immigration-status";
@@ -15,14 +16,17 @@ const firstHeading = async (page) =>
       .catch(() => "")
   ).trim();
 
-const assertDetected = async (page, step, label) => {
-  if (await step.detect(page)) {
-    process.stdout.write(`${label}: detected ${step.id} at ${page.url()}\n`);
+const assertClassified = async (page, expectedKind, label) => {
+  const classification = classifyPage(await createPageSnapshot(page));
+  if (classification.kind === expectedKind) {
+    process.stdout.write(
+      `${label}: classified ${expectedKind} at ${sanitizeUrl(page.url())}\n`
+    );
     return;
   }
 
   throw new Error(
-    `${label}: ${step.id} was not detected at ${page.url()} (heading: ${await firstHeading(page)})`
+    `${label}: expected ${expectedKind}, got ${classification.kind} at ${sanitizeUrl(page.url())} (heading: ${await firstHeading(page)}, evidence: ${classification.evidence.join(", ")})`
   );
 };
 
@@ -34,10 +38,10 @@ const run = async () => {
 
   try {
     await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await assertDetected(page, new EntryPageStep(), "GOV.UK entry page");
+    await assertClassified(page, "entry_page", "GOV.UK entry page");
 
     await page.goto(STATUS_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await assertDetected(page, new DocumentTypeStep(), "Home Office auth entry");
+    await assertClassified(page, "document_type", "Home Office auth entry");
   } finally {
     await browser.close();
   }

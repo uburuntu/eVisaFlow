@@ -2,6 +2,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { sanitizeUrl } from "./sanitize-url.js";
 
 const START_URL =
   "https://www.gov.uk/evisa/view-evisa-get-share-code-prove-immigration-status";
@@ -34,7 +35,7 @@ const capture = async (page, label, url) => {
   await page.screenshot({ path: screenshotPath, fullPage: true });
 
   process.stdout.write(
-    `${label}: ${page.url()}${heading ? ` - ${heading.trim()}` : ""}\n`
+    `${label}: ${sanitizeUrl(page.url())}${heading ? ` - ${heading.trim()}` : ""}\n`
   );
 };
 

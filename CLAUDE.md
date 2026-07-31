@@ -65,7 +65,7 @@ Tests verify step detection against sanitized HTML fixtures. Each fixture in `te
 - `Applicant`: identity document plus date of birth for `EVisaClient.createShareCode`
 - `Purpose`: `"right_to_work" | "right_to_rent" | "immigration_status_other"`
 - `TwoFactorMethod`: `"sms" | "email"`
-- PDF filename default: `eVisa_Share_Code_{Surname}_{Name}_{YYYY-MM-DD}.pdf`
+- PDF filename default: `eVisa Share Code - {Name} {Surname} - Expires {YYYY-MM-DD}.pdf`
 
 ## CI/CD
 

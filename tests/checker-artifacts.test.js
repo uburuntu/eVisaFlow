@@ -334,14 +334,20 @@ describe("share-code checker flow", () => {
     assert.deepEqual(result.summary?.can, ["travel in and out of the country"]);
     assert.deepEqual(result.summary?.cannot, ["They cannot access public funds."]);
     assert.equal(result.html?.kind, "bytes");
-    assert.equal(result.html?.filename, "eVisa_Status_Lovelace_Ada_2026-05-19.html");
+    assert.equal(
+      result.html?.filename,
+      "eVisa Status - Ada Lovelace - Checked 2026-05-19.html"
+    );
     assert.equal(result.html?.standalone, true);
     assert.match(
       Buffer.from(result.html.bytes).toString("utf-8"),
       /data:image\/png;base64,/
     );
     assert.equal(result.pdf?.kind, "bytes");
-    assert.equal(result.pdf?.filename, "eVisa_Status_Lovelace_Ada_2026-05-19.pdf");
+    assert.equal(
+      result.pdf?.filename,
+      "eVisa Status - Ada Lovelace - Checked 2026-05-19.pdf"
+    );
     assert.equal(Buffer.from(result.pdf.bytes).subarray(0, 5).toString(), "%PDF-");
   });
 

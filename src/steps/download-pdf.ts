@@ -55,10 +55,12 @@ export class DownloadPdfStep extends BaseStep {
       logger.warn("Name not available; it was not extracted from summary page");
     }
     const { givenName, surname } = splitName(rawName);
-    const expirySegment = formatArtifactDateSegment(validUntil);
-    const defaultFilename = `${EVISA_SHARE_CODE_ARTIFACT_PREFIX}_${sanitizeSegment(
-      surname
-    )}_${sanitizeSegment(givenName)}_${expirySegment}.pdf`;
+    const dateSegment = validUntil
+      ? `Expires ${formatArtifactDateSegment(validUntil)}`
+      : `Created ${formatArtifactDateSegment(undefined)}`;
+    const defaultFilename = `${EVISA_SHARE_CODE_ARTIFACT_PREFIX} - ${sanitizeSegment(
+      givenName
+    )} ${sanitizeSegment(surname)} - ${dateSegment}.pdf`;
 
     const summary = {
       name: context.extractedData.name,

@@ -324,7 +324,7 @@ describe("ProveStatusStep execute", () => {
     assert.equal(extractedData.checkerHtml?.kind, "bytes");
     assert.match(
       extractedData.checkerHtml.filename,
-      /^eVisa_Status_Sample_Alex_\d{4}-\d{2}-\d{2}\.html$/
+      /^eVisa Status - Alex Sample - Checked \d{4}-\d{2}-\d{2}\.html$/
     );
     assert.equal(extractedData.checkerHtml.filename.includes("UNKNOWN"), false);
     await page.close();
@@ -502,7 +502,7 @@ describe("DownloadPdfStep", () => {
     assert.equal(result.shareCode, "SGN CH2 7PL");
     assert.equal(result.validUntil.toISOString().slice(0, 10), "2030-01-01");
     assert.equal(
-      result.pdfPath.endsWith("eVisa_Share_Code_Sample_Alex_2030-01-01.pdf"),
+      result.pdfPath.endsWith("eVisa Share Code - Alex Sample - Expires 2030-01-01.pdf"),
       true
     );
     assert.equal(await readFile(result.pdfPath, "utf-8"), "%PDF-1.4\n% test pdf\n");
@@ -551,7 +551,10 @@ describe("DownloadPdfStep", () => {
 
     assert.equal(result.shareCode, "SGN CH2 7PL");
     assert.equal(result.pdfPath, undefined);
-    assert.equal(result.pdfFilename, "eVisa_Share_Code_Sample_Alex_2030-01-01.pdf");
+    assert.equal(
+      result.pdfFilename,
+      "eVisa Share Code - Alex Sample - Expires 2030-01-01.pdf"
+    );
     assert.equal(
       result.pdfBytes.byteLength,
       Buffer.byteLength("%PDF-1.4\n% bytes pdf\n")

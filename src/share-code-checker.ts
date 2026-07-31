@@ -288,14 +288,13 @@ const defaultArtifactBasename = (
   shareCode: string
 ): string => {
   const { givenName, surname } = splitName(summary?.name);
-  const artifactDate =
-    parseGovUkDate(summary?.validUntil) ?? parseGovUkDate(summary?.checkDate);
+  const artifactDate = parseGovUkDate(summary?.checkDate);
   const dateSegment = formatArtifactDateSegment(artifactDate);
   const identitySegment =
     givenName === "UNKNOWN" && surname === "UNKNOWN"
       ? normalizeShareCode(shareCode)
-      : `${sanitizeSegment(surname)}_${sanitizeSegment(givenName)}`;
-  return `${EVISA_STATUS_ARTIFACT_PREFIX}_${identitySegment}_${dateSegment}`;
+      : `${sanitizeSegment(givenName)} ${sanitizeSegment(surname)}`;
+  return `${EVISA_STATUS_ARTIFACT_PREFIX} - ${identitySegment} - Checked ${dateSegment}`;
 };
 
 const addArtifact = (

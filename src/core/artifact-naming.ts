@@ -15,9 +15,8 @@ const MONTHS = new Map(
   ].map((month, index) => [month, index])
 );
 
-export const EVISA_ARTIFACT_PREFIX = "eVisa";
-export const EVISA_SHARE_CODE_ARTIFACT_PREFIX = `${EVISA_ARTIFACT_PREFIX}_Share_Code`;
-export const EVISA_STATUS_ARTIFACT_PREFIX = `${EVISA_ARTIFACT_PREFIX}_Status`;
+export const EVISA_SHARE_CODE_ARTIFACT_PREFIX = "eVisa Share Code";
+export const EVISA_STATUS_ARTIFACT_PREFIX = "eVisa Status";
 
 export const sanitizeSegment = (value: string | undefined): string => {
   const input = (value ?? "").trim();

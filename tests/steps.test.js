@@ -5,33 +5,31 @@ import { join } from "node:path";
 import test, { after, before, describe } from "node:test";
 import { chromium } from "playwright";
 import {
-  ConfirmationStep,
   classifyPage,
   createPageSnapshot,
-  DateOfBirthStep,
   DocumentNumberStep,
   DocumentTypeStep,
   DownloadPdfStep,
-  EntryPageStep,
   ProveStatusStep,
-  PurposeSelectionStep,
   SummaryStep,
-  TwoFactorCodeStep,
-  TwoFactorMethodStep,
+  sanitizeSegment,
 } from "../dist/unstable/testing.js";
 
-const fixtures = [
-  { Step: EntryPageStep, file: "step-entry-page.html" },
-  { Step: DocumentTypeStep, file: "step-document-type.html" },
-  { Step: DocumentNumberStep, file: "step-document-number.html" },
-  { Step: DateOfBirthStep, file: "step-date-of-birth.html" },
-  { Step: TwoFactorMethodStep, file: "step-two-factor-method.html" },
-  { Step: TwoFactorCodeStep, file: "step-two-factor-code.html" },
-  { Step: ProveStatusStep, file: "step-prove-status.html" },
-  { Step: ConfirmationStep, file: "step-confirmation.html" },
-  { Step: PurposeSelectionStep, file: "step-purpose-selection.html" },
-  { Step: SummaryStep, file: "step-summary.html" },
-  { Step: DownloadPdfStep, file: "step-download-pdf.html" },
+const pageFixtures = [
+  { file: "step-entry-page.html", kind: "entry_page" },
+  { file: "step-document-type.html", kind: "document_type" },
+  { file: "step-document-number.html", kind: "document_number" },
+  { file: "step-document-number-national-id.html", kind: "document_number" },
+  { file: "step-document-number-brc.html", kind: "document_number" },
+  { file: "step-document-number-ukvi.html", kind: "document_number" },
+  { file: "step-date-of-birth.html", kind: "date_of_birth" },
+  { file: "step-two-factor-method.html", kind: "two_factor_method" },
+  { file: "step-two-factor-code.html", kind: "two_factor_code" },
+  { file: "step-prove-status.html", kind: "prove_status" },
+  { file: "step-confirmation.html", kind: "confirmation" },
+  { file: "step-purpose-selection.html", kind: "purpose_selection" },
+  { file: "step-summary.html", kind: "summary" },
+  { file: "step-download-pdf.html", kind: "download_pdf" },
 ];
 
 let browser;
@@ -52,7 +50,6 @@ const baseContext = {
   options: {
     headless: true,
     verbose: false,
-    screenshotOnError: false,
     pdfEnabled: true,
     pdfOutput: "file",
     outputDir: "/tmp/test",
@@ -82,94 +79,15 @@ after(async () => {
   await browser?.close();
 });
 
-// ──────────────────────────────────────────────
-// 1. Original detection tests
-// ──────────────────────────────────────────────
+test("filename segments remain usable for non-ASCII names", () => {
+  assert.equal(sanitizeSegment("Elodie"), "Elodie");
+  assert.equal(sanitizeSegment("Élodie"), "Elodie");
+  assert.equal(sanitizeSegment("李"), "UNKNOWN");
+});
 
-describe("step detection", () => {
-  test("each step detects its own fixture", async () => {
-    for (const { Step, file } of fixtures) {
-      const page = await context.newPage();
-      const html = await readFile(`./tests/fixtures/${file}`, "utf-8");
-      await page.setContent(html);
-      const step = new Step();
-      const detected = await step.detect(page);
-      await page.close();
-      assert.equal(detected, true, `${step.id} should be detected on ${file}`);
-    }
-  });
-
-  test("steps do not false-positive on other fixtures", async () => {
-    // Test a subset: DocumentNumberStep should NOT detect the date-of-birth page
-    const page = await context.newPage();
-    const html = await readFile(`./tests/fixtures/step-date-of-birth.html`, "utf-8");
-    await page.setContent(html);
-    const step = new DocumentNumberStep();
-    const detected = await step.detect(page);
-    await page.close();
-    assert.equal(detected, false, "document-number should not detect date-of-birth page");
-  });
-
-  test("EntryPageStep does not detect document-type page", async () => {
-    const page = await context.newPage();
-    const html = await readFile(`./tests/fixtures/step-document-type.html`, "utf-8");
-    await page.setContent(html);
-    const step = new EntryPageStep();
-    const detected = await step.detect(page);
-    await page.close();
-    assert.equal(detected, false, "entry-page should not detect document-type page");
-  });
-
-  test("detects core auth pages from stable form signatures", async () => {
-    const cases = [
-      {
-        Step: DocumentTypeStep,
-        html: '<form><input type="radio" name="documentType" value="PASSPORT"></form>',
-      },
-      {
-        Step: DocumentNumberStep,
-        html: '<form><label for="documentNumber">Travel document</label><input id="documentNumber" name="documentNumber"></form>',
-      },
-      {
-        Step: DateOfBirthStep,
-        html: '<form><input name="dob-day"><input name="dob-month"><input name="dob-year"></form>',
-      },
-      {
-        Step: TwoFactorMethodStep,
-        html: '<form><input type="radio" name="deliveryMethod" value="SMS"></form>',
-      },
-      {
-        Step: TwoFactorCodeStep,
-        html: '<h1>Security check</h1><form><label for="verificationCode">Security code</label><input id="verificationCode" name="verificationCode"></form>',
-      },
-    ];
-
-    for (const { Step, html } of cases) {
-      const page = await context.newPage();
-      await page.setContent(html);
-      const step = new Step();
-      const detected = await step.detect(page);
-      await page.close();
-      assert.equal(detected, true, `${step.id} should detect form signature`);
-    }
-  });
-
+describe("page classification", () => {
   test("classifies fixture pages with evidence", async () => {
-    const expectedKinds = [
-      { file: "step-entry-page.html", kind: "entry_page" },
-      { file: "step-document-type.html", kind: "document_type" },
-      { file: "step-document-number.html", kind: "document_number" },
-      { file: "step-date-of-birth.html", kind: "date_of_birth" },
-      { file: "step-two-factor-method.html", kind: "two_factor_method" },
-      { file: "step-two-factor-code.html", kind: "two_factor_code" },
-      { file: "step-prove-status.html", kind: "prove_status" },
-      { file: "step-confirmation.html", kind: "confirmation" },
-      { file: "step-purpose-selection.html", kind: "purpose_selection" },
-      { file: "step-summary.html", kind: "summary" },
-      { file: "step-download-pdf.html", kind: "download_pdf" },
-    ];
-
-    for (const { file, kind } of expectedKinds) {
+    for (const { file, kind } of pageFixtures) {
       const page = await context.newPage();
       const html = await readFile(`./tests/fixtures/${file}`, "utf-8");
       await page.setContent(html);
@@ -181,6 +99,39 @@ describe("step detection", () => {
         true,
         `${file} should have evidence`
       );
+    }
+  });
+
+  test("classifies core auth pages from stable form signatures", async () => {
+    const cases = [
+      {
+        kind: "document_type",
+        html: '<form><input type="radio" name="documentType" value="PASSPORT"></form>',
+      },
+      {
+        kind: "document_number",
+        html: '<form><label for="documentNumber">Travel document</label><input id="documentNumber" name="documentNumber"></form>',
+      },
+      {
+        kind: "date_of_birth",
+        html: '<form><input name="dob-day"><input name="dob-month"><input name="dob-year"></form>',
+      },
+      {
+        kind: "two_factor_method",
+        html: '<form><input type="radio" name="deliveryMethod" value="SMS"></form>',
+      },
+      {
+        kind: "two_factor_code",
+        html: '<h1>Security check</h1><form><label for="verificationCode">Security code</label><input id="verificationCode" name="verificationCode"></form>',
+      },
+    ];
+
+    for (const { kind, html } of cases) {
+      const page = await context.newPage();
+      await page.setContent(html);
+      const classification = classifyPage(await createPageSnapshot(page));
+      await page.close();
+      assert.equal(classification.kind, kind);
     }
   });
 
@@ -230,30 +181,6 @@ describe("step detection", () => {
       true
     );
   });
-});
-
-// ──────────────────────────────────────────────
-// 2. Non-passport document number detection
-// ──────────────────────────────────────────────
-
-describe("non-passport document number detection", () => {
-  const nonPassportFixtures = [
-    { file: "step-document-number-national-id.html", label: "nationalId" },
-    { file: "step-document-number-brc.html", label: "brc" },
-    { file: "step-document-number-ukvi.html", label: "ukvi" },
-  ];
-
-  for (const { file, label } of nonPassportFixtures) {
-    test(`DocumentNumberStep detects ${label} fixture`, async () => {
-      const page = await context.newPage();
-      const html = await readFile(`./tests/fixtures/${file}`, "utf-8");
-      await page.setContent(html);
-      const step = new DocumentNumberStep();
-      const detected = await step.detect(page);
-      await page.close();
-      assert.equal(detected, true, `document-number should detect ${label} page`);
-    });
-  }
 });
 
 describe("ProveStatusStep execute", () => {
@@ -320,27 +247,23 @@ describe("ProveStatusStep execute", () => {
   });
 });
 
-// ──────────────────────────────────────────────
-// 3. Document type execute — all 4 auth methods
-// ──────────────────────────────────────────────
-
 describe("DocumentTypeStep execute", () => {
   const authTypes = [
-    { type: "passport", passportNumber: "123456789", expectedLabel: "Passport" },
+    { type: "passport", passportNumber: "123456789", expectedValue: "PASSPORT" },
     {
       type: "nationalId",
       idNumber: "L01X00T47",
-      expectedLabel: "National identity card",
+      expectedValue: "ID_CARD",
     },
     {
       type: "brc",
       cardNumber: "RFN123456",
-      expectedLabel: "Biometric residence card or permit",
+      expectedValue: "BRC_CARD",
     },
     {
       type: "ukvi",
       customerNumber: "1234-5678-9012-3456",
-      expectedLabel: "I use a UKVI customer number",
+      expectedValue: "CUSTOMER_REFERENCE",
     },
   ];
 
@@ -349,10 +272,8 @@ describe("DocumentTypeStep execute", () => {
       const page = await context.newPage();
       const html = await readFile(`./tests/fixtures/step-document-type.html`, "utf-8");
       await page.setContent(html);
-
-      // Intercept form submission so it doesn't navigate
-      await page.route("**/*", (route) => {
-        route.fulfill({ status: 200, body: "<html><body>submitted</body></html>" });
+      await page.locator("form").evaluate((form) => {
+        form.addEventListener("submit", (event) => event.preventDefault());
       });
 
       const step = new DocumentTypeStep();
@@ -366,47 +287,48 @@ describe("DocumentTypeStep execute", () => {
       };
 
       await step.execute(ctx);
-
-      // Verify the correct radio was checked before form submitted
-      // (page has already navigated to the mock, so we check indirectly by reaching here without error)
+      assert.equal(
+        await page
+          .locator(`input[name="documentType"][value="${authData.expectedValue}"]`)
+          .isChecked(),
+        true
+      );
       await page.close();
     });
   }
 });
-
-// ──────────────────────────────────────────────
-// 4. Document number execute — all 4 auth methods
-// ──────────────────────────────────────────────
 
 describe("DocumentNumberStep execute", () => {
   const cases = [
     {
       fixture: "step-document-number.html",
       auth: { type: "passport", passportNumber: "123456789" },
+      expectedValue: "123456789",
     },
     {
       fixture: "step-document-number-national-id.html",
       auth: { type: "nationalId", idNumber: "L01X00T47" },
+      expectedValue: "L01X00T47",
     },
     {
       fixture: "step-document-number-brc.html",
       auth: { type: "brc", cardNumber: "RFN123456" },
+      expectedValue: "RFN123456",
     },
     {
       fixture: "step-document-number-ukvi.html",
       auth: { type: "ukvi", customerNumber: "1234-5678-9012-3456" },
+      expectedValue: "1234-5678-9012-3456",
     },
   ];
 
-  for (const { fixture, auth } of cases) {
+  for (const { fixture, auth, expectedValue } of cases) {
     test(`fills ${auth.type} document number and submits`, async () => {
       const page = await context.newPage();
       const html = await readFile(`./tests/fixtures/${fixture}`, "utf-8");
       await page.setContent(html);
-
-      // Intercept form submission
-      await page.route("**/*", (route) => {
-        route.fulfill({ status: 200, body: "<html><body>submitted</body></html>" });
+      await page.locator("form").evaluate((form) => {
+        form.addEventListener("submit", (event) => event.preventDefault());
       });
 
       const step = new DocumentNumberStep();
@@ -420,14 +342,14 @@ describe("DocumentNumberStep execute", () => {
       };
 
       await step.execute(ctx);
+      assert.equal(
+        await page.locator('input[name="documentNumber"]').inputValue(),
+        expectedValue
+      );
       await page.close();
     });
   }
 });
-
-// ──────────────────────────────────────────────
-// 5. Summary execute
-// ──────────────────────────────────────────────
 
 describe("SummaryStep execute", () => {
   test("clicks a create-share-code submit button", async () => {
@@ -455,31 +377,7 @@ describe("SummaryStep execute", () => {
   });
 });
 
-// ──────────────────────────────────────────────
-// 6. Share code extraction (download-pdf detection)
-// ──────────────────────────────────────────────
-
 describe("DownloadPdfStep", () => {
-  test("detects the download-pdf page", async () => {
-    const page = await context.newPage();
-    const html = await readFile(`./tests/fixtures/step-download-pdf.html`, "utf-8");
-    await page.setContent(html);
-    const step = new DownloadPdfStep();
-    const detected = await step.detect(page);
-    await page.close();
-    assert.equal(detected, true, "download-pdf should detect its page");
-  });
-
-  test("does not detect the summary page", async () => {
-    const page = await context.newPage();
-    const html = await readFile(`./tests/fixtures/step-summary.html`, "utf-8");
-    await page.setContent(html);
-    const step = new DownloadPdfStep();
-    const detected = await step.detect(page);
-    await page.close();
-    assert.equal(detected, false, "download-pdf should not detect summary page");
-  });
-
   test("extracts share code, valid-until date, and saves PDF", async () => {
     const page = await context.newPage();
     const rawHtml = await readFile(`./tests/fixtures/step-download-pdf.html`, "utf-8");

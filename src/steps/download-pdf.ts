@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { parseGovUkDate, sanitizeSegment, splitName } from "../core/artifact-naming.js";
 import {
   ensureParentDirectory,
   readDownloadBytes,
@@ -13,87 +14,6 @@ const shareCodeRegex = /\b([A-Z0-9]{3}\s+[A-Z0-9]{3}\s+[A-Z0-9]{3})\b/i;
 const validUntilRegex =
   /valid until\s+(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})/i;
 
-const MONTHS = new Map(
-  [
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-  ].map((month, index) => [month, index])
-);
-
-export const sanitizeSegment = (value: string | undefined): string => {
-  const input = (value ?? "").trim();
-  if (!input) return "UNKNOWN";
-  return input
-    .normalize("NFKD")
-    .replace(/[^\p{ASCII}]/gu, "")
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_");
-};
-
-export const splitName = (
-  rawName: string | undefined
-): { givenName: string; surname: string } => {
-  const name = (rawName ?? "").trim();
-  if (!name) {
-    return { givenName: "UNKNOWN", surname: "UNKNOWN" };
-  }
-
-  if (name.includes(",")) {
-    const [surname, givenNames] = name.split(",", 2).map((part) => part.trim());
-    return {
-      givenName: givenNames?.split(/\s+/).filter(Boolean)[0] ?? "UNKNOWN",
-      surname: surname || "UNKNOWN",
-    };
-  }
-
-  const parts = name.split(/\s+/).filter(Boolean);
-  const surname = parts.length > 1 ? parts.at(-1) : parts[0];
-  return {
-    givenName: parts[0] ?? "UNKNOWN",
-    surname: surname ?? "UNKNOWN",
-  };
-};
-
-export const parseGovUkDate = (value: string | undefined): Date | undefined => {
-  const match = value
-    ?.trim()
-    .match(
-      /^(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})$/i
-    );
-  if (!match) {
-    return undefined;
-  }
-
-  const day = Number(match[1]);
-  const monthName = match[2]?.toLowerCase();
-  const month = monthName ? MONTHS.get(monthName) : undefined;
-  const year = Number(match[3]);
-  if (month === undefined || !Number.isInteger(day) || !Number.isInteger(year)) {
-    return undefined;
-  }
-
-  const date = new Date(Date.UTC(year, month, day));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month ||
-    date.getUTCDate() !== day
-  ) {
-    return undefined;
-  }
-  return date;
-};
-
 const formatDate = (date: Date | undefined): string => {
   if (!date || Number.isNaN(date.getTime())) return "UNKNOWN";
   return date.toISOString().slice(0, 10);
@@ -101,22 +21,6 @@ const formatDate = (date: Date | undefined): string => {
 
 export class DownloadPdfStep extends BaseStep {
   id = "download-pdf";
-
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const hasDownloadLink =
-      (await page.getByRole("link", { name: /Download PDF/i }).count()) > 0 ||
-      (await page.locator('a[href$="/pdf"]').count()) > 0;
-
-    if (!hasDownloadLink) {
-      return false;
-    }
-
-    return (
-      (await this.hasHeading(page, /Details you need to share/i)) ||
-      (await this.hasVisible(page.locator(".gov-uk-share-code"))) ||
-      (await this.hasText(page, /Share code/i))
-    );
-  }
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger, options } = context;

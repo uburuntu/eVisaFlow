@@ -1,11 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { parseGovUkDate, sanitizeSegment, splitName } from "../core/artifact-naming.js";
 import { ensureParentDirectory, resolveOutputPath } from "../core/artifacts.js";
 import type { StepContext } from "../core/internal-types.js";
 import { captureStandaloneHtml } from "../core/standalone-html.js";
 import type { ArtifactRef, EVisaPhase, HtmlOutputMode } from "../types.js";
 import { BaseStep } from "./base-step.js";
-import { parseGovUkDate, sanitizeSegment, splitName } from "./download-pdf.js";
 
 interface CheckerHtmlArtifact {
   enabled: boolean;
@@ -41,20 +41,6 @@ const statusHtmlBasename = (summary: Record<string, string>): string => {
 
 export class ProveStatusStep extends BaseStep {
   id = "prove-status";
-
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const link = page.getByRole("link", { name: /Get a share code/i });
-    const href = page.locator('a[href$="/get-share-code"], a[href="/get-share-code"]');
-    const hasGetShareCode =
-      (await link.count().catch(() => 0)) > 0 || (await href.count().catch(() => 0)) > 0;
-
-    return (
-      hasGetShareCode &&
-      ((await this.hasHeading(page, /Your immigration status/i)) ||
-        (await this.hasHeading(page, /Prove your status/i)) ||
-        (await this.hasLocator(page.locator(".govuk-summary-list__row"))))
-    );
-  }
 
   async execute(context: StepContext): Promise<void> {
     const { page, logger, options } = context;

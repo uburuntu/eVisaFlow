@@ -4,25 +4,6 @@ import { BaseStep } from "./base-step.js";
 export class SummaryStep extends BaseStep {
   id = "summary";
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const hasCreateShareCode =
-      (await page.getByRole("link", { name: /Create (a )?share code/i }).count()) > 0 ||
-      (await page.getByRole("button", { name: /Create (a )?share code/i }).count()) > 0 ||
-      (await page.locator('a[href^="/share/"][href$="/code"]').count()) > 0;
-
-    const looksLikeSummary =
-      (await this.hasHeading(page, /This is what the checker will see/i)) ||
-      (await this.hasHeading(page, /Summary of what they can do in the UK/i)) ||
-      (await page.title()).match(/Preview your information/i) !== null ||
-      (await this.hasLocator(page.locator(".govuk-summary-list__row")));
-
-    if (!looksLikeSummary) {
-      return false;
-    }
-
-    return hasCreateShareCode || /\/share\/[^/?#]+(?:$|[?#])/.test(page.url());
-  }
-
   async execute(context: StepContext): Promise<void> {
     const { page, logger, options } = context;
     await this.dismissStaySignedIn(context);

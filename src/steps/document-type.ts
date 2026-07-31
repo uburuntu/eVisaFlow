@@ -32,20 +32,6 @@ const docTypeLabel = (auth: AuthMethod): string => {
 export class DocumentTypeStep extends BaseStep {
   id = "document-type";
 
-  async detect(page: import("playwright").Page): Promise<boolean> {
-    const hasDocumentTypeRadios = await this.hasLocator(
-      page.locator('input[type="radio"][name="documentType"]')
-    );
-    if (hasDocumentTypeRadios) {
-      return true;
-    }
-
-    return (
-      (await this.hasHeading(page, /identity document/i)) &&
-      (await this.hasText(page, /UKVI account/i))
-    );
-  }
-
   async execute(context: StepContext): Promise<void> {
     const { page, credentials, logger } = context;
     const auth = credentials.auth;

@@ -3,7 +3,6 @@ import type {
   ArtifactRef,
   DiagnosticsMode,
   EVisaEvent,
-  EVisaPhase,
   HtmlResult,
   PdfOutputMode,
   Purpose,
@@ -95,8 +94,6 @@ export interface StepContext {
 
 export interface Step {
   id: string;
-  phase?: EVisaPhase;
-  detect(page: Page): Promise<boolean>;
   execute(context: StepContext): Promise<void>;
 }
 

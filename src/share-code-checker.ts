@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Locator, Page } from "playwright";
+import { parseGovUkDate, sanitizeSegment, splitName } from "./core/artifact-naming.js";
 import {
   ensureParentDirectory,
   readDownloadBytes,
@@ -9,16 +10,18 @@ import {
 } from "./core/artifacts.js";
 import type { Logger } from "./core/internal-types.js";
 import {
+  checkFirst,
+  clickFirstAndWait,
+  fillFirst,
+  findFirst,
+  readSummaryList,
+} from "./core/page-actions.js";
+import {
   createPageSnapshot,
   createSanitizedDiagnosticSnapshot,
 } from "./core/page-snapshot.js";
 import { captureStandaloneHtml } from "./core/standalone-html.js";
-import {
-  AuthenticationError,
-  EVisaError,
-  SelectorNotFoundError,
-} from "./errors/index.js";
-import { parseGovUkDate, sanitizeSegment, splitName } from "./steps/download-pdf.js";
+import { AuthenticationError, EVisaError } from "./errors/index.js";
 import type {
   ArtifactRef,
   DiagnosticsMode,
@@ -158,49 +161,6 @@ const mergedCheckDetails = (
   ...details,
 });
 
-const findFirst = async (
-  candidates: Array<{ name: string; locator: Locator }>,
-  purpose: string,
-  timeout = 5000
-): Promise<Locator> => {
-  const deadline = Date.now() + timeout;
-
-  while (Date.now() <= deadline) {
-    for (const candidate of candidates) {
-      const count = await candidate.locator.count().catch(() => 0);
-      if (count > 0) {
-        return candidate.locator.first();
-      }
-    }
-
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, Math.min(250, remaining)));
-  }
-
-  throw new SelectorNotFoundError(
-    `Could not find ${purpose}. Tried: ${candidates
-      .map((candidate) => candidate.name)
-      .join(", ")}`
-  );
-};
-
-const clickFirstAndWait = async (
-  page: Page,
-  candidates: Array<{ name: string; locator: Locator }>,
-  purpose: string,
-  timeout: number
-): Promise<void> => {
-  const locator = await findFirst(candidates, purpose, timeout);
-  await locator.click({ timeout });
-  await page
-    .locator("body")
-    .waitFor({ state: "attached", timeout: Math.min(timeout, 5_000) })
-    .catch(() => {});
-};
-
 const clickContinue = async (page: Page, timeout: number): Promise<void> => {
   await clickFirstAndWait(
     page,
@@ -227,26 +187,6 @@ const clickContinue = async (page: Page, timeout: number): Promise<void> => {
   );
 };
 
-const fillFirst = async (
-  candidates: Array<{ name: string; locator: Locator }>,
-  value: string,
-  purpose: string,
-  timeout = 5000
-): Promise<void> => {
-  const locator = await findFirst(candidates, purpose, timeout);
-  await locator.waitFor({ state: "visible", timeout });
-  await locator.fill(value);
-};
-
-const checkFirst = async (
-  candidates: Array<{ name: string; locator: Locator }>,
-  purpose: string,
-  timeout = 5000
-): Promise<void> => {
-  const locator = await findFirst(candidates, purpose, timeout);
-  await locator.check({ timeout });
-};
-
 const readText = async (locator: Locator): Promise<string | undefined> => {
   const count = await locator.count().catch(() => 0);
   if (count === 0) {
@@ -258,25 +198,6 @@ const readText = async (locator: Locator): Promise<string | undefined> => {
     .catch(() => "");
   const normalized = text.replace(/\s+/g, " ").trim();
   return normalized || undefined;
-};
-
-const readSummaryList = async (page: Page): Promise<Record<string, string>> => {
-  const rows = await page.locator(".govuk-summary-list__row").evaluateAll(
-    (elements): Array<[string, string]> =>
-      elements
-        .map((element) => {
-          const key = element.querySelector(".govuk-summary-list__key, dt")?.textContent;
-          const value = element.querySelector(
-            ".govuk-summary-list__value, dd"
-          )?.textContent;
-          const normalizedKey = (key ?? "").replace(/\s+/g, " ").trim();
-          const normalizedValue = (value ?? "").replace(/\s+/g, " ").trim();
-          return [normalizedKey, normalizedValue] as [string, string];
-        })
-        .filter(([key, value]) => key.length > 0 && value.length > 0)
-  );
-
-  return Object.fromEntries(rows);
 };
 
 const readBulletsAfterHeading = async (

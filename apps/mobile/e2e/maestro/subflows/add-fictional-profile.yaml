@@ -1,3 +1,5 @@
+appId: com.evisaflow.mobile
+---
 - tapOn:
     id: "family-add-person-empty"
 - assertVisible:

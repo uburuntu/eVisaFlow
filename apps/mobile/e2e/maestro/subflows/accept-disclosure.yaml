@@ -1,3 +1,5 @@
+appId: com.evisaflow.mobile
+---
 - assertVisible:
     id: "onboarding-screen"
 - scrollUntilVisible:

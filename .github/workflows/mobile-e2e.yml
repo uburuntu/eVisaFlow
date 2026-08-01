@@ -108,7 +108,7 @@ jobs:
               --output "${result_directory}/junit.xml" \
               --test-output-dir "${result_directory}/artifacts" \
               --debug-output "${result_directory}/debug" \
-              apps/mobile/e2e/maestro
+              apps/mobile/e2e/maestro/flows
             test_status=$?
             set -e
 
@@ -233,7 +233,7 @@ jobs:
             --output "${result_directory}/junit.xml" \
             --test-output-dir "${result_directory}/artifacts" \
             --debug-output "${result_directory}/debug" \
-            apps/mobile/e2e/maestro
+            apps/mobile/e2e/maestro/flows
           test_status=$?
           set -e
 

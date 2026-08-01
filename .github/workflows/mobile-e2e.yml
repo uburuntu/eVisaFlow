@@ -77,7 +77,11 @@ jobs:
 
       - name: Build release APK
         working-directory: apps/mobile/android
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PreactNativeArchitectures=x86_64
+          --no-daemon
+          --stacktrace
 
       - uses: actions/cache@v5
         with:

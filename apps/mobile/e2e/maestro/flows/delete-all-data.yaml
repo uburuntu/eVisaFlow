@@ -13,6 +13,7 @@ tags:
 - assertVisible:
     id: "settings-screen"
 - assertVisible: "1 person, 0 proofs, 0 files"
+- takeScreenshot: "privacy-settings"
 - tapOn:
     id: "settings-delete-all"
 - assertVisible: "Delete all app data?"

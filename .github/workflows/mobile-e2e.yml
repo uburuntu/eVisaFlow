@@ -293,7 +293,12 @@ jobs:
             | iOS | <img src="${base}/ios/dashboard-before-proof.png" width="220" alt="iOS offline vault"> | <img src="${base}/ios/security-code.png" width="220" alt="iOS security code"> | <img src="${base}/ios/saved-offline-proof.png" width="220" alt="iOS saved proof"> |
             | Android | <img src="${base}/android/dashboard-before-proof.png" width="220" alt="Android offline vault"> | <img src="${base}/android/security-code.png" width="220" alt="Android security code"> | <img src="${base}/android/saved-offline-proof.png" width="220" alt="Android saved proof"> |
 
-            **More evidence:** [iOS purpose](${base}/ios/choose-purpose.png) · [iOS persisted dashboard](${base}/ios/dashboard-with-offline-proof.png) · [iOS journey video](${base}/ios/offline-proof-journey.mp4) · [Android purpose](${base}/android/choose-purpose.png) · [Android persisted dashboard](${base}/android/dashboard-with-offline-proof.png) · [Android journey video](${base}/android/offline-proof-journey.mp4)
+            | Platform | Purpose | Persisted dashboard | Privacy settings |
+            | --- | --- | --- | --- |
+            | iOS | <img src="${base}/ios/choose-purpose.png" width="220" alt="iOS purpose selection"> | <img src="${base}/ios/dashboard-with-offline-proof.png" width="220" alt="iOS persisted dashboard"> | <img src="${base}/ios/privacy-settings.png" width="220" alt="iOS privacy settings"> |
+            | Android | <img src="${base}/android/choose-purpose.png" width="220" alt="Android purpose selection"> | <img src="${base}/android/dashboard-with-offline-proof.png" width="220" alt="Android persisted dashboard"> | <img src="${base}/android/privacy-settings.png" width="220" alt="Android privacy settings"> |
+
+            **Journey videos:** [iOS](${base}/ios/offline-proof-journey.mp4) · [Android](${base}/android/offline-proof-journey.mp4)
 
             [CI run and full diagnostics](${runUrl})`;
             const comments = await github.paginate(github.rest.issues.listComments, {

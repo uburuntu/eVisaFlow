@@ -49,7 +49,8 @@ for screenshot in \
   choose-purpose \
   security-code \
   saved-offline-proof \
-  dashboard-with-offline-proof; do
+  dashboard-with-offline-proof \
+  privacy-settings; do
   cp "$(latest_match "*/takeScreenshot/${screenshot}.png")" \
     "$output_directory/${screenshot}.png"
 done

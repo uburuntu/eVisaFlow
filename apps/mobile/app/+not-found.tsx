@@ -9,7 +9,7 @@ export default function NotFoundScreen() {
   return (
     <View style={[styles.page, { backgroundColor: theme.colors.background }]}>
       <Text style={[styles.title, { color: theme.colors.text }]}>Page not found</Text>
-      <AppButton onPress={() => router.replace("/")} title="Back to family" />
+      <AppButton onPress={() => router.replace("/")} title="Back to documents" />
     </View>
   );
 }

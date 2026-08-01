@@ -1,12 +1,12 @@
 import { router } from "expo-router";
 import {
   AlertTriangle,
-  ChevronRight,
+  ArrowRight,
+  Clock3,
   ExternalLink,
   LockKeyhole,
   Plus,
   ShieldCheck,
-  UserRound,
   UsersRound,
 } from "lucide-react-native";
 import { useState } from "react";
@@ -20,15 +20,23 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
 import { ConfirmationRow } from "@/components/FormControls";
-import { FREE_PROFILE_LIMIT, OFFICIAL_EVISA_URL } from "@/constants/app";
+import { IconButton } from "@/components/IconButton";
+import { ProfileCard } from "@/components/ProfileCard";
+import { SavedDocumentCard } from "@/components/SavedDocumentCard";
+import {
+  FREE_PROFILE_LIMIT,
+  FREE_RESULT_LIMIT,
+  OFFICIAL_EVISA_URL,
+} from "@/constants/app";
 import { useAppTheme } from "@/theme";
-import { documentTypeLabels, maskDocumentNumber } from "@/utils/profile";
 import { useVault } from "@/vault/VaultContext";
 
-export default function FamilyScreen() {
+export default function DocumentsScreen() {
   const vault = useVault();
+  const service = useMobileService();
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
 
@@ -40,7 +48,11 @@ export default function FamilyScreen() {
           { backgroundColor: theme.colors.background, paddingTop: insets.top },
         ]}
       >
-        <LockKeyhole color={theme.colors.primary} size={30} />
+        <View
+          style={[styles.loadingIcon, { backgroundColor: theme.colors.primaryMuted }]}
+        >
+          <LockKeyhole color={theme.colors.primary} size={25} />
+        </View>
         <Text style={[styles.loadingText, { color: theme.colors.textMuted }]}>
           Opening encrypted vault
         </Text>
@@ -57,16 +69,42 @@ export default function FamilyScreen() {
   }
 
   const addPerson = () => {
-    if (vault.profiles.length >= FREE_PROFILE_LIMIT) {
+    const profileLimit = service.me?.profileLimit ?? FREE_PROFILE_LIMIT;
+    if (vault.profiles.length >= profileLimit) {
       Alert.alert(
-        "Family Pro required",
-        "The free plan stores one person. Subscriptions are not connected in this build yet."
+        "eVisaFlow Pro required",
+        "The free plan stores one person. eVisaFlow Pro supports up to six."
       );
       return;
     }
 
     router.push("/profiles/new");
   };
+
+  const openProfile = (profileId: string) => {
+    router.push({ pathname: "/profiles/[id]", params: { id: profileId } });
+  };
+
+  const startRun = (profileId: string) => {
+    router.push({ pathname: "/runs/new", params: { profileId } });
+  };
+
+  const openDocument = (resultId: string) => {
+    router.push({ pathname: "/documents/[id]", params: { id: resultId } });
+  };
+
+  const activeRun = vault.activeRuns[0];
+  const activeProfile = activeRun
+    ? vault.profiles.find((profile) => profile.id === activeRun.profileId)
+    : undefined;
+  const profileLimit = Math.max(
+    vault.profiles.length,
+    service.me?.profileLimit ?? FREE_PROFILE_LIMIT
+  );
+  const remainingResults =
+    service.me?.remainingFreeRuns ??
+    Math.max(0, FREE_RESULT_LIMIT - vault.results.length);
+  const firstProfile = vault.profiles[0];
 
   return (
     <View
@@ -83,53 +121,150 @@ export default function FamilyScreen() {
           },
         ]}
       >
-        <View>
-          <Text style={[styles.brand, { color: theme.colors.text }]}>eVisaFlow</Text>
+        <View style={styles.headerTitle}>
+          <View style={styles.brandRow}>
+            <ShieldCheck color={theme.colors.primary} size={20} strokeWidth={2.2} />
+            <Text style={[styles.brand, { color: theme.colors.text }]}>eVisaFlow</Text>
+          </View>
           <Text style={[styles.sectionTitle, { color: theme.colors.textMuted }]}>
-            Family
+            eVisa documents
           </Text>
         </View>
-        <Pressable
+        <IconButton
           accessibilityLabel="Add person"
-          accessibilityRole="button"
-          hitSlop={8}
+          icon={Plus}
           onPress={addPerson}
-          style={({ pressed }) => [
-            styles.iconButton,
-            { backgroundColor: theme.colors.primary },
-            pressed && { opacity: 0.72 },
-          ]}
           testID="family-add-person-header"
-        >
-          <Plus color={theme.colors.primaryText} size={23} strokeWidth={2.4} />
-        </Pressable>
+          tone="primary"
+        />
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.planRow}>
-          <Text style={[styles.planLabel, { color: theme.colors.textMuted }]}>
-            Free plan
-          </Text>
-          <Text style={[styles.planCount, { color: theme.colors.text }]}>
-            {vault.profiles.length}/{FREE_PROFILE_LIMIT} person
+        <View style={[styles.offlinePanel, { backgroundColor: theme.colors.inverse }]}>
+          <View style={styles.offlinePanelIcon}>
+            <LockKeyhole color={theme.colors.inverseText} size={22} />
+          </View>
+          <View style={styles.offlinePanelCopy}>
+            <Text style={[styles.usageEyebrow, { color: theme.colors.inverseMuted }]}>
+              OFFLINE VAULT
+            </Text>
+            <Text style={[styles.offlineValue, { color: theme.colors.inverseText }]}>
+              {vault.results.length === 0
+                ? "No documents saved"
+                : `${vault.results.length} document${vault.results.length === 1 ? "" : "s"} saved`}
+            </Text>
+            <Text style={[styles.usageCaption, { color: theme.colors.inverseMuted }]}>
+              eVisa PDFs and proofs will stay ready on this device.
+            </Text>
+          </View>
+        </View>
+
+        {activeRun ? (
+          <View
+            style={[styles.currentRun, { backgroundColor: theme.colors.warningMuted }]}
+          >
+            <Clock3 color={theme.colors.warning} size={21} />
+            <View style={styles.currentRunCopy}>
+              <Text style={[styles.currentRunLabel, { color: theme.colors.warning }]}>
+                RUN IN PROGRESS
+              </Text>
+              <Text style={[styles.currentRunTitle, { color: theme.colors.text }]}>
+                {activeProfile?.displayName ?? "Current eVisa proof"}
+              </Text>
+            </View>
+            <IconButton
+              accessibilityLabel="Resume current run"
+              icon={ArrowRight}
+              onPress={() =>
+                router.push({ pathname: "/runs/[id]", params: { id: activeRun.id } })
+              }
+              testID="active-run-resume"
+            />
+          </View>
+        ) : null}
+
+        <View style={styles.activitySection}>
+          <View style={styles.sectionHeadingRow}>
+            <View>
+              <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
+                Saved documents
+              </Text>
+              <Text style={[styles.sectionMeta, { color: theme.colors.textMuted }]}>
+                Ready to open, print, or share offline
+              </Text>
+            </View>
+            <Text style={[styles.sectionCount, { color: theme.colors.textMuted }]}>
+              {vault.results.length}
+            </Text>
+          </View>
+          {vault.results.length === 0 ? (
+            <View style={[styles.emptyActivity, { borderColor: theme.colors.border }]}>
+              <View style={styles.emptyActivityTop}>
+                <Clock3 color={theme.colors.textMuted} size={19} />
+                <View style={styles.emptyActivityText}>
+                  <Text style={[styles.emptyActivityTitle, { color: theme.colors.text }]}>
+                    Nothing saved yet
+                  </Text>
+                  <Text
+                    style={[styles.emptyActivityBody, { color: theme.colors.textMuted }]}
+                  >
+                    Generate a current proof to keep it available offline.
+                  </Text>
+                </View>
+              </View>
+              {firstProfile ? (
+                <AppButton
+                  icon={ShieldCheck}
+                  onPress={() => startRun(firstProfile.id)}
+                  testID="empty-get-proof"
+                  title="Get current proof"
+                />
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.documentList}>
+              {vault.results.map((result, index) => (
+                <SavedDocumentCard
+                  index={index}
+                  key={result.id}
+                  onOpen={() => openDocument(result.id)}
+                  profile={vault.profiles.find(
+                    (profile) => profile.id === result.profileId
+                  )}
+                  result={result}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.sectionHeadingRow}>
+          <View>
+            <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
+              People
+            </Text>
+            <Text style={[styles.sectionMeta, { color: theme.colors.textMuted }]}>
+              Encrypted profiles on this device
+            </Text>
+          </View>
+          <Text style={[styles.sectionCount, { color: theme.colors.textMuted }]}>
+            {vault.profiles.length}
           </Text>
         </View>
 
         {vault.profiles.length === 0 ? (
           <View style={styles.emptyState}>
-            <View
-              style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceMuted }]}
-            >
-              <UsersRound color={theme.colors.primary} size={31} strokeWidth={1.8} />
+            <View style={[styles.emptyIcon, { backgroundColor: theme.colors.infoMuted }]}>
+              <UsersRound color={theme.colors.info} size={29} strokeWidth={1.9} />
             </View>
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
               No one added
             </Text>
             <Text style={[styles.emptyBody, { color: theme.colors.textMuted }]}>
-              Add the first person whose eVisa details you are authorised to manage.
+              Add a person you are authorised to manage.
             </Text>
             <AppButton
               icon={Plus}
@@ -141,68 +276,51 @@ export default function FamilyScreen() {
         ) : (
           <View style={styles.profileList}>
             {vault.profiles.map((profile, index) => (
-              <Pressable
-                accessibilityRole="button"
+              <ProfileCard
+                index={index}
                 key={profile.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/profiles/[id]",
-                    params: { id: profile.id },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.profileCard,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.border,
-                  },
-                  pressed && { opacity: 0.74 },
-                ]}
-                testID={`family-profile-${index}`}
-              >
-                <View
-                  style={[
-                    styles.profileAvatar,
-                    { backgroundColor: theme.colors.surfaceMuted },
-                  ]}
-                >
-                  <UserRound color={theme.colors.primary} size={22} />
-                </View>
-                <View style={styles.profileText}>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.profileName, { color: theme.colors.text }]}
-                  >
-                    {profile.displayName}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.profileMeta, { color: theme.colors.textMuted }]}
-                  >
-                    {documentTypeLabels[profile.applicant.identityDocument.type]} -{" "}
-                    {maskDocumentNumber(profile.applicant.identityDocument.number)}
-                  </Text>
-                </View>
-                <ChevronRight color={theme.colors.textMuted} size={21} />
-              </Pressable>
+                latestResult={vault.results.find(
+                  (result) => result.profileId === profile.id
+                )}
+                onGenerate={() => startRun(profile.id)}
+                onOpen={() => openProfile(profile.id)}
+                profile={profile}
+              />
             ))}
           </View>
         )}
 
-        <View
-          style={[
-            styles.securityNote,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.border,
-            },
-          ]}
-        >
-          <LockKeyhole color={theme.colors.success} size={19} />
-          <Text style={[styles.securityText, { color: theme.colors.textMuted }]}>
-            Profiles are encrypted on this device.
-          </Text>
+        <View style={[styles.securityBand, { backgroundColor: theme.colors.infoMuted }]}>
+          <LockKeyhole color={theme.colors.info} size={20} />
+          <View style={styles.securityCopy}>
+            <Text style={[styles.securityTitle, { color: theme.colors.text }]}>
+              Your offline vault is encrypted
+            </Text>
+            <Text style={[styles.securityText, { color: theme.colors.textMuted }]}>
+              Profiles and saved documents stay on this device.
+            </Text>
+          </View>
         </View>
+
+        <Pressable
+          accessibilityRole="link"
+          onPress={() => void Linking.openURL(OFFICIAL_EVISA_URL)}
+          style={styles.dashboardOfficialLink}
+        >
+          <Text style={[styles.dashboardOfficialText, { color: theme.colors.primary }]}>
+            Official GOV.UK service
+          </Text>
+          <ExternalLink color={theme.colors.primary} size={15} />
+        </Pressable>
+
+        <Text style={[styles.planFooter, { color: theme.colors.textMuted }]}>
+          {service.me?.entitlement === "evisaflow_pro" ? "eVisaFlow Pro" : "Free plan"} ·{" "}
+          {vault.profiles.length}/{profileLimit}{" "}
+          {profileLimit === 1 ? "person" : "people"} ·{" "}
+          {remainingResults === null
+            ? "unlimited results"
+            : `${remainingResults} results remaining`}
+        </Text>
       </ScrollView>
     </View>
   );
@@ -239,11 +357,15 @@ function DisclosureScreen() {
       testID="onboarding-screen"
     >
       <View style={styles.disclosureBrand}>
-        <ShieldCheck color={theme.colors.primary} size={32} strokeWidth={1.9} />
+        <View
+          style={[styles.disclosureMark, { backgroundColor: theme.colors.primaryMuted }]}
+        >
+          <ShieldCheck color={theme.colors.primary} size={28} strokeWidth={2} />
+        </View>
         <View>
           <Text style={[styles.brand, { color: theme.colors.text }]}>eVisaFlow</Text>
           <Text style={[styles.sectionTitle, { color: theme.colors.textMuted }]}>
-            Family share code helper
+            eVisa documents and share codes
           </Text>
         </View>
       </View>
@@ -258,8 +380,7 @@ function DisclosureScreen() {
         </Text>
         <Text style={[styles.disclosureBody, { color: theme.colors.textMuted }]}>
           Profiles stay encrypted on this device. During a live run, the minimum required
-          details will be processed temporarily by eVisaFlow servers and removed after the
-          run.
+          details are processed temporarily by eVisaFlow servers and then removed.
         </Text>
         <Text style={[styles.disclosureBody, { color: theme.colors.textMuted }]}>
           Only manage an account for yourself, as a parent or guardian, or with the
@@ -333,7 +454,9 @@ function VaultErrorScreen() {
         },
       ]}
     >
-      <AlertTriangle color={theme.colors.danger} size={34} />
+      <View style={[styles.errorIcon, { backgroundColor: theme.colors.dangerMuted }]}>
+        <AlertTriangle color={theme.colors.danger} size={29} />
+      </View>
       <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
         Vault unavailable
       </Text>
@@ -352,166 +475,154 @@ function VaultErrorScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: {
-    flex: 1,
-  },
+  page: { flex: 1 },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    gap: 13,
   },
-  loadingText: {
-    fontSize: 14,
-    fontWeight: "600",
+  loadingIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  loadingText: { fontSize: 14, fontWeight: "600" },
   header: {
-    minHeight: 82,
+    minHeight: 96,
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
+    gap: 16,
   },
-  brand: {
-    fontSize: 23,
-    lineHeight: 28,
-    fontWeight: "800",
-  },
-  sectionTitle: {
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: "600",
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  headerTitle: { flex: 1, gap: 3 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brand: { fontSize: 22, lineHeight: 27, fontWeight: "800" },
+  sectionTitle: { fontSize: 13, lineHeight: 18, fontWeight: "600" },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 18,
     paddingBottom: 38,
     gap: 20,
   },
-  planRow: {
+  offlinePanel: {
+    minHeight: 116,
+    borderRadius: 8,
+    padding: 18,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+  offlinePanelIcon: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offlinePanelCopy: { flex: 1, gap: 5 },
+  usageEyebrow: { fontSize: 11, lineHeight: 14, fontWeight: "800" },
+  offlineValue: { fontSize: 19, lineHeight: 25, fontWeight: "800" },
+  usageCaption: { fontSize: 12, lineHeight: 16, fontWeight: "600" },
+  currentRun: {
+    minHeight: 74,
+    borderRadius: 8,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  currentRunCopy: { flex: 1, gap: 2 },
+  currentRunLabel: { fontSize: 10, lineHeight: 13, fontWeight: "800" },
+  currentRunTitle: { fontSize: 14, lineHeight: 19, fontWeight: "700" },
+  sectionHeadingRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-end",
+    gap: 12,
   },
-  planLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  planCount: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
+  sectionHeading: { fontSize: 18, lineHeight: 23, fontWeight: "800" },
+  sectionMeta: { marginTop: 2, fontSize: 12, lineHeight: 17 },
+  sectionCount: { fontSize: 13, lineHeight: 18, fontWeight: "700" },
   emptyState: {
-    minHeight: 330,
+    minHeight: 250,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 11,
   },
   emptyIcon: {
-    width: 58,
-    height: 58,
+    width: 56,
+    height: 56,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 3,
   },
-  emptyTitle: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+  emptyTitle: { fontSize: 20, lineHeight: 26, fontWeight: "800", textAlign: "center" },
   emptyBody: {
     maxWidth: 330,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  profileList: {
-    gap: 10,
+  profileList: { gap: 12 },
+  documentList: { gap: 10 },
+  activitySection: { gap: 12 },
+  emptyActivity: {
+    minHeight: 72,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+    gap: 13,
   },
-  profileCard: {
-    minHeight: 76,
-    borderWidth: 1,
+  emptyActivityTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  emptyActivityText: { flex: 1, gap: 2 },
+  emptyActivityTitle: { fontSize: 14, lineHeight: 19, fontWeight: "700" },
+  emptyActivityBody: { fontSize: 12, lineHeight: 17 },
+  securityBand: {
+    minHeight: 70,
     borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  profileAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  profileText: {
-    flex: 1,
-    gap: 3,
-  },
-  profileName: {
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: "700",
-  },
-  profileMeta: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  securityNote: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderRadius: 7,
-    paddingHorizontal: 14,
+  securityCopy: { flex: 1, gap: 2 },
+  securityTitle: { fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  securityText: { fontSize: 12, lineHeight: 17 },
+  dashboardOfficialLink: {
+    minHeight: 36,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
+    gap: 6,
   },
-  securityText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  dashboardOfficialText: { fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  planFooter: { fontSize: 12, lineHeight: 17, textAlign: "center" },
   disclosure: {
     flexGrow: 1,
     paddingHorizontal: 24,
     justifyContent: "center",
     gap: 28,
   },
-  disclosureBrand: {
-    flexDirection: "row",
+  disclosureBrand: { flexDirection: "row", alignItems: "center", gap: 12 },
+  disclosureMark: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     alignItems: "center",
-    gap: 13,
+    justifyContent: "center",
   },
-  disclosureCopy: {
-    gap: 13,
-  },
-  disclosureTitle: {
-    fontSize: 27,
-    lineHeight: 33,
-    fontWeight: "800",
-  },
-  disclosureBody: {
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  disclosureActions: {
-    gap: 17,
-  },
+  disclosureCopy: { gap: 13 },
+  disclosureTitle: { fontSize: 27, lineHeight: 33, fontWeight: "800" },
+  disclosureBody: { fontSize: 15, lineHeight: 23 },
+  disclosureActions: { gap: 17 },
   officialLink: {
     minHeight: 38,
     flexDirection: "row",
@@ -519,16 +630,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 7,
   },
-  officialLinkText: {
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+  officialLinkText: { fontSize: 14, fontWeight: "700", textAlign: "center" },
   errorPage: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 28,
     gap: 15,
+  },
+  errorIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

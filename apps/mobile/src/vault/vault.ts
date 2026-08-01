@@ -1,9 +1,18 @@
-import { type MobileProfile, MobileProfileSchema } from "@evisa-flow/protocol";
+import {
+  type MobileArtifactDescriptor,
+  MobileArtifactDescriptorSchema,
+  type MobileProfile,
+  MobileProfileSchema,
+  type Purpose,
+  PurposeSchema,
+} from "@evisa-flow/protocol";
 import {
   AESEncryptionKey,
   AESSealedData,
   aesDecryptAsync,
   aesEncryptAsync,
+  CryptoDigestAlgorithm,
+  digest,
 } from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
@@ -13,15 +22,64 @@ const VAULT_KEY_NAME = "evisaflow.vault.key.v1";
 const VAULT_DIRECTORY_NAME = "evisaflow-vault";
 const VAULT_FILE_NAME = "manifest.v1.enc";
 const VAULT_TEMP_FILE_NAME = "manifest.v1.tmp";
+const ARTIFACT_DIRECTORY_NAME = "artifacts";
+
+const SavedArtifactSchema = MobileArtifactDescriptorSchema.extend({
+  encryptedPath: z.string().regex(/^[0-9a-f-]+\/[0-9a-f-]+\.enc$/),
+});
+
+const SavedResultSchema = z.object({
+  id: z.uuid(),
+  runId: z.uuid(),
+  profileId: z.uuid(),
+  purpose: PurposeSchema,
+  shareCode: z.string().trim().min(1).max(32),
+  validUntil: z.iso.datetime().optional(),
+  savedAt: z.iso.datetime(),
+  artifacts: z.array(SavedArtifactSchema),
+});
+
+const ActiveRunSchema = z.object({
+  id: z.uuid(),
+  profileId: z.uuid(),
+  purpose: PurposeSchema,
+  createdAt: z.iso.datetime(),
+});
 
 const VaultDocumentSchema = z.object({
   version: z.literal(1),
   acceptedDisclosureAt: z.iso.datetime().nullable(),
   acceptedTermsVersion: z.string().nullable(),
   profiles: z.array(MobileProfileSchema).max(6),
+  results: z.array(SavedResultSchema).max(100).default([]),
+  activeRuns: z.array(ActiveRunSchema).max(1).default([]),
+  profileSlotTombstones: z.array(z.uuid()).max(100).default([]),
 });
 
 export type VaultDocument = z.infer<typeof VaultDocumentSchema>;
+export type SavedResult = z.infer<typeof SavedResultSchema>;
+export type SavedArtifact = z.infer<typeof SavedArtifactSchema>;
+export type ActiveRun = z.infer<typeof ActiveRunSchema>;
+
+export interface TrackRunInput {
+  id: string;
+  profileId: string;
+  purpose: Purpose;
+  createdAt: string;
+}
+
+export interface SaveResultInput {
+  id: string;
+  runId: string;
+  profileId: string;
+  purpose: SavedResult["purpose"];
+  shareCode: string;
+  validUntil?: string;
+  artifacts: Array<{
+    descriptor: MobileArtifactDescriptor;
+    bytes: Uint8Array;
+  }>;
+}
 
 export class VaultUnavailableError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -43,6 +101,9 @@ export function createEmptyVault(): VaultDocument {
     acceptedDisclosureAt: null,
     acceptedTermsVersion: null,
     profiles: [],
+    results: [],
+    activeRuns: [],
+    profileSlotTombstones: [],
   };
 }
 
@@ -52,6 +113,18 @@ function getVaultDirectory(): Directory {
 
 function getVaultFile(): File {
   return new File(getVaultDirectory(), VAULT_FILE_NAME);
+}
+
+function getArtifactDirectory(): Directory {
+  return new Directory(getVaultDirectory(), ARTIFACT_DIRECTORY_NAME);
+}
+
+function getResultDirectory(resultId: string): Directory {
+  return new Directory(getArtifactDirectory(), resultId);
+}
+
+function getArtifactFile(encryptedPath: string): File {
+  return new File(getArtifactDirectory(), ...encryptedPath.split("/"));
 }
 
 function secureStoreOptions(): SecureStore.SecureStoreOptions {
@@ -148,6 +221,98 @@ export async function resetVault(): Promise<VaultDocument> {
   }
 
   return createEmptyVault();
+}
+
+export async function persistResult(input: SaveResultInput): Promise<SavedResult> {
+  const key = await getOrCreateKey();
+  const resultDirectory = getResultDirectory(input.id);
+  if (resultDirectory.exists) {
+    resultDirectory.delete();
+  }
+  resultDirectory.create({ idempotent: true, intermediates: true });
+
+  try {
+    const artifacts: SavedArtifact[] = [];
+    for (const artifact of input.artifacts) {
+      if (artifact.bytes.byteLength !== artifact.descriptor.byteLength) {
+        throw new VaultCorruptError(
+          "Downloaded artifact size does not match its manifest."
+        );
+      }
+
+      const hashInput = new Uint8Array(new ArrayBuffer(artifact.bytes.byteLength));
+      hashInput.set(artifact.bytes);
+      const actualSha256 = bytesToHex(
+        new Uint8Array(await digest(CryptoDigestAlgorithm.SHA256, hashInput))
+      );
+      if (actualSha256 !== artifact.descriptor.sha256.toLowerCase()) {
+        throw new VaultCorruptError(
+          "Downloaded artifact hash does not match its manifest."
+        );
+      }
+
+      const sealedData = await aesEncryptAsync(artifact.bytes, key);
+      const encryptedBytes = await sealedData.combined();
+      const encryptedPath = `${input.id}/${artifact.descriptor.id}.enc`;
+      const file = getArtifactFile(encryptedPath);
+      file.create({ overwrite: true, intermediates: true });
+      file.write(encryptedBytes);
+      artifacts.push(
+        SavedArtifactSchema.parse({
+          ...artifact.descriptor,
+          encryptedPath,
+        })
+      );
+    }
+
+    return SavedResultSchema.parse({
+      id: input.id,
+      runId: input.runId,
+      profileId: input.profileId,
+      purpose: input.purpose,
+      shareCode: input.shareCode,
+      validUntil: input.validUntil,
+      savedAt: new Date().toISOString(),
+      artifacts,
+    });
+  } catch (error) {
+    if (resultDirectory.exists) {
+      resultDirectory.delete();
+    }
+    throw error;
+  }
+}
+
+export async function readResultArtifact(artifact: SavedArtifact): Promise<Uint8Array> {
+  const key = await loadKey();
+  if (!key) {
+    throw new VaultUnavailableError("The artifact encryption key is unavailable.");
+  }
+  const file = getArtifactFile(artifact.encryptedPath);
+  if (!file.exists) {
+    throw new VaultCorruptError("The encrypted artifact file is missing.");
+  }
+  try {
+    const sealedData = AESSealedData.fromCombined(await file.bytes());
+    return await aesDecryptAsync(sealedData, key);
+  } catch (error) {
+    throw new VaultCorruptError("The encrypted artifact could not be opened.", {
+      cause: error,
+    });
+  }
+}
+
+export function deleteResultArtifacts(resultIds: string[]): void {
+  for (const resultId of resultIds) {
+    const directory = getResultDirectory(resultId);
+    if (directory.exists) {
+      directory.delete();
+    }
+  }
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function validateProfile(profile: MobileProfile): MobileProfile {

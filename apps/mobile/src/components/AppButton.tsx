@@ -15,6 +15,7 @@ interface AppButtonProps {
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
   loading?: boolean;
+  size?: "default" | "compact";
   style?: ViewStyle;
   testID?: string;
 }
@@ -26,6 +27,7 @@ export function AppButton({
   variant = "primary",
   disabled = false,
   loading = false,
+  size = "default",
   style,
   testID,
 }: AppButtonProps) {
@@ -48,6 +50,7 @@ export function AppButton({
       testID={testID}
       style={({ pressed }) => [
         styles.button,
+        size === "compact" && styles.compact,
         variant === "primary" && {
           backgroundColor: pressed ? theme.colors.primaryPressed : theme.colors.primary,
           borderColor: theme.colors.primary,
@@ -88,6 +91,10 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "700",
+  },
+  compact: {
+    minHeight: 40,
+    paddingHorizontal: 14,
   },
   disabled: {
     opacity: 0.46,

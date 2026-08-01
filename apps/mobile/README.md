@@ -7,7 +7,7 @@ API once that service is available.
 ## Current foundation
 
 - first-run unofficial-service and authority disclosure;
-- device-local family dashboard and profile form;
+- device-local offline document vault and people profiles;
 - AES-256-GCM encrypted profile manifest;
 - non-migrating key in iOS Keychain or Android Keystore through SecureStore;
 - atomic vault writes, per-profile deletion, and recovery reset;

@@ -2,6 +2,7 @@ import type {
   AuthorityBasis,
   IdentityDocument,
   MobileProfile,
+  Purpose,
   TwoFactorMethod,
 } from "@evisa-flow/protocol";
 import { randomUUID } from "expo-crypto";
@@ -15,11 +16,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { FREE_PROFILE_LIMIT, TERMS_VERSION } from "@/constants/app";
+import { FREE_PROFILE_LIMIT, PRO_PROFILE_LIMIT, TERMS_VERSION } from "@/constants/app";
 import {
+  type ActiveRun,
   createEmptyVault,
+  deleteResultArtifacts,
   loadVault,
+  persistResult,
   resetVault as resetStoredVault,
+  type SavedResult,
+  type SaveResultInput,
   saveVault,
   type VaultDocument,
   validateProfile,
@@ -34,6 +40,11 @@ export interface CreateProfileInput {
   authorityBasis: AuthorityBasis;
 }
 
+interface AddProfileOptions {
+  id?: string;
+  profileLimit?: number;
+}
+
 export class ProfileLimitError extends Error {
   constructor() {
     super("The free profile limit has been reached.");
@@ -41,14 +52,36 @@ export class ProfileLimitError extends Error {
   }
 }
 
+export class ActiveRunError extends Error {
+  constructor() {
+    super("This person has a run in progress.");
+    this.name = "ActiveRunError";
+  }
+}
+
 interface VaultContextValue {
   status: "loading" | "ready" | "error";
   error: Error | null;
   profiles: MobileProfile[];
+  results: SavedResult[];
+  activeRuns: ActiveRun[];
+  profileSlotTombstones: string[];
   hasAcceptedDisclosure: boolean;
   acceptDisclosure: () => Promise<void>;
-  addProfile: (input: CreateProfileInput) => Promise<MobileProfile>;
+  addProfile: (
+    input: CreateProfileInput,
+    options?: AddProfileOptions
+  ) => Promise<MobileProfile>;
   deleteProfile: (profileId: string) => Promise<void>;
+  clearProfileSlotTombstone: (profileId: string) => Promise<void>;
+  trackRun: (input: {
+    id: string;
+    profileId: string;
+    purpose: Purpose;
+    createdAt: string;
+  }) => Promise<void>;
+  removeRun: (runId: string) => Promise<void>;
+  saveResult: (input: SaveResultInput) => Promise<SavedResult>;
   resetVault: () => Promise<void>;
 }
 
@@ -123,15 +156,19 @@ export function VaultProvider({ children }: PropsWithChildren) {
   }, [mutate]);
 
   const addProfile = useCallback(
-    async (input: CreateProfileInput) =>
+    async (input: CreateProfileInput, options?: AddProfileOptions) =>
       mutate((current) => {
-        if (current.profiles.length >= FREE_PROFILE_LIMIT) {
+        const profileLimit = Math.min(
+          PRO_PROFILE_LIMIT,
+          Math.max(FREE_PROFILE_LIMIT, options?.profileLimit ?? FREE_PROFILE_LIMIT)
+        );
+        if (current.profiles.length >= profileLimit) {
           throw new ProfileLimitError();
         }
 
         const now = new Date().toISOString();
         const profile = validateProfile({
-          id: randomUUID(),
+          id: options?.id ?? randomUUID(),
           displayName: input.displayName.trim(),
           applicant: {
             identityDocument: {
@@ -161,16 +198,103 @@ export function VaultProvider({ children }: PropsWithChildren) {
 
   const deleteProfile = useCallback(
     async (profileId: string) => {
+      const removedResultIds = await mutate((current) => [
+        (() => {
+          if (current.activeRuns.some((run) => run.profileId === profileId)) {
+            throw new ActiveRunError();
+          }
+          return {
+            ...current,
+            profiles: current.profiles.filter((profile) => profile.id !== profileId),
+            results: current.results.filter((result) => result.profileId !== profileId),
+            profileSlotTombstones: Array.from(
+              new Set([...current.profileSlotTombstones, profileId])
+            ),
+          };
+        })(),
+        current.results
+          .filter((result) => result.profileId === profileId)
+          .map((result) => result.id),
+      ]);
+      deleteResultArtifacts(removedResultIds);
+    },
+    [mutate]
+  );
+
+  const clearProfileSlotTombstone = useCallback(
+    async (profileId: string) => {
       await mutate((current) => [
         {
           ...current,
-          profiles: current.profiles.filter((profile) => profile.id !== profileId),
+          profileSlotTombstones: current.profileSlotTombstones.filter(
+            (candidate) => candidate !== profileId
+          ),
         },
         undefined,
       ]);
     },
     [mutate]
   );
+
+  const trackRun = useCallback(
+    async (input: ActiveRun) => {
+      await mutate((current) => [{ ...current, activeRuns: [input] }, undefined]);
+    },
+    [mutate]
+  );
+
+  const removeRun = useCallback(
+    async (runId: string) => {
+      await mutate((current) => [
+        {
+          ...current,
+          activeRuns: current.activeRuns.filter((run) => run.id !== runId),
+        },
+        undefined,
+      ]);
+    },
+    [mutate]
+  );
+
+  const saveResult = useCallback(async (input: SaveResultInput) => {
+    let savedResult: SavedResult | undefined;
+    const operation = writeQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const persistedResult = await persistResult(input);
+        try {
+          const current = documentRef.current;
+          const nextDocument: VaultDocument = {
+            ...current,
+            profiles: current.profiles.map((profile) =>
+              profile.id === input.profileId
+                ? {
+                    ...profile,
+                    lastPurpose: input.purpose,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : profile
+            ),
+            results: [
+              persistedResult,
+              ...current.results.filter((result) => result.id !== persistedResult.id),
+            ],
+            activeRuns: current.activeRuns.filter((run) => run.id !== input.runId),
+          };
+          await saveVault(nextDocument);
+          documentRef.current = nextDocument;
+          setDocument(nextDocument);
+          savedResult = persistedResult;
+        } catch (error) {
+          deleteResultArtifacts([persistedResult.id]);
+          throw error;
+        }
+      });
+
+    writeQueueRef.current = operation.catch(() => undefined);
+    await operation;
+    return savedResult as SavedResult;
+  }, []);
 
   const resetVault = useCallback(async () => {
     const emptyDocument = await resetStoredVault();
@@ -185,15 +309,34 @@ export function VaultProvider({ children }: PropsWithChildren) {
       status,
       error,
       profiles: document.profiles,
+      results: document.results,
+      activeRuns: document.activeRuns,
+      profileSlotTombstones: document.profileSlotTombstones,
       hasAcceptedDisclosure:
         document.acceptedDisclosureAt !== null &&
         document.acceptedTermsVersion === TERMS_VERSION,
       acceptDisclosure,
       addProfile,
       deleteProfile,
+      clearProfileSlotTombstone,
+      trackRun,
+      removeRun,
+      saveResult,
       resetVault,
     }),
-    [acceptDisclosure, addProfile, deleteProfile, document, error, resetVault, status]
+    [
+      acceptDisclosure,
+      addProfile,
+      clearProfileSlotTombstone,
+      deleteProfile,
+      document,
+      error,
+      removeRun,
+      resetVault,
+      saveResult,
+      status,
+      trackRun,
+    ]
   );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   CalendarDays,
   Clock3,
+  FileCheck2,
   KeyRound,
   type LucideIcon,
   ShieldCheck,
@@ -19,7 +20,8 @@ import {
   maskDocumentNumber,
   twoFactorLabels,
 } from "@/utils/profile";
-import { useVault } from "@/vault/VaultContext";
+import { purposeLabels } from "@/utils/run";
+import { ActiveRunError, useVault } from "@/vault/VaultContext";
 
 export default function ProfileDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,13 +29,15 @@ export default function ProfileDetailsScreen() {
   const theme = useAppTheme();
   const [deleting, setDeleting] = useState(false);
   const profile = vault.profiles.find((candidate) => candidate.id === id);
+  const results = vault.results.filter((result) => result.profileId === id);
+  const activeRun = vault.activeRuns.find((run) => run.profileId === id);
 
   if (!profile) {
     return (
       <View style={[styles.missing, { backgroundColor: theme.colors.background }]}>
         <UserRound color={theme.colors.textMuted} size={32} />
         <Text style={[styles.title, { color: theme.colors.text }]}>Person not found</Text>
-        <AppButton onPress={() => router.replace("/")} title="Back to family" />
+        <AppButton onPress={() => router.replace("/")} title="Back to documents" />
       </View>
     );
   }
@@ -52,12 +56,16 @@ export default function ProfileDetailsScreen() {
             void vault
               .deleteProfile(profile.id)
               .then(() => router.replace("/"))
-              .catch(() =>
+              .catch((error: unknown) => {
                 Alert.alert(
-                  "Could not delete",
-                  "The encrypted vault could not be updated."
-                )
-              )
+                  error instanceof ActiveRunError
+                    ? "Run in progress"
+                    : "Could not delete",
+                  error instanceof ActiveRunError
+                    ? "Cancel or finish the current run before deleting this person."
+                    : "The encrypted vault could not be updated."
+                );
+              })
               .finally(() => setDeleting(false));
           },
         },
@@ -114,13 +122,50 @@ export default function ProfileDetailsScreen() {
         <View style={styles.historyHeading}>
           <Clock3 color={theme.colors.textMuted} size={20} />
           <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
-            Share codes
+            Saved proofs
           </Text>
         </View>
-        <Text style={[styles.emptyHistory, { color: theme.colors.textMuted }]}>
-          No saved share codes.
-        </Text>
+        {activeRun ? (
+          <AppButton
+            icon={Clock3}
+            onPress={() =>
+              router.push({ pathname: "/runs/[id]", params: { id: activeRun.id } })
+            }
+            title="Resume current run"
+            variant="secondary"
+          />
+        ) : null}
+        {results.length === 0 ? (
+          <Text style={[styles.emptyHistory, { color: theme.colors.textMuted }]}>
+            No saved proofs yet.
+          </Text>
+        ) : (
+          results.map((result) => (
+            <AppButton
+              icon={FileCheck2}
+              key={result.id}
+              onPress={() =>
+                router.push({
+                  pathname: "/documents/[id]",
+                  params: { id: result.id },
+                })
+              }
+              title={purposeLabels[result.purpose]}
+              variant="secondary"
+            />
+          ))
+        )}
       </View>
+
+      {!activeRun ? (
+        <AppButton
+          icon={KeyRound}
+          onPress={() =>
+            router.push({ pathname: "/runs/new", params: { profileId: profile.id } })
+          }
+          title="Get current proof"
+        />
+      ) : null}
 
       <AppButton
         icon={Trash2}

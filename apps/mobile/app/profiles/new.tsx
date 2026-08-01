@@ -3,6 +3,7 @@ import type {
   IdentityDocument,
   TwoFactorMethod,
 } from "@evisa-flow/protocol";
+import { randomUUID } from "expo-crypto";
 import { router } from "expo-router";
 import { UserPlus } from "lucide-react-native";
 import { useState } from "react";
@@ -15,6 +16,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { MobileServiceUnavailableError, useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
 import { ChoiceGroup, ConfirmationRow, TextField } from "@/components/FormControls";
 import { useAppTheme } from "@/theme";
@@ -30,6 +32,7 @@ interface FormErrors {
 export default function NewProfileScreen() {
   const theme = useAppTheme();
   const vault = useVault();
+  const service = useMobileService();
   const [displayName, setDisplayName] = useState("");
   const [documentType, setDocumentType] = useState<IdentityDocument["type"]>("passport");
   const [documentNumber, setDocumentNumber] = useState("");
@@ -57,21 +60,50 @@ export default function NewProfileScreen() {
     }
 
     setSaving(true);
+    const profileId = randomUUID();
+    let reservedServerSlot = false;
     try {
-      await vault.addProfile({
-        displayName,
-        documentType,
-        documentNumber,
-        dateOfBirth: validation.dateOfBirth,
-        preferredTwoFactorMethod: twoFactorMethod,
-        authorityBasis,
-      });
+      let profileLimit = 1;
+      if (vault.profiles.length >= 1) {
+        const me = await service.connect();
+        profileLimit = me.profileLimit;
+        if (vault.profiles.length >= profileLimit) throw new ProfileLimitError();
+        await service.getClient().putProfileSlot(profileId, { profileId });
+        reservedServerSlot = true;
+      }
+
+      const profile = await vault.addProfile(
+        {
+          displayName,
+          documentType,
+          documentNumber,
+          dateOfBirth: validation.dateOfBirth,
+          preferredTwoFactorMethod: twoFactorMethod,
+          authorityBasis,
+        },
+        { id: profileId, profileLimit }
+      );
+      if (!reservedServerSlot && service.status === "ready") {
+        void service
+          .getClient()
+          .putProfileSlot(profile.id, { profileId: profile.id })
+          .catch(() => {});
+      }
       router.replace("/");
     } catch (error) {
-      if (error instanceof ProfileLimitError) {
+      if (reservedServerSlot) {
+        void service
+          .getClient()
+          .deleteProfileSlot(profileId)
+          .catch(() => {});
+      }
+      if (
+        error instanceof ProfileLimitError ||
+        error instanceof MobileServiceUnavailableError
+      ) {
         Alert.alert(
-          "Family Pro required",
-          "The free plan stores one person. Subscriptions are not connected in this build yet."
+          "eVisaFlow Pro required",
+          "The free plan stores one person. eVisaFlow Pro supports up to six."
         );
       } else {
         Alert.alert("Could not save", "The profile could not be encrypted and saved.");

@@ -35,9 +35,10 @@
         "expo-secure-store",
         {
           "configureAndroidBackup": true,
-          "faceIDPermission": "Allow eVisaFlow to unlock your encrypted family vault."
+          "faceIDPermission": "Allow eVisaFlow to unlock your encrypted document vault."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

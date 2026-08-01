@@ -7,8 +7,8 @@ Status: approved implementation plan for the first Android and iOS release.
 - Build one Expo/React Native codebase for iOS 16.4+ and Android 9+.
 - Keep Playwright on server-side workers. The installed apps never automate GOV.UK
   directly.
-- Target adults worldwide who manage their own or legally authorised family or
-  dependant UKVI accounts.
+- Target adults worldwide who need reliable offline access to their own eVisa proof,
+  plus people who manage other UKVI accounts with legal authority.
 - A prepared user should start their first run within 90 seconds. A repeat run should
   take two taps before the GOV.UK security-code challenge.
 - Results include the share code, GOV.UK eVisa PDF, sanitized checker HTML, and an
@@ -31,12 +31,13 @@ official service.
 
 ## User experience
 
-- Use `eVisaFlow` as the product name and `Family share code helper` as the store
-  subtitle. Do not use crowns, GOV.UK visual styling, Home Office logos, or claims of
-  official status.
-- Open on the family dashboard rather than a marketing screen. Show one concise
-  first-run disclosure covering unofficial status, transient server processing,
-  authority, terms, and privacy.
+- Use `eVisaFlow` as the product name and `eVisa documents and share codes` as the
+  store subtitle. Do not use crowns, GOV.UK visual styling, Home Office logos, or
+  claims of official status.
+- Open on the offline document vault rather than a marketing screen. Put saved eVisa
+  PDFs, printable proofs, and share codes first; show managed people as the supporting
+  organisation layer. Show one concise first-run disclosure covering unofficial
+  status, transient server processing, authority, terms, and privacy.
 - Create profiles with a manual form for display name, document type and number,
   date of birth, preferred two-factor method, and authority basis: self,
   parent/guardian, or authorised proxy.
@@ -60,7 +61,7 @@ official service.
 - Create a silent anonymous app session; there is no visible login.
 - Free users may keep one active profile and claim three complete results over the
   lifetime of the anonymous account.
-- `family_pro` permits six active profiles and removes the product usage cap. Initial
+- `evisaflow_pro` permits six active profiles and removes the product usage cap. Initial
   prices are GBP 3.99 monthly and GBP 24.99 yearly, localized by each store.
 - Use StoreKit and Google Play Billing through RevenueCat. The Supabase anonymous
   user ID is the RevenueCat App User ID.
@@ -153,7 +154,7 @@ and heartbeats; `GET /v1/runs/:id` remains authoritative after reconnect.
    tracked review plan.
 2. Add the durable mobile run schema, queue consumer, challenge broker, artifact
    cleanup, kill switch, and authenticated API.
-3. Build the encrypted mobile vault, dashboard, profile editor, single and family
+3. Build the encrypted mobile vault, dashboard, profile editor, single and multi-person
    runs, OTP recovery, history, viewers, printing, sharing, and reminders.
 4. Add RevenueCat products, entitlement enforcement, subscription restoration,
    privacy deletion, and storage management.
@@ -180,7 +181,7 @@ and heartbeats; `GET /v1/runs/:id` remains authoritative after reconnect.
   OTP expiry, cancellation, partial artifacts, cleanup, webhooks, and the kill switch.
 - Reuse sanitized GOV.UK fixtures for every supported document and purpose branch.
 - Run mobile end-to-end journeys on iOS and Android for first use, repeat generation,
-  family batches, background/resume, failures, paywall, purchase restore, history,
+  multi-person batches, background/resume, failures, paywall, purchase restore, history,
   and review mode.
 - Verify PDFs, HTML, printing, sharing, biometrics, integrity attestation,
   notifications, app-switcher privacy, VoiceOver/TalkBack, large text, and small and

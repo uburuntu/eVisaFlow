@@ -48,6 +48,12 @@ export class DemoMobileApiClient implements MobileApi {
     };
   }
 
+  async deleteAccount(): Promise<void> {
+    this.slots.clear();
+    this.runs.clear();
+    this.artifactsPromise = null;
+  }
+
   async putProfileSlot(slotId: string, request: MobileProfileSlotRequest): Promise<void> {
     if (slotId !== request.profileId) {
       throw apiError(400, "PROFILE_ID_MISMATCH", "Profile identifiers do not match.");

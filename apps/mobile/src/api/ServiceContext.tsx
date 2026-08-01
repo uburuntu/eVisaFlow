@@ -30,6 +30,7 @@ interface ServiceContextValue {
   error: Error | null;
   getClient: () => MobileApi;
   connect: () => Promise<MobileMe>;
+  deleteAccount: () => Promise<void>;
 }
 
 const ServiceContext = createContext<ServiceContextValue | null>(null);
@@ -41,9 +42,7 @@ interface Runtime {
 }
 
 export function ServiceProvider({ children }: PropsWithChildren) {
-  const runtimeRef = useRef<Runtime | null>(null);
-  runtimeRef.current ??= createRuntime();
-  const runtime = runtimeRef.current;
+  const [runtime, setRuntime] = useState<Runtime>(createRuntime);
   const [status, setStatus] = useState<ServiceStatus>("idle");
   const [me, setMe] = useState<MobileMe | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -83,9 +82,29 @@ export function ServiceProvider({ children }: PropsWithChildren) {
     return operation;
   }, [getClient]);
 
+  const deleteAccount = useCallback(async () => {
+    await connectionRef.current?.catch(() => undefined);
+    if (runtime.client) await runtime.client.deleteAccount();
+    await runtime.auth?.signOut();
+    runtime.auth?.dispose();
+    connectionRef.current = null;
+    setMe(null);
+    setError(null);
+    setStatus("idle");
+    setRuntime(createRuntime());
+  }, [runtime]);
+
   const value = useMemo<ServiceContextValue>(
-    () => ({ mode: runtime.mode, status, me, error, getClient, connect }),
-    [connect, error, getClient, me, runtime.mode, status]
+    () => ({
+      mode: runtime.mode,
+      status,
+      me,
+      error,
+      getClient,
+      connect,
+      deleteAccount,
+    }),
+    [connect, deleteAccount, error, getClient, me, runtime.mode, status]
   );
   return <ServiceContext.Provider value={value}>{children}</ServiceContext.Provider>;
 }

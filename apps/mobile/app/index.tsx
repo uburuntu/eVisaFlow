@@ -6,6 +6,7 @@ import {
   ExternalLink,
   LockKeyhole,
   Plus,
+  Settings,
   ShieldCheck,
   UsersRound,
 } from "lucide-react-native";
@@ -101,9 +102,14 @@ export default function DocumentsScreen() {
     vault.profiles.length,
     service.me?.profileLimit ?? FREE_PROFILE_LIMIT
   );
+  const localRemainingResults = Math.max(0, FREE_RESULT_LIMIT - vault.results.length);
   const remainingResults =
-    service.me?.remainingFreeRuns ??
-    Math.max(0, FREE_RESULT_LIMIT - vault.results.length);
+    service.me?.entitlement === "evisaflow_pro"
+      ? null
+      : Math.min(
+          service.me?.remainingFreeRuns ?? FREE_RESULT_LIMIT,
+          localRemainingResults
+        );
   const firstProfile = vault.profiles[0];
 
   return (
@@ -130,13 +136,21 @@ export default function DocumentsScreen() {
             eVisa documents
           </Text>
         </View>
-        <IconButton
-          accessibilityLabel="Add person"
-          icon={Plus}
-          onPress={addPerson}
-          testID="family-add-person-header"
-          tone="primary"
-        />
+        <View style={styles.headerActions}>
+          <IconButton
+            accessibilityLabel="Settings"
+            icon={Settings}
+            onPress={() => router.push("/settings")}
+            testID="dashboard-settings"
+          />
+          <IconButton
+            accessibilityLabel="Add person"
+            icon={Plus}
+            onPress={addPerson}
+            testID="family-add-person-header"
+            tone="primary"
+          />
+        </View>
       </View>
 
       <ScrollView
@@ -501,6 +515,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   headerTitle: { flex: 1, gap: 3 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   brand: { fontSize: 22, lineHeight: 27, fontWeight: "800" },
   sectionTitle: { fontSize: 13, lineHeight: 18, fontWeight: "600" },

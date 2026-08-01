@@ -1,6 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { router, useLocalSearchParams } from "expo-router";
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   Copy,
@@ -16,6 +17,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
 import { IconButton } from "@/components/IconButton";
 import { useAppTheme } from "@/theme";
+import { getExpiryState } from "@/utils/expiry";
 import { purposeLabels } from "@/utils/run";
 import { printSavedArtifact, shareSavedArtifact } from "@/vault/artifact-actions";
 import { useVault } from "@/vault/VaultContext";
@@ -30,10 +32,11 @@ export default function SavedDocumentScreen() {
   const profile = result
     ? vault.profiles.find((candidate) => candidate.id === result.profileId)
     : undefined;
+  const expiryState = getExpiryState(result?.validUntil);
 
   useEffect(() => {
     if (!copied) return;
-    const timeout = setTimeout(() => setCopied(false), 2_000);
+    const timeout = setTimeout(() => setCopied(false), 8_000);
     return () => clearTimeout(timeout);
   }, [copied]);
 
@@ -90,13 +93,48 @@ export default function SavedDocumentScreen() {
     >
       <View style={styles.heading}>
         <View
-          style={[styles.documentIcon, { backgroundColor: theme.colors.successMuted }]}
+          style={[
+            styles.documentIcon,
+            {
+              backgroundColor:
+                expiryState === "expired"
+                  ? theme.colors.dangerMuted
+                  : expiryState === "expiring_soon"
+                    ? theme.colors.warningMuted
+                    : theme.colors.successMuted,
+            },
+          ]}
         >
-          <FileCheck2 color={theme.colors.success} size={29} />
+          <FileCheck2
+            color={
+              expiryState === "expired"
+                ? theme.colors.danger
+                : expiryState === "expiring_soon"
+                  ? theme.colors.warning
+                  : theme.colors.success
+            }
+            size={29}
+          />
         </View>
         <View style={styles.headingCopy}>
-          <Text style={[styles.eyebrow, { color: theme.colors.success }]}>
-            AVAILABLE OFFLINE
+          <Text
+            style={[
+              styles.eyebrow,
+              {
+                color:
+                  expiryState === "expired"
+                    ? theme.colors.danger
+                    : expiryState === "expiring_soon"
+                      ? theme.colors.warning
+                      : theme.colors.success,
+              },
+            ]}
+          >
+            {expiryState === "expired"
+              ? "EXPIRED PROOF"
+              : expiryState === "expiring_soon"
+                ? "EXPIRES SOON"
+                : "AVAILABLE OFFLINE"}
           </Text>
           <Text style={[styles.title, { color: theme.colors.text }]}>
             {profile?.displayName ?? "Saved eVisa"}
@@ -128,10 +166,36 @@ export default function SavedDocumentScreen() {
         <View style={styles.expiryRow}>
           <CalendarDays color={theme.colors.inverseMuted} size={16} />
           <Text style={[styles.expiry, { color: theme.colors.inverseMuted }]}>
-            {copied ? "Copied to clipboard" : `Valid until ${expiry}`}
+            {copied
+              ? "Copied to clipboard"
+              : `${expiryState === "expired" ? "Expired" : "Valid until"} ${expiry}`}
           </Text>
         </View>
       </View>
+
+      {expiryState === "expired" || expiryState === "expiring_soon" ? (
+        <View
+          style={[
+            styles.expiryWarning,
+            {
+              backgroundColor:
+                expiryState === "expired"
+                  ? theme.colors.dangerMuted
+                  : theme.colors.warningMuted,
+            },
+          ]}
+        >
+          <AlertTriangle
+            color={expiryState === "expired" ? theme.colors.danger : theme.colors.warning}
+            size={20}
+          />
+          <Text style={[styles.expiryWarningText, { color: theme.colors.text }]}>
+            {expiryState === "expired"
+              ? "This share code has expired. Generate a newer proof before relying on it."
+              : "This share code expires soon. Generate a newer proof while you have internet access."}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.artifacts}>
         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Files</Text>
@@ -229,6 +293,15 @@ const styles = StyleSheet.create({
   code: { fontSize: 25, lineHeight: 31, fontWeight: "800", letterSpacing: 0 },
   expiryRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   expiry: { fontSize: 12, lineHeight: 17, fontWeight: "600" },
+  expiryWarning: {
+    minHeight: 58,
+    borderRadius: 8,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  expiryWarningText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: "600" },
   artifacts: { gap: 10 },
   sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: "800" },
   artifactRow: {

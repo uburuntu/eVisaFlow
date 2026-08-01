@@ -28,6 +28,14 @@ function sessionFile(): File {
   return new File(sessionDirectory(), SESSION_FILE_NAME);
 }
 
+export async function resetEncryptedSessionStorage(): Promise<void> {
+  await writeQueue.catch(() => undefined);
+  await SecureStore.deleteItemAsync(SESSION_KEY_NAME, secureStoreOptions());
+  const directory = sessionDirectory();
+  if (directory.exists) directory.delete();
+  writeQueue = Promise.resolve();
+}
+
 async function loadKey(): Promise<AESEncryptionKey | null> {
   const encoded = await SecureStore.getItemAsync(SESSION_KEY_NAME, secureStoreOptions());
   return encoded ? AESEncryptionKey.import(encoded, "hex") : null;

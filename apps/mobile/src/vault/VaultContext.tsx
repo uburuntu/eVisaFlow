@@ -297,7 +297,9 @@ export function VaultProvider({ children }: PropsWithChildren) {
   }, []);
 
   const resetVault = useCallback(async () => {
+    await writeQueueRef.current.catch(() => undefined);
     const emptyDocument = await resetStoredVault();
+    writeQueueRef.current = Promise.resolve();
     documentRef.current = emptyDocument;
     setDocument(emptyDocument);
     setError(null);

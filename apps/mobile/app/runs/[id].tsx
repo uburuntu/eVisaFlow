@@ -46,7 +46,8 @@ export default function RunStatusScreen() {
   const vault = useVault();
   const service = useMobileService();
   const [snapshot, setSnapshot] = useState<MobileRunSnapshot | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [actionError, setActionError] = useState<Error | null>(null);
   const [securityCode, setSecurityCode] = useState("");
   const [submittingCode, setSubmittingCode] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
@@ -58,10 +59,10 @@ export default function RunStatusScreen() {
     try {
       const next = await service.getClient().getRun(id);
       setSnapshot(next);
-      setError(null);
+      setLoadError(null);
       return next;
     } catch (loadError) {
-      setError(normalizeError(loadError, "The run status could not be loaded."));
+      setLoadError(normalizeError(loadError, "The run status could not be loaded."));
       return null;
     }
   }, [id, service]);
@@ -86,7 +87,7 @@ export default function RunStatusScreen() {
     if (!id || !snapshot || claimingRef.current) return;
     claimingRef.current = true;
     setSavingResult(true);
-    setError(null);
+    setActionError(null);
     try {
       const client = service.getClient();
       setSaveProgress("Claiming secure result");
@@ -113,7 +114,7 @@ export default function RunStatusScreen() {
       void service.connect().catch(() => {});
       router.replace({ pathname: "/documents/[id]", params: { id: saved.id } });
     } catch (saveError) {
-      setError(normalizeError(saveError, "The result could not be saved offline."));
+      setActionError(normalizeError(saveError, "The result could not be saved offline."));
       claimingRef.current = false;
     } finally {
       setSavingResult(false);
@@ -132,12 +133,12 @@ export default function RunStatusScreen() {
 
   const submitCode = async () => {
     if (!id || !/^\d{4,8}$/.test(securityCode.trim())) {
-      setError(new Error("Enter the 4-8 digit security code."));
+      setActionError(new Error("Enter the 4-8 digit security code."));
       return;
     }
     Keyboard.dismiss();
     setSubmittingCode(true);
-    setError(null);
+    setActionError(null);
     try {
       const next = await service
         .getClient()
@@ -145,7 +146,7 @@ export default function RunStatusScreen() {
       setSecurityCode("");
       setSnapshot(next);
     } catch (submitError) {
-      setError(normalizeError(submitError, "The security code was not accepted."));
+      setActionError(normalizeError(submitError, "The security code was not accepted."));
     } finally {
       setSubmittingCode(false);
     }
@@ -165,14 +166,16 @@ export default function RunStatusScreen() {
             .then(() => vault.removeRun(id))
             .then(() => router.replace("/"))
             .catch((cancelError: unknown) =>
-              setError(normalizeError(cancelError, "The run could not be cancelled."))
+              setActionError(
+                normalizeError(cancelError, "The run could not be cancelled.")
+              )
             );
         },
       },
     ]);
   };
 
-  if (!snapshot && !error) {
+  if (!snapshot && !loadError) {
     return (
       <View style={[styles.centered, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator color={theme.colors.primary} size="large" />
@@ -191,7 +194,7 @@ export default function RunStatusScreen() {
           Run unavailable
         </Text>
         <Text style={[styles.centeredBody, { color: theme.colors.textMuted }]}>
-          {error?.message}
+          {loadError?.message}
         </Text>
         <AppButton onPress={() => void loadRun()} title="Try again" />
         <AppButton
@@ -341,14 +344,17 @@ export default function RunStatusScreen() {
               }
               keyboardType="number-pad"
               maxLength={8}
-              onChangeText={(value) => setSecurityCode(value.replace(/\D/g, ""))}
+              onChangeText={(value) => {
+                setSecurityCode(value.replace(/\D/g, ""));
+                setActionError(null);
+              }}
               placeholder="Security code"
               placeholderTextColor={theme.colors.textMuted}
               style={[
                 styles.codeInput,
                 {
                   backgroundColor: theme.colors.input,
-                  borderColor: error ? theme.colors.danger : theme.colors.border,
+                  borderColor: actionError ? theme.colors.danger : theme.colors.border,
                   color: theme.colors.text,
                 },
               ]}
@@ -368,13 +374,13 @@ export default function RunStatusScreen() {
           </View>
         ) : null}
 
-        {error && snapshot ? (
+        {(actionError || loadError) && snapshot ? (
           <View
             style={[styles.inlineError, { backgroundColor: theme.colors.dangerMuted }]}
           >
             <CircleAlert color={theme.colors.danger} size={18} />
             <Text style={[styles.inlineErrorText, { color: theme.colors.text }]}>
-              {error.message}
+              {(actionError ?? loadError)?.message}
             </Text>
           </View>
         ) : null}
@@ -402,7 +408,7 @@ export default function RunStatusScreen() {
           <AppButton icon={X} onPress={cancel} title="Cancel run" variant="secondary" />
         ) : null}
 
-        {isSuccessful(snapshot.status) && error ? (
+        {isSuccessful(snapshot.status) && actionError ? (
           <AppButton
             icon={Download}
             onPress={() => void saveCompletedResult()}

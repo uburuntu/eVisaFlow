@@ -2,6 +2,7 @@ import type { MobileProfile } from "@evisa-flow/protocol";
 import { ChevronRight, FileCheck2 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "@/theme";
+import { getExpiryState } from "@/utils/expiry";
 import { purposeLabels } from "@/utils/run";
 import type { SavedResult } from "@/vault/vault";
 
@@ -19,6 +20,7 @@ export function SavedDocumentCard({
   onOpen,
 }: SavedDocumentCardProps) {
   const theme = useAppTheme();
+  const expiryState = getExpiryState(result.validUntil);
   const expiry = result.validUntil
     ? new Intl.DateTimeFormat("en-GB", {
         day: "numeric",
@@ -26,6 +28,24 @@ export function SavedDocumentCard({
         year: "numeric",
       }).format(new Date(result.validUntil))
     : "No expiry supplied";
+  const stateColor =
+    expiryState === "expired"
+      ? theme.colors.danger
+      : expiryState === "expiring_soon"
+        ? theme.colors.warning
+        : theme.colors.success;
+  const stateBackground =
+    expiryState === "expired"
+      ? theme.colors.dangerMuted
+      : expiryState === "expiring_soon"
+        ? theme.colors.warningMuted
+        : theme.colors.successMuted;
+  const stateLabel =
+    expiryState === "expired"
+      ? "EXPIRED"
+      : expiryState === "expiring_soon"
+        ? "EXPIRES SOON"
+        : "OFFLINE";
 
   return (
     <Pressable
@@ -39,21 +59,21 @@ export function SavedDocumentCard({
       ]}
       testID={`saved-document-${index}`}
     >
-      <View style={[styles.icon, { backgroundColor: theme.colors.successMuted }]}>
-        <FileCheck2 color={theme.colors.success} size={23} />
+      <View style={[styles.icon, { backgroundColor: stateBackground }]}>
+        <FileCheck2 color={stateColor} size={23} />
       </View>
       <View style={styles.copy}>
         <View style={styles.titleRow}>
           <Text numberOfLines={1} style={[styles.title, { color: theme.colors.text }]}>
             {profile?.displayName ?? "Saved eVisa"}
           </Text>
-          <Text style={[styles.offline, { color: theme.colors.success }]}>OFFLINE</Text>
+          <Text style={[styles.offline, { color: stateColor }]}>{stateLabel}</Text>
         </View>
         <Text style={[styles.purpose, { color: theme.colors.textMuted }]}>
           {purposeLabels[result.purpose]}
         </Text>
         <Text style={[styles.expiry, { color: theme.colors.text }]}>
-          Valid until {expiry}
+          {expiryState === "expired" ? "Expired" : "Valid until"} {expiry}
         </Text>
       </View>
       <ChevronRight color={theme.colors.textMuted} size={20} />

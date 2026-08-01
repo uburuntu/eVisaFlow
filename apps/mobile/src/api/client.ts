@@ -29,6 +29,7 @@ export class MobileApiRequestError extends Error {
 
 export interface MobileApi {
   getMe(): Promise<MobileMe>;
+  deleteAccount(): Promise<void>;
   putProfileSlot(slotId: string, request: MobileProfileSlotRequest): Promise<void>;
   deleteProfileSlot(slotId: string): Promise<void>;
   createRun(request: MobileRunCreateRequest): Promise<MobileRunSnapshot>;
@@ -56,6 +57,10 @@ export class MobileApiClient implements MobileApi {
 
   async getMe(): Promise<MobileMe> {
     return MobileMeSchema.parse(await this.requestJson("/v1/me"));
+  }
+
+  async deleteAccount(): Promise<void> {
+    await this.requestJson("/v1/me", { method: "DELETE" });
   }
 
   async putProfileSlot(slotId: string, request: MobileProfileSlotRequest): Promise<void> {

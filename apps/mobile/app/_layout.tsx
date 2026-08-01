@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { ShieldCheck } from "lucide-react-native";
+import { useEffect, useState } from "react";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ServiceProvider, useMobileService } from "@/api/ServiceContext";
 import { useAppTheme } from "@/theme";
@@ -70,10 +72,57 @@ function Navigation() {
         <Stack.Screen name="documents/[id]" options={{ title: "Saved proof" }} />
         <Stack.Screen name="runs/new" options={{ title: "Get current proof" }} />
         <Stack.Screen name="runs/[id]" options={{ title: "Getting proof" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
       </Stack>
+      <PrivacyShield />
     </>
   );
 }
+
+function PrivacyShield() {
+  const theme = useAppTheme();
+  const [covered, setCovered] = useState(false);
+
+  useEffect(() => {
+    const update = (state: string) => setCovered(state !== "active");
+    update(AppState.currentState);
+    const subscription = AppState.addEventListener("change", update);
+    return () => subscription.remove();
+  }, []);
+
+  if (!covered) return null;
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.privacyShield, { backgroundColor: theme.colors.inverse }]}
+    >
+      <ShieldCheck color={theme.colors.inverseText} size={34} />
+      <Text style={[styles.privacyBrand, { color: theme.colors.inverseText }]}>
+        eVisaFlow
+      </Text>
+      <Text style={[styles.privacyCaption, { color: theme.colors.inverseMuted }]}>
+        Private screen
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  privacyShield: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1000,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  privacyBrand: { fontSize: 23, lineHeight: 29, fontWeight: "800" },
+  privacyCaption: { fontSize: 13, lineHeight: 18, fontWeight: "600" },
+});
 
 export default function RootLayout() {
   return (

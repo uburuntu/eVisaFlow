@@ -2,10 +2,14 @@ import "react-native-url-polyfill/auto";
 
 import { createClient, processLock } from "@supabase/supabase-js";
 import { AppState, Platform } from "react-native";
-import { encryptedSessionStorage } from "./secure-session-storage";
+import {
+  encryptedSessionStorage,
+  resetEncryptedSessionStorage,
+} from "./secure-session-storage";
 
 export interface MobileAuthSession {
   getAccessToken: () => Promise<string>;
+  signOut: () => Promise<void>;
   dispose: () => void;
 }
 
@@ -57,6 +61,15 @@ export function createMobileAuthSession(
 
   return {
     getAccessToken,
+    signOut: async () => {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // The backend may already have removed the anonymous Auth user.
+      } finally {
+        await resetEncryptedSessionStorage();
+      }
+    },
     dispose: () => {
       subscription?.remove();
       supabase.auth.stopAutoRefresh();

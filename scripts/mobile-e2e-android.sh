@@ -119,6 +119,7 @@ build_app() {
   configure_android_tools
   configure_java
   require_command pnpm
+  export EXPO_PUBLIC_EVISAFLOW_DEMO_MODE="${EXPO_PUBLIC_EVISAFLOW_DEMO_MODE:-true}"
 
   pnpm run build:protocol
   pnpm --dir apps/mobile exec expo prebuild --platform android --no-install

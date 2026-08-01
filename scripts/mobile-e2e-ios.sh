@@ -115,6 +115,7 @@ find_app() {
 build_app() {
   require_command codesign
   require_command xcodebuild
+  export EXPO_PUBLIC_EVISAFLOW_DEMO_MODE="${EXPO_PUBLIC_EVISAFLOW_DEMO_MODE:-true}"
 
   local workspace scheme app_path app_bundle_id executable signature_entitlements
   workspace="$(find_workspace)"

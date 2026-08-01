@@ -11,12 +11,14 @@ They do not call GOV.UK or require a production account.
 - `profile-validation.yaml` verifies that incomplete or malformed identity data never
   enters the vault.
 - `free-profile-limit.yaml` protects the one-person free entitlement boundary.
+- `offline-proof.yaml` runs the fixture-backed worker journey through OTP, encrypted
+  artifact persistence, process restart, and reopening the proof offline.
 - Reusable setup lives under `maestro/subflows/`; files there are not discovered as
   standalone tests.
 
 Every flow launches with `clearState: true`, so tests are independent and can run in
-any order. A future fixture-backed run service will use a compile-time E2E mode and
-fictional artifacts rather than mocking network calls inside test YAML.
+any order. Release E2E builds compile with `EXPO_PUBLIC_EVISAFLOW_DEMO_MODE=true` and
+use fictional artifacts; test YAML never intercepts or mocks production traffic.
 
 ## Running locally
 

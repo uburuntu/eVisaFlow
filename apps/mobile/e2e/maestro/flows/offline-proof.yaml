@@ -1,0 +1,53 @@
+appId: com.evisaflow.mobile
+name: Generate and persist an offline proof
+tags:
+  - smoke
+  - critical
+  - monetization
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- tapOn:
+    id: "empty-get-proof"
+- assertVisible:
+    id: "run-purpose-screen"
+- scrollUntilVisible:
+    element:
+      id: "run-start"
+    direction: DOWN
+- tapOn:
+    id: "run-start"
+- extendedWaitUntil:
+    visible:
+      id: "run-security-code"
+    timeout: 12000
+- tapOn:
+    id: "run-security-code"
+- inputText: "123456"
+- tapOn:
+    id: "run-submit-code"
+- extendedWaitUntil:
+    visible:
+      id: "saved-document-screen"
+    timeout: 20000
+- assertVisible: "ABC 123 XYZ"
+- assertVisible: "Fictional eVisa proof.pdf"
+- tapOn:
+    id: "saved-document-copy-code"
+- assertVisible: "Copied to clipboard"
+- assertVisible:
+    id: "saved-document-print-evisa_pdf"
+- assertVisible:
+    id: "saved-document-share-evisa_pdf"
+- stopApp
+- launchApp
+- assertVisible:
+    id: "family-screen"
+- assertVisible: "1 document saved"
+- tapOn:
+    id: "saved-document-0"
+- assertVisible:
+    id: "saved-document-screen"
+- assertVisible: "ABC 123 XYZ"

@@ -10,5 +10,5 @@ tags:
 - runFlow: "../subflows/add-fictional-profile.yaml"
 - tapOn:
     id: "family-add-person-header"
-- assertVisible: "Family Pro required"
+- assertVisible: "eVisaFlow Pro required"
 - assertVisible: ".*The free plan stores one person.*"

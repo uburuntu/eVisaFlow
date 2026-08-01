@@ -8,6 +8,7 @@ on:
       - "apps/mobile/**"
       - "packages/protocol/**"
       - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-android.sh"
       - "scripts/mobile-e2e-ios.sh"
       - "src/protocol/**"
       - "Makefile"
@@ -21,6 +22,7 @@ on:
       - "apps/mobile/**"
       - "packages/protocol/**"
       - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-android.sh"
       - "scripts/mobile-e2e-ios.sh"
       - "src/protocol/**"
       - "Makefile"
@@ -81,6 +83,8 @@ jobs:
 
       - name: Build release APK
         working-directory: apps/mobile/android
+        env:
+          NODE_ENV: production
         run: >-
           ./gradlew :app:assembleRelease
           -PreactNativeArchitectures=x86_64
@@ -97,30 +101,15 @@ jobs:
 
       - name: Run Maestro journeys
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        env:
+          MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/android
         with:
           api-level: 34
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eu
-            result_directory="apps/mobile/e2e/results/android"
-            mkdir -p "${result_directory}"
-            adb install -r apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-
-            set +e
-            maestro test \
-              --format JUNIT \
-              --output "${result_directory}/junit.xml" \
-              --test-output-dir "${result_directory}/artifacts" \
-              --debug-output "${result_directory}/debug" \
-              apps/mobile/e2e/maestro/flows
-            test_status=$?
-            set -e
-
-            adb logcat -d > "${result_directory}/logcat.txt"
-            exit "${test_status}"
+          script: scripts/mobile-e2e-android.sh test
 
       - name: Upload Android diagnostics
         if: always()

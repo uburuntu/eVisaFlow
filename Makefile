@@ -2,6 +2,8 @@
 
 IOS_WORKSPACE := apps/mobile/ios/eVisaFlow.xcworkspace
 IOS_DEVICE ?=
+ANDROID_DEVICE ?=
+ANDROID_ARCH ?= arm64-v8a
 
 help:
 	@printf '%s\n' \
@@ -15,6 +17,7 @@ help:
 		'  mobile-ios-prebuild  Generate the native iOS project' \
 		'  mobile-ios-xcode  Generate and open the Xcode workspace' \
 		'  mobile-e2e   Run Maestro mobile journeys on a booted device' \
+		'  mobile-e2e-android  Build, install, and test a booted Android emulator' \
 		'  mobile-e2e-ios  Build, install, and test iOS (optional IOS_DEVICE="name")' \
 		'  format       Format and apply safe Biome fixes' \
 		'  lint         Run Biome CI checks' \
@@ -58,6 +61,9 @@ mobile-ios-xcode: mobile-ios-prebuild
 mobile-e2e:
 	pnpm run e2e:mobile
 
+mobile-e2e-android:
+	ANDROID_DEVICE="$(ANDROID_DEVICE)" ANDROID_ARCH="$(ANDROID_ARCH)" scripts/mobile-e2e-android.sh
+
 mobile-e2e-ios:
 	pnpm run build:protocol
 	pnpm --dir apps/mobile exec expo prebuild --platform ios --no-install
@@ -98,4 +104,4 @@ test:
 validate:
 	pnpm run validate
 
-.PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e mobile-e2e-ios format lint typecheck run snapshots smoke debug-flow fixtures test validate
+.PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e mobile-e2e-android mobile-e2e-ios format lint typecheck run snapshots smoke debug-flow fixtures test validate

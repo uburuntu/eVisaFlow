@@ -20,6 +20,18 @@ fictional artifacts rather than mocking network calls inside test YAML.
 
 ## Running locally
 
+For Android, boot an emulator in Android Studio and run the complete local pipeline:
+
+```sh
+make mobile-e2e-android
+```
+
+The target generates the native Android project, builds a Release APK for ARM64,
+installs it, and runs every Maestro flow. Override `ANDROID_DEVICE` when more than
+one device is connected, or `ANDROID_ARCH` for a non-ARM emulator. Android flows
+run in isolated Maestro processes so a driver failure cannot contaminate the next
+journey; each flow receives its own JUnit report and debug directory.
+
 For iOS, boot Simulator and run the complete local pipeline:
 
 ```sh

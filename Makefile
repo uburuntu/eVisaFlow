@@ -1,5 +1,8 @@
 .DEFAULT_GOAL := help
 
+IOS_WORKSPACE := apps/mobile/ios/eVisaFlow.xcworkspace
+IOS_DEVICE ?=
+
 help:
 	@printf '%s\n' \
 		'Targets:' \
@@ -7,6 +10,10 @@ help:
 		'  build        Build library and Telegram bot service' \
 		'  dev          Watch-build the library' \
 		'  mobile       Start the Expo mobile app' \
+		'  mobile-ios   Build and launch the booted iOS simulator' \
+		'  mobile-ios-device  Select iOS target (optional IOS_DEVICE="name")' \
+		'  mobile-ios-prebuild  Generate the native iOS project' \
+		'  mobile-ios-xcode  Generate and open the Xcode workspace' \
 		'  mobile-e2e   Run Maestro mobile journeys on a booted device' \
 		'  format       Format and apply safe Biome fixes' \
 		'  lint         Run Biome CI checks' \
@@ -29,6 +36,23 @@ dev:
 
 mobile:
 	pnpm run dev:mobile
+
+mobile-ios:
+	pnpm --filter evisa-flow-mobile run ios
+
+mobile-ios-device:
+	pnpm --filter evisa-flow-mobile run ios --device $(if $(IOS_DEVICE),"$(IOS_DEVICE)")
+
+mobile-ios-prebuild:
+	pnpm run build:protocol
+	pnpm --dir apps/mobile exec expo prebuild --platform ios
+
+mobile-ios-xcode: mobile-ios-prebuild
+	@test -d "$(IOS_WORKSPACE)" || { \
+		printf '%s\n' 'Missing $(IOS_WORKSPACE); the Expo iOS prebuild did not complete.'; \
+		exit 1; \
+	}
+	open "$(IOS_WORKSPACE)"
 
 mobile-e2e:
 	pnpm run e2e:mobile
@@ -67,4 +91,4 @@ test:
 validate:
 	pnpm run validate
 
-.PHONY: help install build dev mobile mobile-e2e format lint typecheck run snapshots smoke debug-flow fixtures test validate
+.PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e format lint typecheck run snapshots smoke debug-flow fixtures test validate

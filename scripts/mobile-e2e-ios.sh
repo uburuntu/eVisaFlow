@@ -160,13 +160,13 @@ build_app() {
   codesign --verify --deep --strict --verbose=2 "${app_path}"
 
   executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app_path}/Info.plist")"
-  if ! rg -Fq "${simulator_access_group}" < <(strings "${app_path}/${executable}"); then
+  if ! grep -Fq "${simulator_access_group}" < <(strings "${app_path}/${executable}"); then
     printf '%s\n' 'The simulator Keychain access group was not embedded.' >&2
     exit 1
   fi
 
   signature_entitlements="$(codesign -d --entitlements - "${app_path}" 2>&1)"
-  if rg -q 'application-identifier|keychain-access-groups' <<< "${signature_entitlements}"; then
+  if grep -Eq 'application-identifier|keychain-access-groups' <<< "${signature_entitlements}"; then
     printf '%s\n' 'Simulator entitlements must not remain in the launch signature.' >&2
     exit 1
   fi
@@ -217,7 +217,6 @@ run_tests() {
 }
 
 require_command jq
-require_command rg
 require_command xcrun
 device_id="$(select_device)"
 

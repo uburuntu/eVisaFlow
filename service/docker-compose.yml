@@ -4,6 +4,8 @@ services:
       context: ..
       dockerfile: service/Dockerfile
     env_file: .env
+    ports:
+      - "127.0.0.1:${MOBILE_API_PORT:-8090}:${MOBILE_API_PORT:-8090}"
     volumes:
       - downloads:/app/service/downloads
     healthcheck:

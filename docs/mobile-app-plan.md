@@ -2,6 +2,16 @@
 
 Status: approved implementation plan for the first Android and iOS release.
 
+## Implementation checkpoint
+
+PR #4 implements the shared protocol, Expo application, encrypted offline vault,
+authenticated mobile API, Playwright worker integration, OTP recovery, artifact
+hash verification, App Review fixture mode, in-app deletion, expiry cleanup, and local
+Android/iOS Maestro infrastructure. Subscriptions, reminders, integrity attestation,
+optional biometrics, multi-person batch runs, and store beta work remain open. This
+document stays forward-looking until the folder-specific guidance is promoted into
+durable `AGENTS.md` files before merge.
+
 ## Product and launch constraints
 
 - Build one Expo/React Native codebase for iOS 16.4+ and Android 9+.

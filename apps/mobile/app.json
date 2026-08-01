@@ -9,7 +9,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.evisaflow.mobile"
+      "bundleIdentifier": "com.evisaflow.mobile",
+      "entitlements": {
+        "keychain-access-groups": ["$(AppIdentifierPrefix)com.evisaflow.mobile"]
+      }
     },
     "android": {
       "package": "com.evisaflow.mobile",

@@ -12,12 +12,12 @@ tags:
 - launchApp
 - assertVisible:
     id: "family-screen"
-- assertVisible: "Alex Morgan"
+- assertVisible: ".*Alex Morgan.*"
 - tapOn:
     id: "family-profile-0"
 - assertVisible:
     id: "profile-details-screen"
-- assertVisible: "National ID"
+- assertVisible: ".*National ID.*"
 - assertVisible: "Email"
 - assertVisible: "Authorised by this person"
 - scrollUntilVisible:
@@ -30,4 +30,4 @@ tags:
 - assertVisible:
     id: "family-screen"
 - assertVisible: "No one added"
-- assertNotVisible: "Alex Morgan"
+- assertNotVisible: ".*Alex Morgan.*"

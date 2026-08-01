@@ -8,6 +8,7 @@ on:
       - "apps/mobile/**"
       - "packages/protocol/**"
       - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-ios.sh"
       - "src/protocol/**"
       - "Makefile"
       - "package.json"
@@ -20,6 +21,7 @@ on:
       - "apps/mobile/**"
       - "packages/protocol/**"
       - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-ios.sh"
       - "src/protocol/**"
       - "Makefile"
       - "package.json"
@@ -194,20 +196,7 @@ jobs:
       - name: Build iOS simulator app
         env:
           DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
-        run: |
-          set -euo pipefail
-          workspace="$(find apps/mobile/ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
-          scheme="$(basename "${workspace}" .xcworkspace)"
-          xcodebuild \
-            -workspace "${workspace}" \
-            -scheme "${scheme}" \
-            -configuration Release \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
-            -derivedDataPath apps/mobile/e2e/build/ios \
-            CODE_SIGNING_ALLOWED=NO \
-            ONLY_ACTIVE_ARCH=YES \
-            build
+        run: scripts/mobile-e2e-ios.sh build
 
       - uses: actions/cache@v5
         with:
@@ -221,33 +210,8 @@ jobs:
         env:
           DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
           MAESTRO_DRIVER_STARTUP_TIMEOUT: "240000"
-        run: |
-          set -euo pipefail
-          result_directory="apps/mobile/e2e/results/ios"
-          mkdir -p "${result_directory}"
-          app_path="$(find apps/mobile/e2e/build/ios/Build/Products -maxdepth 2 -name '*.app' -print -quit)"
-
-          xcrun simctl shutdown all || true
-          xcrun simctl boot "${DEVICE_ID}"
-          xcrun simctl bootstatus "${DEVICE_ID}" -b
-          xcrun simctl install "${DEVICE_ID}" "${app_path}"
-
-          set +e
-          maestro --device "${DEVICE_ID}" test \
-            --format JUNIT \
-            --output "${result_directory}/junit.xml" \
-            --test-output-dir "${result_directory}/artifacts" \
-            --debug-output "${result_directory}/debug" \
-            apps/mobile/e2e/maestro/flows
-          test_status=$?
-          set -e
-
-          xcrun simctl spawn "${DEVICE_ID}" log show \
-            --last 15m \
-            --style compact \
-            --predicate 'process == "eVisaFlow"' \
-            > "${result_directory}/simulator.log" || true
-          exit "${test_status}"
+          MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/ios
+        run: scripts/mobile-e2e-ios.sh test
 
       - name: Upload iOS diagnostics
         if: always()

@@ -20,9 +20,25 @@ fictional artifacts rather than mocking network calls inside test YAML.
 
 ## Running locally
 
-1. Install Maestro and boot an Android emulator or iOS simulator.
-2. Install a native eVisaFlow build with application ID `com.evisaflow.mobile`.
-3. From the repository root, run `pnpm e2e:mobile` or `pnpm e2e:mobile:smoke`.
+For iOS, boot Simulator and run the complete local pipeline:
+
+```sh
+make mobile-e2e-ios
+```
+
+Select a specific installed simulator when needed:
+
+```sh
+make mobile-e2e-ios IOS_DEVICE="iPhone 17 Pro"
+```
+
+The target prebuilds iOS, installs pods, creates a Release simulator app, installs
+it, and runs all Maestro flows. It also embeds a test-only Keychain entitlement
+for ad-hoc simulator builds; App Store entitlements continue to come from Expo
+configuration and Apple's provisioning profile.
+
+For an already installed Android or iOS build, run `pnpm e2e:mobile` or
+`pnpm e2e:mobile:smoke` directly.
 
 Maestro captures diagnostic artifacts on failure. CI should retain those artifacts,
 the JUnit report, the app binary, and native device logs. Run the critical suite for

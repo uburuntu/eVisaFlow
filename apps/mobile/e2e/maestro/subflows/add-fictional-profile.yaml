@@ -12,16 +12,31 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-document-number"
 - inputText: "AB123456"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-day"
+    direction: DOWN
 - tapOn:
     id: "profile-birth-day"
 - inputText: "15"
+- tapOn: "Date of birth"
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-month"
+    direction: DOWN
 - tapOn:
     id: "profile-birth-month"
 - inputText: "06"
+- tapOn: "Date of birth"
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-year"
+    direction: DOWN
 - tapOn:
     id: "profile-birth-year"
 - inputText: "1990"
-- hideKeyboard
+- tapOn: "Date of birth"
 - scrollUntilVisible:
     element:
       id: "profile-two-factor-email"
@@ -48,4 +63,4 @@ appId: com.evisaflow.mobile
     id: "profile-save"
 - assertVisible:
     id: "family-screen"
-- assertVisible: "Alex Morgan"
+- assertVisible: ".*Alex Morgan.*"

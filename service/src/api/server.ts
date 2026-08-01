@@ -13,6 +13,10 @@ export async function startMobileApi(options: {
 }) {
   const store = new MobileStore(options.db, options.env.ENCRYPTION_KEY);
   await store.interruptActiveRuns();
+  const cleanup = await store.cleanupExpiredData();
+  if (cleanup.artifactsDeleted > 0 || cleanup.eventsDeleted > 0) {
+    options.log.info(cleanup, "Cleaned expired mobile data at startup");
+  }
 
   const app = buildMobileApi({
     auth: new SupabaseMobileAuth(options.db),

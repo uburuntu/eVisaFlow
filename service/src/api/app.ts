@@ -19,6 +19,8 @@ interface MobileApiDependencies {
   store: Pick<
     MobileStore,
     | "getMe"
+    | "getActiveRunIds"
+    | "deleteAccount"
     | "upsertProfileSlot"
     | "deleteProfileSlot"
     | "createRun"
@@ -71,6 +73,16 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
   });
 
   app.get("/v1/me", async (request) => dependencies.store.getMe(userId(request)));
+
+  app.delete("/v1/me", async (request, reply) => {
+    const ownerId = userId(request);
+    const activeRunIds = await dependencies.store.getActiveRunIds(ownerId);
+    for (const runId of activeRunIds) {
+      dependencies.coordinator.cancel(ownerId, runId);
+    }
+    await dependencies.store.deleteAccount(ownerId);
+    return reply.code(204).send();
+  });
 
   app.put("/v1/profile-slots/:id", async (request, reply) => {
     const params = parse(IdParamsSchema, request.params, reply);

@@ -25,7 +25,9 @@ const runRequest = {
 function createFixture() {
   const runs = new Map();
   const started = [];
+  const cancelled = [];
   const slots = new Set();
+  let deletedAccountId = null;
   const store = {
     async getMe(ownerId) {
       return {
@@ -40,6 +42,20 @@ function createFixture() {
     },
     async upsertProfileSlot(_ownerId, id) {
       slots.add(id);
+    },
+    async getActiveRunIds(ownerId) {
+      return ownerId === userId
+        ? Array.from(runs.values())
+            .filter((run) =>
+              ["queued", "running", "awaiting_2fa", "packaging"].includes(run.status)
+            )
+            .map((run) => run.id)
+        : [];
+    },
+    async deleteAccount(ownerId) {
+      deletedAccountId = ownerId;
+      runs.clear();
+      slots.clear();
     },
     async deleteProfileSlot(_ownerId, id) {
       slots.delete(id);
@@ -81,7 +97,8 @@ function createFixture() {
     submitChallenge() {
       return false;
     },
-    cancel() {
+    cancel(ownerId, id) {
+      cancelled.push({ ownerId, id });
       return true;
     },
   };
@@ -91,7 +108,14 @@ function createFixture() {
     },
   };
   const app = buildMobileApi({ auth, coordinator, store, log: createLogger() });
-  return { app, runs, slots, started };
+  return {
+    app,
+    runs,
+    slots,
+    started,
+    cancelled,
+    deletedAccountId: () => deletedAccountId,
+  };
 }
 
 const authorized = (options) => ({
@@ -159,6 +183,20 @@ test("mobile API creates idempotent runs and starts the worker once", async () =
   );
   assert.equal(second.statusCode, 200);
   assert.equal(started.length, 1);
+  await app.close();
+});
+
+test("mobile API cancels active work before deleting the anonymous account", async () => {
+  const { app, cancelled, deletedAccountId } = createFixture();
+  const created = await app.inject(
+    authorized({ method: "POST", url: "/v1/runs", payload: runRequest })
+  );
+  assert.equal(created.statusCode, 202);
+
+  const response = await app.inject(authorized({ method: "DELETE", url: "/v1/me" }));
+  assert.equal(response.statusCode, 204);
+  assert.deepEqual(cancelled, [{ ownerId: userId, id: runId }]);
+  assert.equal(deletedAccountId(), userId);
   await app.close();
 });
 

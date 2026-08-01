@@ -110,6 +110,90 @@ export class MobileStore {
     if (error) throw error;
   }
 
+  async getActiveRunIds(userId: string): Promise<string[]> {
+    const { data, error } = await this.db
+      .from("mobile_runs")
+      .select("id")
+      .eq("user_id", userId)
+      .in("status", ["queued", "running", "awaiting_2fa", "packaging"]);
+    if (error) throw error;
+    return (data ?? []).map((run) => String(run.id));
+  }
+
+  async deleteAccount(userId: string): Promise<void> {
+    const { data: artifacts, error: artifactError } = await this.db
+      .from("mobile_run_artifacts")
+      .select("storage_path,mobile_runs!inner(user_id)")
+      .eq("mobile_runs.user_id", userId);
+    if (artifactError) throw artifactError;
+
+    const storagePaths = (artifacts ?? []).map((artifact) => artifact.storage_path);
+    if (storagePaths.length > 0) {
+      const { error: storageError } = await this.db.storage
+        .from(ARTIFACT_BUCKET)
+        .remove(storagePaths);
+      if (storageError) throw storageError;
+    }
+
+    const { error: deleteError } = await this.db.auth.admin.deleteUser(userId);
+    if (deleteError) throw deleteError;
+  }
+
+  async cleanupExpiredData(now = new Date()): Promise<{
+    artifactsDeleted: number;
+    eventsDeleted: number;
+  }> {
+    const nowIso = now.toISOString();
+    const { data: artifacts, error: artifactError } = await this.db
+      .from("mobile_run_artifacts")
+      .select("id,storage_path")
+      .lt("expires_at", nowIso)
+      .limit(500);
+    if (artifactError) throw artifactError;
+
+    const artifactRows = artifacts ?? [];
+    if (artifactRows.length > 0) {
+      const { error: storageError } = await this.db.storage
+        .from(ARTIFACT_BUCKET)
+        .remove(artifactRows.map((artifact) => artifact.storage_path));
+      if (storageError) throw storageError;
+      const { error: deleteError } = await this.db
+        .from("mobile_run_artifacts")
+        .delete()
+        .in(
+          "id",
+          artifactRows.map((artifact) => artifact.id)
+        );
+      if (deleteError) throw deleteError;
+    }
+
+    const { error: runError } = await this.db
+      .from("mobile_runs")
+      .update({
+        status: "expired",
+        phase: "failed",
+        encrypted_request: null,
+        encrypted_result: null,
+        challenge_method: null,
+        challenge_deadline: null,
+        retryable: false,
+      })
+      .lt("expires_at", nowIso)
+      .neq("status", "expired");
+    if (runError) throw runError;
+
+    const eventCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: eventsDeleted, error: eventError } = await this.db
+      .from("mobile_run_events")
+      .delete({ count: "exact" })
+      .lt("created_at", eventCutoff);
+    if (eventError) throw eventError;
+    return {
+      artifactsDeleted: artifactRows.length,
+      eventsDeleted: eventsDeleted ?? 0,
+    };
+  }
+
   async deleteProfileSlot(userId: string, profileId: string): Promise<void> {
     const { error } = await this.db
       .from("mobile_profile_slots")

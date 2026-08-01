@@ -7,6 +7,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Logger } from "../utils/logger.js";
 import type { MobileAuth } from "./mobile-auth.js";
+import { MobileRateLimiter } from "./mobile-rate-limiter.js";
 import type { MobileRunCoordinator } from "./mobile-run-coordinator.js";
 import type { MobileStore } from "./mobile-store.js";
 
@@ -41,6 +42,7 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     bodyLimit: 64 * 1024,
     requestTimeout: 30_000,
   });
+  const rateLimiter = new MobileRateLimiter();
 
   app.get("/live", async () => ({ live: true }));
   app.get("/ready", async () => ({ ready: true }));
@@ -88,6 +90,9 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     const params = parse(IdParamsSchema, request.params, reply);
     const body = parse(MobileProfileSlotRequestSchema, request.body, reply);
     if (!params || !body) return;
+    if (rateLimited(rateLimiter, reply, `profiles:${userId(request)}`, 20, 15 * 60_000)) {
+      return;
+    }
     if (params.id !== body.profileId) {
       return sendError(
         reply,
@@ -112,10 +117,22 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     const body = parse(MobileRunCreateRequestSchema, request.body, reply);
     if (!body) return;
     const ownerId = userId(request);
+    if (rateLimited(rateLimiter, reply, `runs:${ownerId}`, 10, 15 * 60_000)) return;
     const existing = await dependencies.store.getRun(ownerId, body.clientRunId);
     if (existing) return reply.code(200).send(existing);
     const run = await dependencies.store.createRun(ownerId, body);
-    dependencies.coordinator.start(ownerId, body);
+    try {
+      dependencies.coordinator.start(ownerId, body);
+    } catch (error) {
+      await dependencies.store.updateRun(body.clientRunId, {
+        status: "interrupted",
+        phase: "failed",
+        errorCode: "QUEUE_START_FAILED",
+        retryable: true,
+        clearRequest: true,
+      });
+      throw error;
+    }
     return reply.code(202).send(run);
   });
 
@@ -173,6 +190,11 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     const body = parse(MobileChallengeSubmissionSchema, request.body, reply);
     if (!params || !body) return;
     const ownerId = userId(request);
+    if (
+      rateLimited(rateLimiter, reply, `challenge:${ownerId}:${params.id}`, 6, 10 * 60_000)
+    ) {
+      return;
+    }
     const run = await dependencies.store.getRun(ownerId, params.id);
     if (!run) return sendError(reply, 404, "RUN_NOT_FOUND", "Run not found.", false);
     if (run.status !== "awaiting_2fa") {
@@ -217,7 +239,9 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
   app.post("/v1/runs/:id/claim-result", async (request, reply) => {
     const params = parse(IdParamsSchema, request.params, reply);
     if (!params) return;
-    const result = await dependencies.store.claimResult(userId(request), params.id);
+    const ownerId = userId(request);
+    if (rateLimited(rateLimiter, reply, `claim:${ownerId}`, 10, 15 * 60_000)) return;
+    const result = await dependencies.store.claimResult(ownerId, params.id);
     if (!result) {
       return sendError(
         reply,
@@ -233,8 +257,12 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
   app.get("/v1/runs/:id/artifacts/:artifactId", async (request, reply) => {
     const params = parse(ArtifactParamsSchema, request.params, reply);
     if (!params) return;
+    const ownerId = userId(request);
+    if (rateLimited(rateLimiter, reply, `artifacts:${ownerId}`, 30, 5 * 60_000)) {
+      return;
+    }
     const artifact = await dependencies.store.downloadArtifact(
-      userId(request),
+      ownerId,
       params.id,
       params.artifactId
     );
@@ -291,6 +319,26 @@ function applyPrivateResponseHeaders(reply: FastifyReply): void {
     .header("X-Content-Type-Options", "nosniff")
     .header("X-Frame-Options", "DENY")
     .header("Referrer-Policy", "no-referrer");
+}
+
+function rateLimited(
+  limiter: MobileRateLimiter,
+  reply: FastifyReply,
+  key: string,
+  limit: number,
+  windowMs: number
+): boolean {
+  const retryAfter = limiter.consume(key, limit, windowMs);
+  if (retryAfter === null) return false;
+  reply.header("Retry-After", String(retryAfter));
+  sendError(
+    reply,
+    429,
+    "RATE_LIMITED",
+    "Too many requests. Wait before trying again.",
+    true
+  );
+  return true;
 }
 
 function isTerminal(status: string): boolean {

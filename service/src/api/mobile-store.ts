@@ -68,32 +68,43 @@ export class MobileStore {
 
   async getMe(userId: string): Promise<MobileMe> {
     const user = await this.ensureUser(userId);
-    const [{ count, error: countError }, { data: flag, error: flagError }] =
-      await Promise.all([
-        this.db
-          .from("mobile_profile_slots")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("is_active", true),
-        this.db
-          .from("mobile_service_flags")
-          .select("status,public_message")
-          .eq("id", true)
-          .single(),
-      ]);
-    if (countError) throw countError;
+    const [
+      { count: profileCount, error: profileCountError },
+      { count: pendingSuccessCount, error: pendingSuccessError },
+      { data: flag, error: flagError },
+    ] = await Promise.all([
+      this.db
+        .from("mobile_profile_slots")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("is_active", true),
+      this.db
+        .from("mobile_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("status", "succeeded")
+        .is("claimed_at", null),
+      this.db
+        .from("mobile_service_flags")
+        .select("status,public_message")
+        .eq("id", true)
+        .single(),
+    ]);
+    if (profileCountError) throw profileCountError;
+    if (pendingSuccessError) throw pendingSuccessError;
     if (flagError) throw flagError;
 
     const isPro = user.entitlement === "evisaflow_pro";
+    const reservedSuccessCount = user.successful_run_count + (pendingSuccessCount ?? 0);
     return {
       userId,
       entitlement: user.entitlement,
       profileLimit: isPro ? PRO_PROFILE_LIMIT : FREE_PROFILE_LIMIT,
-      activeProfileCount: count ?? 0,
+      activeProfileCount: profileCount ?? 0,
       successfulRunCount: user.successful_run_count,
       remainingFreeRuns: isPro
         ? null
-        : Math.max(0, FREE_RESULT_LIMIT - user.successful_run_count),
+        : Math.max(0, FREE_RESULT_LIMIT - reservedSuccessCount),
       serviceStatus: flag.status,
       ...(flag.public_message ? { serviceMessage: flag.public_message } : {}),
     };

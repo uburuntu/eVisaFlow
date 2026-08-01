@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildMobileApi } from "../dist/api/app.js";
-import { createLogger } from "../dist/utils/logger.js";
 
 const userId = "9591fc30-b78f-4282-8fc9-ae662d725ad1";
 const profileId = "1f8f9e99-f0ea-4591-a745-aabf871febc1";
@@ -22,7 +21,7 @@ const runRequest = {
   termsVersion: "2026-08-01",
 };
 
-function createFixture() {
+function createFixture(options = {}) {
   const runs = new Map();
   const started = [];
   const cancelled = [];
@@ -92,6 +91,7 @@ function createFixture() {
   };
   const coordinator = {
     start(ownerId, request) {
+      if (options.startError) throw options.startError;
       started.push({ ownerId, request });
     },
     submitChallenge() {
@@ -107,7 +107,12 @@ function createFixture() {
       return token === "valid-token" ? userId : null;
     },
   };
-  const app = buildMobileApi({ auth, coordinator, store, log: createLogger() });
+  const app = buildMobileApi({
+    auth,
+    coordinator,
+    store,
+    log: { error() {} },
+  });
   return {
     app,
     runs,
@@ -186,6 +191,29 @@ test("mobile API creates idempotent runs and starts the worker once", async () =
   await app.close();
 });
 
+test("mobile API interrupts and clears a run when queue startup fails", async () => {
+  const { app, runs } = createFixture({ startError: new Error("queue unavailable") });
+  const response = await app.inject(
+    authorized({ method: "POST", url: "/v1/runs", payload: runRequest })
+  );
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(
+    {
+      status: runs.get(runId).status,
+      phase: runs.get(runId).phase,
+      errorCode: runs.get(runId).errorCode,
+      clearRequest: runs.get(runId).clearRequest,
+    },
+    {
+      status: "interrupted",
+      phase: "failed",
+      errorCode: "QUEUE_START_FAILED",
+      clearRequest: true,
+    }
+  );
+  await app.close();
+});
+
 test("mobile API cancels active work before deleting the anonymous account", async () => {
   const { app, cancelled, deletedAccountId } = createFixture();
   const created = await app.inject(
@@ -215,5 +243,31 @@ test("mobile API rejects invalid run payloads before reaching the worker", async
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().code, "REQUEST_INVALID");
   assert.equal(started.length, 0);
+  await app.close();
+});
+
+test("mobile API rate limits repeated security-code submissions", async () => {
+  const { app } = createFixture();
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await app.inject(
+      authorized({
+        method: "POST",
+        url: `/v1/runs/${runId}/challenge`,
+        payload: { code: "123456" },
+      })
+    );
+    assert.equal(response.statusCode, 404);
+  }
+
+  const limited = await app.inject(
+    authorized({
+      method: "POST",
+      url: `/v1/runs/${runId}/challenge`,
+      payload: { code: "123456" },
+    })
+  );
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.json().code, "RATE_LIMITED");
+  assert.ok(Number(limited.headers["retry-after"]) > 0);
   await app.close();
 });

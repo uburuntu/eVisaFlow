@@ -33,7 +33,8 @@ BEGIN
 
   SELECT entitlement INTO current_entitlement
   FROM mobile_users
-  WHERE id = NEW.user_id;
+  WHERE id = NEW.user_id
+  FOR UPDATE;
 
   allowed_count := CASE WHEN current_entitlement = 'evisaflow_pro' THEN 6 ELSE 1 END;
   SELECT count(*) INTO active_count
@@ -164,7 +165,7 @@ ALTER TABLE mobile_service_flags ENABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION claim_mobile_run(claim_run_id UUID, claim_user_id UUID)
   RETURNS BOOLEAN AS $$
 DECLARE
-  claimed BOOLEAN;
+  claimed_status TEXT;
 BEGIN
   UPDATE mobile_runs
   SET claimed_at = now()
@@ -173,12 +174,15 @@ BEGIN
     AND status IN ('succeeded', 'partial_success')
     AND claimed_at IS NULL
     AND expires_at > now()
-  RETURNING true INTO claimed;
+  RETURNING status INTO claimed_status;
 
-  IF claimed THEN
-    UPDATE mobile_users
-    SET successful_run_count = successful_run_count + 1
-    WHERE id = claim_user_id;
+  IF claimed_status IS NOT NULL THEN
+    -- A partial result remains retrievable but does not consume free allowance.
+    IF claimed_status = 'succeeded' THEN
+      UPDATE mobile_users
+      SET successful_run_count = successful_run_count + 1
+      WHERE id = claim_user_id;
+    END IF;
     RETURN true;
   END IF;
 

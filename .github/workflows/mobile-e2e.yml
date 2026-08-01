@@ -109,7 +109,6 @@ jobs:
 
             set +e
             maestro test \
-              --config apps/mobile/e2e/maestro/config.yaml \
               --format JUNIT \
               --output "${result_directory}/junit.xml" \
               --test-output-dir "${result_directory}/artifacts" \
@@ -235,7 +234,6 @@ jobs:
 
           set +e
           maestro --device "${DEVICE_ID}" test \
-            --config apps/mobile/e2e/maestro/config.yaml \
             --format JUNIT \
             --output "${result_directory}/junit.xml" \
             --test-output-dir "${result_directory}/artifacts" \

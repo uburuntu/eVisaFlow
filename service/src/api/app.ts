@@ -43,6 +43,13 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
   app.get("/live", async () => ({ live: true }));
   app.get("/ready", async () => ({ ready: true }));
 
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (request.url.startsWith("/v1/")) {
+      applyPrivateResponseHeaders(reply);
+    }
+    return payload;
+  });
+
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/v1/")) return;
     const authorization = request.headers.authorization;
@@ -119,9 +126,13 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Cache-Control": "no-store, no-transform",
+      Pragma: "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
     });
     let cursor = Number.isSafeInteger(lastEventId) && lastEventId >= 0 ? lastEventId : 0;
     let closed = false;
@@ -259,6 +270,15 @@ function sendError(
   retryable: boolean
 ) {
   return reply.code(status).send({ code, message, retryable });
+}
+
+function applyPrivateResponseHeaders(reply: FastifyReply): void {
+  reply
+    .header("Cache-Control", "no-store")
+    .header("Pragma", "no-cache")
+    .header("X-Content-Type-Options", "nosniff")
+    .header("X-Frame-Options", "DENY")
+    .header("Referrer-Policy", "no-referrer");
 }
 
 function isTerminal(status: string): boolean {

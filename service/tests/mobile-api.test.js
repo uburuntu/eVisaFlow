@@ -115,6 +115,18 @@ test("mobile API rejects missing and invalid bearer sessions", async () => {
   await app.close();
 });
 
+test("mobile API prevents authenticated responses from being cached or embedded", async () => {
+  const { app } = createFixture();
+  const response = await app.inject(authorized({ method: "GET", url: "/v1/me" }));
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.equal(response.headers.pragma, "no-cache");
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+  assert.equal(response.headers["x-frame-options"], "DENY");
+  assert.equal(response.headers["referrer-policy"], "no-referrer");
+  await app.close();
+});
+
 test("mobile API synchronizes an opaque profile slot", async () => {
   const { app, slots } = createFixture();
   const put = await app.inject(

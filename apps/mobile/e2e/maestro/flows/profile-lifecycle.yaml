@@ -1,0 +1,33 @@
+appId: com.evisaflow.mobile
+name: Encrypted profile lifecycle
+tags:
+  - smoke
+  - critical
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- stopApp
+- launchApp
+- assertVisible:
+    id: "family-screen"
+- assertVisible: "Alex Morgan"
+- tapOn:
+    id: "family-profile-0"
+- assertVisible:
+    id: "profile-details-screen"
+- assertVisible: "National ID"
+- assertVisible: "Email"
+- assertVisible: "Authorised by this person"
+- scrollUntilVisible:
+    element:
+      id: "profile-delete"
+    direction: DOWN
+- tapOn:
+    id: "profile-delete"
+- tapOn: "Delete"
+- assertVisible:
+    id: "family-screen"
+- assertVisible: "No one added"
+- assertNotVisible: "Alex Morgan"

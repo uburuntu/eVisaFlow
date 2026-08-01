@@ -6,9 +6,11 @@ help:
 		'  install      Install workspace dependencies with pnpm' \
 		'  build        Build library and Telegram bot service' \
 		'  dev          Watch-build the library' \
+		'  mobile       Start the Expo mobile app' \
+		'  mobile-e2e   Run Maestro mobile journeys on a booted device' \
 		'  format       Format and apply safe Biome fixes' \
 		'  lint         Run Biome CI checks' \
-		'  typecheck    Typecheck library and service' \
+		'  typecheck    Typecheck all TypeScript workspaces' \
 		'  test         Run library and service tests' \
 		'  validate     Run full local validation' \
 		'  snapshots    Capture GOV.UK page snapshots' \
@@ -24,6 +26,12 @@ build:
 
 dev:
 	pnpm run dev
+
+mobile:
+	pnpm run dev:mobile
+
+mobile-e2e:
+	pnpm run e2e:mobile
 
 format:
 	pnpm run format
@@ -59,4 +67,4 @@ test:
 validate:
 	pnpm run validate
 
-.PHONY: help install build dev format lint typecheck run snapshots smoke debug-flow fixtures test validate
+.PHONY: help install build dev mobile mobile-e2e format lint typecheck run snapshots smoke debug-flow fixtures test validate

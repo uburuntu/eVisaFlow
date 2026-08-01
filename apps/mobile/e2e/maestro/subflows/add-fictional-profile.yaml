@@ -1,0 +1,49 @@
+- tapOn:
+    id: "family-add-person-empty"
+- assertVisible:
+    id: "profile-form"
+- tapOn:
+    id: "profile-name"
+- inputText: "Alex Morgan"
+- tapOn:
+    id: "profile-document-type-nationalId"
+- tapOn:
+    id: "profile-document-number"
+- inputText: "AB123456"
+- tapOn:
+    id: "profile-birth-day"
+- inputText: "15"
+- tapOn:
+    id: "profile-birth-month"
+- inputText: "06"
+- tapOn:
+    id: "profile-birth-year"
+- inputText: "1990"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "profile-two-factor-email"
+    direction: DOWN
+- tapOn:
+    id: "profile-two-factor-email"
+- scrollUntilVisible:
+    element:
+      id: "profile-authority-authorised_proxy"
+    direction: DOWN
+- tapOn:
+    id: "profile-authority-authorised_proxy"
+- scrollUntilVisible:
+    element:
+      id: "profile-authority-confirmation"
+    direction: DOWN
+- tapOn:
+    id: "profile-authority-confirmation"
+- scrollUntilVisible:
+    element:
+      id: "profile-save"
+    direction: DOWN
+- tapOn:
+    id: "profile-save"
+- assertVisible:
+    id: "family-screen"
+- assertVisible: "Alex Morgan"

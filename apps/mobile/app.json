@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "eVisaFlow",
+    "slug": "evisa-flow",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "evisaflow",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.evisaflow.mobile"
+    },
+    "android": {
+      "package": "com.evisaflow.mobile",
+      "allowBackup": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 28
+          },
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Allow eVisaFlow to unlock your encrypted family vault."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

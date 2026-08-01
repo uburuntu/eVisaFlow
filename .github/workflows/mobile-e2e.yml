@@ -1,0 +1,263 @@
+name: Mobile E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-e2e.yml"
+      - "apps/mobile/**"
+      - "packages/protocol/**"
+      - "scripts/install-maestro.sh"
+      - "src/protocol/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-e2e.yml"
+      - "apps/mobile/**"
+      - "packages/protocol/**"
+      - "scripts/install-maestro.sh"
+      - "src/protocol/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  schedule:
+    - cron: "31 5 * * 2,5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "1"
+  MAESTRO_CLI_NO_ANALYTICS: "1"
+  MAESTRO_VERSION: "2.7.0"
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared protocol
+        run: pnpm run build:protocol
+
+      - name: Check Expo dependency alignment
+        run: pnpm run check:mobile
+
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.maestro/maestro
+          key: maestro-${{ runner.os }}-2.7.0
+
+      - name: Install verified Maestro CLI
+        run: scripts/install-maestro.sh
+
+      - name: Run Maestro journeys
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            result_directory="apps/mobile/e2e/results/android"
+            mkdir -p "${result_directory}"
+            adb install -r apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+
+            set +e
+            maestro test \
+              --config apps/mobile/e2e/maestro/config.yaml \
+              --format JUNIT \
+              --output "${result_directory}/junit.xml" \
+              --test-output-dir "${result_directory}/artifacts" \
+              --debug-output "${result_directory}/debug" \
+              apps/mobile/e2e/maestro
+            test_status=$?
+            set -e
+
+            adb logcat -d > "${result_directory}/logcat.txt"
+            exit "${test_status}"
+
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-android-${{ github.run_attempt }}
+          path: apps/mobile/e2e/results/android/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload failing Android build
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-android-apk-${{ github.run_attempt }}
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared protocol
+        run: pnpm run build:protocol
+
+      - name: Check Expo dependency alignment
+        run: pnpm run check:mobile
+
+      - name: Generate iOS project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform ios --clean --no-install
+
+      - name: Install iOS pods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Select iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          device_id="$(
+            xcrun simctl list devices available -j |
+              jq -r '[.devices[][] | select(.name | startswith("iPhone"))] | first | .udid'
+          )"
+          if [[ -z "${device_id}" || "${device_id}" == "null" ]]; then
+            echo "No available iPhone simulator was found." >&2
+            exit 1
+          fi
+          printf 'device_id=%s\n' "${device_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build iOS simulator app
+        env:
+          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+        run: |
+          set -euo pipefail
+          workspace="$(find apps/mobile/ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          scheme="$(basename "${workspace}" .xcworkspace)"
+          xcodebuild \
+            -workspace "${workspace}" \
+            -scheme "${scheme}" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
+            -derivedDataPath apps/mobile/e2e/build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.maestro/maestro
+          key: maestro-${{ runner.os }}-2.7.0
+
+      - name: Install verified Maestro CLI
+        run: scripts/install-maestro.sh
+
+      - name: Run Maestro journeys
+        env:
+          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: "240000"
+        run: |
+          set -euo pipefail
+          result_directory="apps/mobile/e2e/results/ios"
+          mkdir -p "${result_directory}"
+          app_path="$(find apps/mobile/e2e/build/ios/Build/Products -maxdepth 2 -name '*.app' -print -quit)"
+
+          xcrun simctl shutdown all || true
+          xcrun simctl boot "${DEVICE_ID}"
+          xcrun simctl bootstatus "${DEVICE_ID}" -b
+          xcrun simctl install "${DEVICE_ID}" "${app_path}"
+
+          set +e
+          maestro --device "${DEVICE_ID}" test \
+            --config apps/mobile/e2e/maestro/config.yaml \
+            --format JUNIT \
+            --output "${result_directory}/junit.xml" \
+            --test-output-dir "${result_directory}/artifacts" \
+            --debug-output "${result_directory}/debug" \
+            apps/mobile/e2e/maestro
+          test_status=$?
+          set -e
+
+          xcrun simctl spawn "${DEVICE_ID}" log show \
+            --last 15m \
+            --style compact \
+            --predicate 'process == "eVisaFlow"' \
+            > "${result_directory}/simulator.log" || true
+          exit "${test_status}"
+
+      - name: Upload iOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-ios-${{ github.run_attempt }}
+          path: apps/mobile/e2e/results/ios/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload failing iOS build
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-ios-app-${{ github.run_attempt }}
+          path: apps/mobile/e2e/build/ios/Build/Products/**/*.app
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,6 +1,8 @@
 packages:
   - .
   - service
+  - packages/*
+  - apps/*
 
 minimumReleaseAge: 4320
 blockExoticSubdeps: true

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as api from "../dist/index.js";
+import { ApplicantSchema, MobileRunCreateRequestSchema } from "../dist/protocol/index.js";
 import {
   ConfigSchema,
   createSanitizedDiagnosticSnapshot,
@@ -16,6 +17,46 @@ test("root package exposes the v2 client API without step internals", () => {
   assert.equal(api.EntryPageStep, undefined);
   assert.equal(api.DocumentTypeStep, undefined);
   assert.equal(api.DownloadPdfStep, undefined);
+});
+
+test("protocol schemas validate platform-neutral applicants", () => {
+  const applicant = ApplicantSchema.parse({
+    identityDocument: { type: "passport", number: "123456789" },
+    dateOfBirth: "1980-03-31",
+  });
+
+  assert.equal(applicant.identityDocument.type, "passport");
+  assert.throws(() =>
+    ApplicantSchema.parse({
+      identityDocument: { type: "passport", number: "not valid!" },
+      dateOfBirth: "1980-02-31",
+    })
+  );
+});
+
+test("mobile run protocol rejects incomplete authority metadata", () => {
+  const request = {
+    clientRunId: "b7d0648e-9bf2-46e9-a238-98061470f42c",
+    profileId: "1f8f9e99-f0ea-4591-a745-aabf871febc1",
+    applicant: {
+      identityDocument: { type: "passport", number: "123456789" },
+      dateOfBirth: "1980-03-31",
+    },
+    purpose: "immigration_status_other",
+    preferredTwoFactorMethod: "sms",
+    authorityBasis: "authorised_proxy",
+    attestedAt: "2026-08-01T09:00:00.000Z",
+    termsVersion: "2026-08-01",
+  };
+
+  assert.equal(
+    MobileRunCreateRequestSchema.parse(request).authorityBasis,
+    "authorised_proxy"
+  );
+  assert.equal(
+    MobileRunCreateRequestSchema.safeParse({ ...request, termsVersion: "" }).success,
+    false
+  );
 });
 
 test("EVisaClient validates request shape before launching a browser", async () => {

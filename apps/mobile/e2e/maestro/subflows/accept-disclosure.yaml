@@ -1,0 +1,16 @@
+- assertVisible:
+    id: "onboarding-screen"
+- scrollUntilVisible:
+    element:
+      id: "onboarding-confirmation"
+    direction: DOWN
+- tapOn:
+    id: "onboarding-confirmation"
+- scrollUntilVisible:
+    element:
+      id: "onboarding-continue"
+    direction: DOWN
+- tapOn:
+    id: "onboarding-continue"
+- assertVisible:
+    id: "family-screen"

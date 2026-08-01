@@ -1,0 +1,14 @@
+appId: com.evisaflow.mobile
+name: Free plan enforces one profile
+tags:
+  - regression
+  - monetization
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- tapOn:
+    id: "family-add-person-header"
+- assertVisible: "Family Pro required"
+- assertVisible: ".*The free plan stores one person.*"

@@ -1,0 +1,30 @@
+appId: com.evisaflow.mobile
+name: Invalid security code remains actionable
+tags:
+  - critical
+  - validation
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- tapOn:
+    id: "empty-get-proof"
+- scrollUntilVisible:
+    element:
+      id: "run-start"
+    direction: DOWN
+- tapOn:
+    id: "run-start"
+- extendedWaitUntil:
+    visible:
+      id: "run-security-code"
+    timeout: 12000
+- tapOn:
+    id: "run-security-code"
+- inputText: "000000"
+- tapOn:
+    id: "run-submit-code"
+- assertVisible: "That security code was not accepted."
+- waitForAnimationToEnd
+- assertVisible: "That security code was not accepted."

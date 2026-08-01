@@ -1,0 +1,27 @@
+appId: com.evisaflow.mobile
+name: Delete all local and service data
+tags:
+  - critical
+  - privacy
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- tapOn:
+    id: "dashboard-settings"
+- assertVisible:
+    id: "settings-screen"
+- assertVisible: "1 person, 0 proofs, 0 files"
+- tapOn:
+    id: "settings-delete-all"
+- assertVisible: "Delete all app data?"
+- tapOn: "Delete all"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-screen"
+    timeout: 10000
+- stopApp
+- launchApp
+- assertVisible:
+    id: "onboarding-screen"

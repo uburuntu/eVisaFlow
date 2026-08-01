@@ -11,6 +11,10 @@ They do not call GOV.UK or require a production account.
 - `profile-validation.yaml` verifies that incomplete or malformed identity data never
   enters the vault.
 - `free-profile-limit.yaml` protects the one-person free entitlement boundary.
+- `delete-all-data.yaml` verifies account deletion, vault crypto-erasure, and a clean
+  restart.
+- `invalid-security-code.yaml` protects OTP feedback from being erased by background
+  status polling.
 - `offline-proof.yaml` runs the fixture-backed worker journey through OTP, encrypted
   artifact persistence, process restart, and reopening the proof offline.
 - Reusable setup lives under `maestro/subflows/`; files there are not discovered as

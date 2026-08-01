@@ -48,8 +48,10 @@ env:
 jobs:
   android:
     name: Android
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_EVISAFLOW_DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v6
 
@@ -87,7 +89,7 @@ jobs:
           NODE_ENV: production
         run: >-
           ./gradlew :app:assembleRelease
-          -PreactNativeArchitectures=x86_64
+          -PreactNativeArchitectures=arm64-v8a
           --no-daemon
           --stacktrace
 
@@ -105,7 +107,7 @@ jobs:
           MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/android
         with:
           api-level: 34
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
@@ -133,6 +135,8 @@ jobs:
     name: iOS
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_EVISAFLOW_DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v6
 
@@ -219,3 +223,95 @@ jobs:
           path: apps/mobile/e2e/build/ios/Build/Products/**/*.app
           if-no-files-found: warn
           retention-days: 7
+
+  visual-review:
+    name: Publish visual review
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: mobile-e2e-android-*
+          path: artifacts/android
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: mobile-e2e-ios-*
+          path: artifacts/ios
+          merge-multiple: true
+
+      - name: Collect deterministic review assets
+        run: |
+          scripts/collect-mobile-visuals.sh android artifacts/android "${RUNNER_TEMP}/visuals"
+          scripts/collect-mobile-visuals.sh ios artifacts/ios "${RUNNER_TEMP}/visuals"
+
+      - name: Publish isolated PR asset branch
+        id: publish
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan "mobile-visuals-${GITHUB_RUN_ID}"
+          git rm -rf .
+          mkdir -p docs/pr-assets/mobile
+          cp -R "${RUNNER_TEMP}/visuals/." docs/pr-assets/mobile/
+          git add docs/pr-assets/mobile
+          git commit -m "visuals: mobile review for PR #${PR_NUMBER}"
+          git push --force origin "HEAD:refs/heads/mobile-visuals/pr-${PR_NUMBER}"
+          printf 'asset_sha=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update visual review comment
+        uses: actions/github-script@v8
+        env:
+          ASSET_SHA: ${{ steps.publish.outputs.asset_sha }}
+        with:
+          script: |
+            const marker = '<!-- evisaflow-mobile-visuals -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const base = `https://raw.githubusercontent.com/${owner}/${repo}/${process.env.ASSET_SHA}/docs/pr-assets/mobile`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = `${marker}
+            ## Mobile visual review
+
+            Fixture-backed release builds at \`${context.sha.slice(0, 7)}\`. All identity data, share codes, and files shown here are fictional.
+
+            | Platform | Offline vault | Security code | Saved proof |
+            | --- | --- | --- | --- |
+            | iOS | <img src="${base}/ios/dashboard-before-proof.png" width="220" alt="iOS offline vault"> | <img src="${base}/ios/security-code.png" width="220" alt="iOS security code"> | <img src="${base}/ios/saved-offline-proof.png" width="220" alt="iOS saved proof"> |
+            | Android | <img src="${base}/android/dashboard-before-proof.png" width="220" alt="Android offline vault"> | <img src="${base}/android/security-code.png" width="220" alt="Android security code"> | <img src="${base}/android/saved-offline-proof.png" width="220" alt="Android saved proof"> |
+
+            **More evidence:** [iOS purpose](${base}/ios/choose-purpose.png) · [iOS persisted dashboard](${base}/ios/dashboard-with-offline-proof.png) · [iOS journey video](${base}/ios/offline-proof-journey.mp4) · [Android purpose](${base}/android/choose-purpose.png) · [Android persisted dashboard](${base}/android/dashboard-with-offline-proof.png) · [Android journey video](${base}/android/offline-proof-journey.mp4)
+
+            [CI run and full diagnostics](${runUrl})`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

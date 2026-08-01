@@ -9,10 +9,13 @@ tags:
     clearState: true
 - runFlow: "../subflows/accept-disclosure.yaml"
 - runFlow: "../subflows/add-fictional-profile.yaml"
+- takeScreenshot: "dashboard-before-proof"
+- startRecording: "offline-proof-journey"
 - tapOn:
     id: "empty-get-proof"
 - assertVisible:
     id: "run-purpose-screen"
+- takeScreenshot: "choose-purpose"
 - scrollUntilVisible:
     element:
       id: "run-start"
@@ -23,6 +26,7 @@ tags:
     visible:
       id: "run-security-code"
     timeout: 12000
+- takeScreenshot: "security-code"
 - tapOn:
     id: "run-security-code"
 - inputText: "123456"
@@ -32,6 +36,9 @@ tags:
     visible:
       id: "saved-document-screen"
     timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: "saved-offline-proof"
+- stopRecording
 - assertVisible: "ABC 123 XYZ"
 - assertVisible: "Fictional eVisa proof.pdf"
 - tapOn:
@@ -46,6 +53,17 @@ tags:
 - assertVisible:
     id: "family-screen"
 - assertVisible: "1 document saved"
+- scrollUntilVisible:
+    element:
+      text: ".*2 results remaining.*"
+    direction: DOWN
+- assertVisible: ".*2 results remaining.*"
+- scrollUntilVisible:
+    element:
+      id: "saved-document-0"
+    direction: UP
+- waitForAnimationToEnd
+- takeScreenshot: "dashboard-with-offline-proof"
 - tapOn:
     id: "saved-document-0"
 - assertVisible:

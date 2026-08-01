@@ -12,3 +12,4 @@ allowBuilds:
 
 overrides:
   "@supabase/realtime-js>ws": "8.20.1"
+  "xcode>uuid": "11.1.1"

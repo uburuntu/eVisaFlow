@@ -294,6 +294,10 @@ export type MobileRunStatus =
 
 export type MobileArtifactKind = "evisa_pdf" | "checker_html" | "checker_pdf";
 
+export type MobileEntitlement = "free" | "evisaflow_pro";
+
+export type MobileServiceStatus = "available" | "maintenance";
+
 export interface MobileProfile {
   id: string;
   displayName: string;
@@ -346,4 +350,38 @@ export interface MobileRunClaimResult {
   shareCode: string;
   validUntil?: string;
   artifacts: MobileArtifactDescriptor[];
+}
+
+export interface MobileMe {
+  userId: string;
+  entitlement: MobileEntitlement;
+  profileLimit: number;
+  activeProfileCount: number;
+  successfulRunCount: number;
+  remainingFreeRuns: number | null;
+  serviceStatus: MobileServiceStatus;
+  serviceMessage?: string;
+}
+
+export interface MobileProfileSlotRequest {
+  profileId: string;
+}
+
+export interface MobileChallengeSubmission {
+  code: string;
+}
+
+export interface MobileRunEvent {
+  id: number;
+  runId: string;
+  type: string;
+  phase?: EVisaPhase;
+  message?: string;
+  createdAt: string;
+}
+
+export interface MobileApiError {
+  code: string;
+  message: string;
+  retryable: boolean;
 }

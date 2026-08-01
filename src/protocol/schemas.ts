@@ -69,6 +69,31 @@ export const MobileArtifactKindSchema = z.enum([
   "checker_pdf",
 ]);
 
+export const MobileEntitlementSchema = z.enum(["free", "evisaflow_pro"]);
+
+export const MobileServiceStatusSchema = z.enum(["available", "maintenance"]);
+
+export const EVisaPhaseSchema = z.enum([
+  "launching",
+  "verifying_identity",
+  "choosing_2fa",
+  "waiting_for_2fa",
+  "viewing_status",
+  "creating_share_code",
+  "downloading_pdf",
+  "checking_status",
+  "capturing_checker_html",
+  "downloading_checker_pdf",
+  "completed",
+  "failed",
+]);
+
+export const EVisaChallengeSchema = z.object({
+  type: z.literal("security_code"),
+  deliveryMethod: TwoFactorMethodSchema,
+  deadlineMs: z.number().int().positive(),
+});
+
 export const MobileProfileSchema = z.object({
   id: z.uuid(),
   displayName: z.string().trim().min(1).max(60),
@@ -91,4 +116,71 @@ export const MobileRunCreateRequestSchema = z.object({
   authorityBasis: AuthorityBasisSchema,
   attestedAt: z.iso.datetime(),
   termsVersion: z.string().trim().min(1).max(32),
+});
+
+export const MobileArtifactDescriptorSchema = z.object({
+  id: z.uuid(),
+  kind: MobileArtifactKindSchema,
+  filename: z.string().trim().min(1).max(240),
+  contentType: z.enum(["application/pdf", "text/html"]),
+  byteLength: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const MobileRunSnapshotSchema = z.object({
+  id: z.uuid(),
+  clientRunId: z.uuid(),
+  profileId: z.uuid(),
+  purpose: PurposeSchema,
+  status: MobileRunStatusSchema,
+  phase: EVisaPhaseSchema.optional(),
+  challenge: EVisaChallengeSchema.optional(),
+  retryable: z.boolean().optional(),
+  errorCode: z.string().trim().min(1).max(80).optional(),
+  artifacts: z.array(MobileArtifactDescriptorSchema).optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export const MobileRunClaimResultSchema = z.object({
+  shareCode: z.string().trim().min(1).max(32),
+  validUntil: z.iso.datetime().optional(),
+  artifacts: z.array(MobileArtifactDescriptorSchema),
+});
+
+export const MobileMeSchema = z.object({
+  userId: z.uuid(),
+  entitlement: MobileEntitlementSchema,
+  profileLimit: z.number().int().min(1).max(100),
+  activeProfileCount: z.number().int().nonnegative(),
+  successfulRunCount: z.number().int().nonnegative(),
+  remainingFreeRuns: z.number().int().nonnegative().nullable(),
+  serviceStatus: MobileServiceStatusSchema,
+  serviceMessage: z.string().trim().min(1).max(240).optional(),
+});
+
+export const MobileProfileSlotRequestSchema = z.object({
+  profileId: z.uuid(),
+});
+
+export const MobileChallengeSubmissionSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/),
+});
+
+export const MobileRunEventSchema = z.object({
+  id: z.number().int().nonnegative(),
+  runId: z.uuid(),
+  type: z.string().trim().min(1).max(80),
+  phase: EVisaPhaseSchema.optional(),
+  message: z.string().trim().min(1).max(240).optional(),
+  createdAt: z.iso.datetime(),
+});
+
+export const MobileApiErrorSchema = z.object({
+  code: z.string().trim().min(1).max(80),
+  message: z.string().trim().min(1).max(240),
+  retryable: z.boolean(),
 });

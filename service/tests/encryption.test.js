@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
-import { decrypt, encrypt } from "../dist/crypto/encryption.js";
+import {
+  decrypt,
+  decryptBytes,
+  encrypt,
+  encryptBytes,
+} from "../dist/crypto/encryption.js";
 
 const key = randomBytes(32).toString("hex");
 
@@ -24,4 +29,11 @@ test("decrypt rejects tampered ciphertext", () => {
 
 test("decrypt rejects malformed ciphertext", () => {
   assert.throws(() => decrypt("not:enough", key), /malformed/);
+});
+
+test("binary encryption roundtrip preserves artifact bytes", () => {
+  const plaintext = new Uint8Array([0, 1, 2, 3, 254, 255]);
+  const encrypted = encryptBytes(plaintext, key);
+  assert.notDeepEqual(encrypted, Buffer.from(plaintext));
+  assert.deepEqual(decryptBytes(encrypted, key), Buffer.from(plaintext));
 });

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as api from "../dist/index.js";
-import { ApplicantSchema, MobileRunCreateRequestSchema } from "../dist/protocol/index.js";
+import {
+  ApplicantSchema,
+  MobileApiErrorSchema,
+  MobileMeSchema,
+  MobileRunClaimResultSchema,
+  MobileRunCreateRequestSchema,
+  MobileRunSnapshotSchema,
+} from "../dist/protocol/index.js";
 import {
   ConfigSchema,
   createSanitizedDiagnosticSnapshot,
@@ -55,6 +62,64 @@ test("mobile run protocol rejects incomplete authority metadata", () => {
   );
   assert.equal(
     MobileRunCreateRequestSchema.safeParse({ ...request, termsVersion: "" }).success,
+    false
+  );
+});
+
+test("mobile API schemas validate snapshots, entitlements, and claimed artifacts", () => {
+  const runId = "c6d85ab7-22cd-4ef7-a394-e82c0fd8226b";
+  const profileId = "1f8f9e99-f0ea-4591-a745-aabf871febc1";
+  const now = "2026-08-01T09:00:00.000Z";
+  const artifact = {
+    id: "1df5b293-76a3-4a95-994b-8c98cc9fa260",
+    kind: "evisa_pdf",
+    filename: "eVisa proof.pdf",
+    contentType: "application/pdf",
+    byteLength: 1024,
+    sha256: "a".repeat(64),
+  };
+
+  assert.equal(
+    MobileRunSnapshotSchema.parse({
+      id: runId,
+      clientRunId: runId,
+      profileId,
+      purpose: "right_to_work",
+      status: "awaiting_2fa",
+      phase: "waiting_for_2fa",
+      challenge: {
+        type: "security_code",
+        deliveryMethod: "sms",
+        deadlineMs: Date.now() + 60_000,
+      },
+      createdAt: now,
+      updatedAt: now,
+    }).status,
+    "awaiting_2fa"
+  );
+  assert.equal(
+    MobileMeSchema.parse({
+      userId: "9591fc30-b78f-4282-8fc9-ae662d725ad1",
+      entitlement: "free",
+      profileLimit: 1,
+      activeProfileCount: 1,
+      successfulRunCount: 0,
+      remainingFreeRuns: 3,
+      serviceStatus: "available",
+    }).remainingFreeRuns,
+    3
+  );
+  assert.equal(
+    MobileRunClaimResultSchema.parse({
+      shareCode: "W12 345 678",
+      validUntil: "2026-10-30T09:00:00.000Z",
+      artifacts: [artifact],
+    }).artifacts[0].kind,
+    "evisa_pdf"
+  );
+  assert.equal(
+    MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })
+      .success,
     false
   );
 });

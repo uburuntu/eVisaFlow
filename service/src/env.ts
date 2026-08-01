@@ -34,6 +34,8 @@ const envSchema = z.object({
   EVISA_HEADLESS: BooleanFromEnv.default(true),
   EVISA_DIAGNOSTICS_MODE: DiagnosticsModeSchema.default("sanitized_on_failure"),
   HEALTH_PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+  MOBILE_API_PORT: z.coerce.number().int().min(1).max(65_535).default(8090),
+  MOBILE_API_HOST: z.string().trim().min(1).default("0.0.0.0"),
   SCHEDULER_CRON: z
     .string()
     .default("0 9 * * *")
@@ -65,6 +67,8 @@ export function redactedEnvSummary(env: Env): Record<string, unknown> {
     evisaHeadless: env.EVISA_HEADLESS,
     diagnosticsMode: env.EVISA_DIAGNOSTICS_MODE,
     healthPort: env.HEALTH_PORT,
+    mobileApiPort: env.MOBILE_API_PORT,
+    mobileApiHost: env.MOBILE_API_HOST,
     schedulerCron: env.SCHEDULER_CRON,
     scheduleIntervalDays: env.SCHEDULE_INTERVAL_DAYS,
   };

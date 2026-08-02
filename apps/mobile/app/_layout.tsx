@@ -3,7 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { AppState, StyleSheet, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ServiceProvider, useMobileService } from "@/api/ServiceContext";
 import { AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
@@ -55,28 +55,30 @@ function Navigation() {
   const theme = useAppTheme();
 
   return (
-    <>
+    <View style={[styles.navigationRoot, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.isDark ? "light" : "dark"} />
-      <Stack
-        screenOptions={{
-          contentStyle: { backgroundColor: theme.colors.background },
-          headerStyle: { backgroundColor: theme.colors.surface },
-          headerShadowVisible: false,
-          headerTintColor: theme.colors.text,
-          headerBackTitle: "Documents",
-          headerTitleStyle: { fontWeight: "700" },
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="profiles/new" options={{ title: "Add person" }} />
-        <Stack.Screen name="profiles/[id]" options={{ title: "Person details" }} />
-        <Stack.Screen name="documents/[id]" options={{ title: "Saved proof" }} />
-        <Stack.Screen name="runs/new" options={{ title: "Get current proof" }} />
-        <Stack.Screen name="runs/[id]" options={{ title: "Getting proof" }} />
-        <Stack.Screen name="settings" options={{ title: "Settings" }} />
-      </Stack>
+      <SafeAreaView edges={["bottom"]} style={styles.navigationContent}>
+        <Stack
+          screenOptions={{
+            contentStyle: { backgroundColor: theme.colors.background },
+            headerStyle: { backgroundColor: theme.colors.surface },
+            headerShadowVisible: false,
+            headerTintColor: theme.colors.text,
+            headerBackTitle: "Documents",
+            headerTitleStyle: { fontWeight: "700" },
+          }}
+        >
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="profiles/new" options={{ title: "Add person" }} />
+          <Stack.Screen name="profiles/[id]" options={{ title: "Person details" }} />
+          <Stack.Screen name="documents/[id]" options={{ title: "Saved proof" }} />
+          <Stack.Screen name="runs/new" options={{ title: "Get current proof" }} />
+          <Stack.Screen name="runs/[id]" options={{ title: "Getting proof" }} />
+          <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        </Stack>
+      </SafeAreaView>
       <PrivacyShield />
-    </>
+    </View>
   );
 }
 
@@ -110,6 +112,8 @@ function PrivacyShield() {
 }
 
 const styles = StyleSheet.create({
+  navigationRoot: { flex: 1 },
+  navigationContent: { flex: 1 },
   privacyShield: {
     position: "absolute",
     top: 0,

@@ -23,8 +23,17 @@ tags:
 - tapOn:
     id: "run-security-code"
 - inputText: "000000"
-- tapOn:
-    id: "run-submit-code"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - pressKey: enter
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "run-submit-code"
 - assertVisible: "That security code was not accepted."
 - waitForAnimationToEnd
 - assertVisible: "That security code was not accepted."

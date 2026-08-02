@@ -30,8 +30,17 @@ tags:
 - tapOn:
     id: "run-security-code"
 - inputText: "123456"
-- tapOn:
-    id: "run-submit-code"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - pressKey: enter
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "run-submit-code"
 - extendedWaitUntil:
     visible:
       id: "saved-document-screen"

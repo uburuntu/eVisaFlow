@@ -132,6 +132,7 @@ export default function RunStatusScreen() {
   }, [saveCompletedResult, snapshot, vault]);
 
   const submitCode = async () => {
+    if (submittingCode) return;
     if (!id || !/^\d{4,8}$/.test(securityCode.trim())) {
       setActionError(new Error("Enter the 4-8 digit security code."));
       return;
@@ -339,6 +340,7 @@ export default function RunStatusScreen() {
             <TextInput
               accessibilityLabel="Security code"
               autoComplete="one-time-code"
+              editable={!submittingCode}
               inputAccessoryViewID={
                 Platform.OS === "ios" ? SECURITY_CODE_ACCESSORY_ID : undefined
               }
@@ -349,6 +351,7 @@ export default function RunStatusScreen() {
                 setSecurityCode(value.replace(/\D/g, ""));
                 setActionError(null);
               }}
+              onSubmitEditing={() => void submitCode()}
               placeholder="Security code"
               placeholderTextColor={theme.colors.textMuted}
               style={[
@@ -359,6 +362,8 @@ export default function RunStatusScreen() {
                   color: theme.colors.text,
                 },
               ]}
+              returnKeyType="done"
+              submitBehavior="blurAndSubmit"
               testID="run-security-code"
               textContentType="oneTimeCode"
               value={securityCode}

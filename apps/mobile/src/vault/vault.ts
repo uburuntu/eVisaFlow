@@ -5,6 +5,7 @@ import {
   MobileProfileSchema,
   type Purpose,
   PurposeSchema,
+  ShareCodeValidUntilSchema,
 } from "@evisa-flow/protocol";
 import {
   AESEncryptionKey,
@@ -34,7 +35,7 @@ const SavedResultSchema = z.object({
   profileId: z.uuid(),
   purpose: PurposeSchema,
   shareCode: z.string().trim().min(1).max(32),
-  validUntil: z.iso.datetime().optional(),
+  validUntil: ShareCodeValidUntilSchema.optional(),
   savedAt: z.iso.datetime(),
   artifacts: z.array(SavedArtifactSchema),
 });

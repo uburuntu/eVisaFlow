@@ -73,6 +73,8 @@ export const MobileEntitlementSchema = z.enum(["free", "evisaflow_pro"]);
 
 export const MobileServiceStatusSchema = z.enum(["available", "maintenance"]);
 
+export const ShareCodeValidUntilSchema = z.union([z.iso.date(), z.iso.datetime()]);
+
 export const EVisaPhaseSchema = z.enum([
   "launching",
   "verifying_identity",
@@ -144,7 +146,7 @@ export const MobileRunSnapshotSchema = z.object({
 
 export const MobileRunClaimResultSchema = z.object({
   shareCode: z.string().trim().min(1).max(32),
-  validUntil: z.iso.datetime().optional(),
+  validUntil: ShareCodeValidUntilSchema.optional(),
   artifacts: z.array(MobileArtifactDescriptorSchema),
 });
 

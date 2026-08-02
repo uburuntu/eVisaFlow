@@ -121,7 +121,9 @@ export class DemoMobileApiClient implements MobileApi {
     run.claimed = true;
     return {
       shareCode: "ABC 123 XYZ",
-      validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10),
       artifacts: (await this.artifacts()).descriptors,
     };
   }

@@ -109,13 +109,28 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
     }).remainingFreeRuns,
     3
   );
+  const claim = MobileRunClaimResultSchema.parse({
+    shareCode: "W12 345 678",
+    validUntil: "2026-10-30",
+    artifacts: [artifact],
+  });
+  assert.equal(claim.validUntil, "2026-10-30");
+  assert.equal(claim.artifacts[0].kind, "evisa_pdf");
   assert.equal(
-    MobileRunClaimResultSchema.parse({
+    MobileRunClaimResultSchema.safeParse({
       shareCode: "W12 345 678",
       validUntil: "2026-10-30T09:00:00.000Z",
       artifacts: [artifact],
-    }).artifacts[0].kind,
-    "evisa_pdf"
+    }).success,
+    true
+  );
+  assert.equal(
+    MobileRunClaimResultSchema.safeParse({
+      shareCode: "W12 345 678",
+      validUntil: "2026-02-30",
+      artifacts: [artifact],
+    }).success,
+    false
   );
   assert.equal(
     MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })

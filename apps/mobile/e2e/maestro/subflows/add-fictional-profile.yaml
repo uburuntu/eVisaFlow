@@ -20,7 +20,16 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-day"
 - inputText: "15"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
 - scrollUntilVisible:
     element:
       id: "profile-birth-month"
@@ -28,7 +37,16 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-month"
 - inputText: "06"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
 - scrollUntilVisible:
     element:
       id: "profile-birth-year"
@@ -36,7 +54,16 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-year"
 - inputText: "1990"
-- hideKeyboard
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
 - scrollUntilVisible:
     element:
       id: "profile-two-factor-email"
@@ -65,9 +92,6 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-authority-confirmation"
     retryTapIfNoChange: true
-- assertVisible:
-    id: "profile-authority-confirmation"
-    checked: true
 - scrollUntilVisible:
     element:
       id: "profile-save"

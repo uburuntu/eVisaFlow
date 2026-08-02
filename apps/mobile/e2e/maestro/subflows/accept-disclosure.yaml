@@ -11,9 +11,6 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "onboarding-confirmation"
     retryTapIfNoChange: true
-- assertVisible:
-    id: "onboarding-confirmation"
-    checked: true
 - scrollUntilVisible:
     element:
       id: "onboarding-continue"

@@ -63,9 +63,9 @@ appId: com.evisaflow.mobile
 - assertVisible: "1 document saved"
 - scrollUntilVisible:
     element:
-      text: ".*2 results remaining.*"
+      text: ".*Private beta.*"
     direction: DOWN
-- assertVisible: ".*2 results remaining.*"
+- assertVisible: ".*Private beta.*"
 - scrollUntilVisible:
     element:
       id: "saved-document-0"

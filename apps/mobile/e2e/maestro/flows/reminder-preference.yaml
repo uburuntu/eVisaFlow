@@ -1,0 +1,37 @@
+appId: com.evisaflow.mobile
+name: Expiry reminder preference is opt-in and durable
+tags:
+  - privacy
+  - reminders
+---
+- launchApp:
+    clearState: true
+- setPermissions:
+    permissions:
+      notifications: allow
+- runFlow: "../subflows/accept-disclosure.yaml"
+- tapOn:
+    id: "dashboard-settings"
+- scrollUntilVisible:
+    element:
+      id: "settings-expiry-reminders"
+    direction: DOWN
+- assertVisible:
+    id: "settings-expiry-reminders"
+    checked: false
+- tapOn:
+    id: "settings-expiry-reminders"
+- assertVisible:
+    id: "settings-expiry-reminders"
+    checked: true
+- stopApp
+- launchApp
+- tapOn:
+    id: "dashboard-settings"
+- scrollUntilVisible:
+    element:
+      id: "settings-expiry-reminders"
+    direction: DOWN
+- assertVisible:
+    id: "settings-expiry-reminders"
+    checked: true

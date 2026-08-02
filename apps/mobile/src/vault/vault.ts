@@ -25,6 +25,7 @@ const VAULT_FILE_NAME = "manifest.v1.enc";
 const VAULT_TEMP_FILE_NAME = "manifest.v1.tmp";
 const ARTIFACT_DIRECTORY_NAME = "artifacts";
 const STAGING_PREFIX = ".staging-";
+const IsoDateTimeSchema = z.iso.datetime({ offset: true });
 
 const SavedArtifactSchema = MobileArtifactDescriptorSchema.extend({
   encryptedPath: z.string().regex(/^[0-9a-f-]+\/[0-9a-f-]+\.enc$/),
@@ -37,8 +38,8 @@ const SavedResultSchema = z.object({
   purpose: PurposeSchema,
   shareCode: z.string().trim().min(1).max(32),
   validUntil: ShareCodeValidUntilSchema.optional(),
-  generatedAt: z.iso.datetime().optional(),
-  savedAt: z.iso.datetime(),
+  generatedAt: IsoDateTimeSchema.optional(),
+  savedAt: IsoDateTimeSchema,
   artifacts: z.array(SavedArtifactSchema),
 });
 
@@ -46,7 +47,7 @@ const ActiveRunSchema = z.object({
   id: z.uuid(),
   profileId: z.uuid(),
   purpose: PurposeSchema,
-  createdAt: z.iso.datetime(),
+  createdAt: IsoDateTimeSchema,
 });
 
 const PendingClaimAcknowledgementSchema = z.object({
@@ -54,7 +55,7 @@ const PendingClaimAcknowledgementSchema = z.object({
   resultId: z.uuid(),
   claimToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
-  createdAt: z.iso.datetime(),
+  createdAt: IsoDateTimeSchema,
 });
 
 const VaultPreferencesSchema = z.object({
@@ -63,7 +64,7 @@ const VaultPreferencesSchema = z.object({
 
 const VaultDocumentSchema = z.object({
   version: z.literal(1),
-  acceptedDisclosureAt: z.iso.datetime().nullable(),
+  acceptedDisclosureAt: IsoDateTimeSchema.nullable(),
   acceptedTermsVersion: z.string().nullable(),
   profiles: z.array(MobileProfileSchema).max(6),
   results: z.array(SavedResultSchema).max(100).default([]),

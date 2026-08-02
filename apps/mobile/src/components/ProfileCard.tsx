@@ -80,7 +80,7 @@ export function ProfileCard({
           onPress={onGenerate}
           size="compact"
           testID={`family-generate-${index}`}
-          title="Get proof"
+          title="Generate copy"
         />
       </View>
     </View>

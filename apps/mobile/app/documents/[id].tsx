@@ -6,18 +6,21 @@ import {
   CalendarDays,
   Check,
   Copy,
+  ExternalLink,
   FileCheck2,
   FileText,
   KeyRound,
   LockKeyhole,
   Printer,
   Share2,
+  Trash2,
 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
 import { AppText as Text } from "@/components/AppText";
 import { IconButton } from "@/components/IconButton";
+import { OFFICIAL_EVISA_URL } from "@/constants/app";
 import { useAppTheme } from "@/theme";
 import { getExpiryState } from "@/utils/expiry";
 import { purposeLabels } from "@/utils/run";
@@ -30,11 +33,15 @@ export default function SavedDocumentScreen() {
   const theme = useAppTheme();
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const result = vault.results.find((candidate) => candidate.id === id);
   const profile = result
     ? vault.profiles.find((candidate) => candidate.id === result.profileId)
     : undefined;
   const expiryState = getExpiryState(result?.validUntil);
+  const pendingAcknowledgement = vault.pendingClaimAcknowledgements.some(
+    (pending) => pending.resultId === id
+  );
 
   useEffect(() => {
     if (!copied) return;
@@ -85,6 +92,36 @@ export default function SavedDocumentScreen() {
     }
   };
 
+  const confirmDelete = () => {
+    Alert.alert(
+      "Delete this saved proof?",
+      "This removes its share code and encrypted files from this device. The person profile stays saved.",
+      [
+        { text: "Keep proof", style: "cancel" },
+        {
+          text: "Delete proof",
+          style: "destructive",
+          onPress: () => {
+            setDeleting(true);
+            void vault
+              .deleteResult(result.id)
+              .then(() => router.replace("/"))
+              .catch(() =>
+                Alert.alert(
+                  "Could not delete proof",
+                  "The encrypted vault was not changed."
+                )
+              )
+              .finally(() => setDeleting(false));
+          },
+        },
+      ]
+    );
+  };
+
+  const savedOn = formatTimestamp(result.savedAt);
+  const lastCheckedOnline = formatTimestamp(result.generatedAt ?? result.savedAt);
+
   return (
     <ScrollView
       contentContainerStyle={styles.content}
@@ -131,7 +168,7 @@ export default function SavedDocumentScreen() {
             ]}
           >
             {expiryState === "expired"
-              ? "EXPIRED PROOF"
+              ? "SHARE CODE EXPIRED"
               : expiryState === "expiring_soon"
                 ? "EXPIRES SOON"
                 : "AVAILABLE OFFLINE"}
@@ -144,6 +181,30 @@ export default function SavedDocumentScreen() {
           </Text>
         </View>
       </View>
+
+      <View
+        style={[
+          styles.timeline,
+          { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+        ]}
+      >
+        <TimelineRow label="Saved on this phone" value={savedOn} />
+        <View
+          style={[styles.timelineDivider, { backgroundColor: theme.colors.border }]}
+        />
+        <TimelineRow label="Last checked online" value={lastCheckedOnline} />
+      </View>
+
+      {pendingAcknowledgement ? (
+        <View
+          style={[styles.securityNote, { backgroundColor: theme.colors.warningMuted }]}
+        >
+          <LockKeyhole color={theme.colors.warning} size={19} />
+          <Text style={[styles.securityText, { color: theme.colors.text }]}>
+            Saved offline. Secure server cleanup will finish when this phone reconnects.
+          </Text>
+        </View>
+      ) : null}
 
       <View style={[styles.codePanel, { backgroundColor: theme.colors.inverse }]}>
         <View style={styles.codeHeading}>
@@ -191,8 +252,8 @@ export default function SavedDocumentScreen() {
           />
           <Text style={[styles.expiryWarningText, { color: theme.colors.text }]}>
             {expiryState === "expired"
-              ? "This share code has expired. Generate a newer proof before relying on it."
-              : "This share code expires soon. Generate a newer proof while you have internet access."}
+              ? "This share code has expired. Use the official service to generate a newer code before you need it."
+              : "This share code expires soon. Generate and save a newer copy while you have internet access."}
           </Text>
         </View>
       ) : null}
@@ -252,18 +313,65 @@ export default function SavedDocumentScreen() {
         </Text>
       </View>
 
+      <View style={[styles.travelNote, { borderColor: theme.colors.border }]}>
+        <AlertTriangle color={theme.colors.textMuted} size={19} />
+        <Text style={[styles.securityText, { color: theme.colors.textMuted }]}>
+          This saved copy has not been checked against the live UKVI record since{" "}
+          {lastCheckedOnline}. It does not replace the passport or travel document linked
+          to the UKVI account.
+        </Text>
+      </View>
+
       {profile ? (
         <AppButton
           icon={KeyRound}
           onPress={() =>
             router.push({ pathname: "/runs/new", params: { profileId: profile.id } })
           }
-          title="Get a newer proof"
+          title="Generate a newer saved copy"
           variant="secondary"
         />
       ) : null}
+
+      <AppButton
+        icon={ExternalLink}
+        onPress={() => void Linking.openURL(OFFICIAL_EVISA_URL)}
+        title="Open the free official GOV.UK service"
+        variant="secondary"
+      />
+
+      <AppButton
+        icon={Trash2}
+        loading={deleting}
+        onPress={confirmDelete}
+        testID="saved-document-delete"
+        title="Delete saved proof"
+        variant="danger"
+      />
     </ScrollView>
   );
+}
+
+function TimelineRow({ label, value }: { label: string; value: string }) {
+  const theme = useAppTheme();
+  return (
+    <View style={styles.timelineRow}>
+      <Text style={[styles.timelineLabel, { color: theme.colors.textMuted }]}>
+        {label}
+      </Text>
+      <Text style={[styles.timelineValue, { color: theme.colors.text }]}>{value}</Text>
+    </View>
+  );
+}
+
+function formatTimestamp(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function formatBytes(bytes: number): string {
@@ -302,6 +410,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   expiryWarningText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: "600" },
+  timeline: { borderWidth: 1, borderRadius: 8, overflow: "hidden" },
+  timelineRow: {
+    minHeight: 56,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  timelineLabel: { flex: 1, fontSize: 12, lineHeight: 17 },
+  timelineValue: { fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "right" },
+  timelineDivider: { height: StyleSheet.hairlineWidth },
   artifacts: { gap: 10 },
   sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: "800" },
   artifactRow: {
@@ -333,6 +453,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   securityText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  travelNote: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
   missing: {
     flex: 1,
     alignItems: "center",

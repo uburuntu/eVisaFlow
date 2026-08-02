@@ -20,6 +20,7 @@ help:
 		'  mobile-e2e   Run Maestro mobile journeys on a booted device' \
 		'  mobile-e2e-android  Build, install, and test a booted Android emulator' \
 		'  mobile-e2e-ios  Build, install, and test iOS (optional IOS_DEVICE="name")' \
+		'  mobile-test  Run fast mobile unit tests' \
 		'  mobile-assets  Regenerate app icon and splash PNGs' \
 		'  format       Format and apply safe Biome fixes' \
 		'  lint         Run Biome CI checks' \
@@ -72,6 +73,9 @@ mobile-e2e-ios:
 	cd apps/mobile/ios && $(UNPROXIED) pod install
 	$(UNPROXIED) IOS_DEVICE="$(IOS_DEVICE)" scripts/mobile-e2e-ios.sh
 
+mobile-test:
+	$(UNPROXIED) pnpm run test:mobile
+
 mobile-assets:
 	$(UNPROXIED) node scripts/generate-mobile-assets.mjs
 
@@ -109,4 +113,4 @@ test:
 validate:
 	$(UNPROXIED) pnpm run validate
 
-.PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e mobile-e2e-android mobile-e2e-ios mobile-assets format lint typecheck run snapshots smoke debug-flow fixtures test validate
+.PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e mobile-e2e-android mobile-e2e-ios mobile-test mobile-assets format lint typecheck run snapshots smoke debug-flow fixtures test validate

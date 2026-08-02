@@ -6,6 +6,11 @@ import { readResultArtifact } from "./vault";
 
 const TEMP_DIRECTORY_NAME = "evisaflow-open";
 
+export function cleanupTemporaryArtifacts(): void {
+  const directory = new Directory(Paths.cache, TEMP_DIRECTORY_NAME);
+  if (directory.exists) directory.delete();
+}
+
 export async function shareSavedArtifact(artifact: SavedArtifact): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error("File sharing is unavailable on this device.");

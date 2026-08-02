@@ -3,7 +3,7 @@ name: Generate and persist an offline proof
 tags:
   - smoke
   - critical
-  - monetization
+  - offline
 ---
 - launchApp:
     clearState: true

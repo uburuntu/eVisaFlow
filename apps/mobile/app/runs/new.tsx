@@ -68,10 +68,10 @@ export default function NewRunScreen() {
         ["FREE_RUN_LIMIT", "PROFILE_LIMIT"].includes(error.code)
       ) {
         Alert.alert(
-          "eVisaFlow Pro required",
+          "Private beta limit reached",
           error.code === "FREE_RUN_LIMIT"
-            ? "The three free saved results have been used."
-            : "The free plan supports one person."
+            ? "This beta account cannot start another automated run. Saved proofs remain available, and the official GOV.UK service is free."
+            : "This beta account cannot add another person."
         );
       } else if (error instanceof MobileServiceUnavailableError) {
         Alert.alert(
@@ -97,7 +97,7 @@ export default function NewRunScreen() {
     >
       <View style={styles.intro}>
         <Text style={[styles.eyebrow, { color: theme.colors.primary }]}>
-          CURRENT EVISA PROOF
+          NEW SAVED COPY
         </Text>
         <Text style={[styles.title, { color: theme.colors.text }]}>What is it for?</Text>
         <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>

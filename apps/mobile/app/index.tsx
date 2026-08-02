@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Clock3,
   ExternalLink,
+  FileText,
   LockKeyhole,
   Plus,
   Settings,
@@ -20,11 +21,7 @@ import { ConfirmationRow } from "@/components/FormControls";
 import { IconButton } from "@/components/IconButton";
 import { ProfileCard } from "@/components/ProfileCard";
 import { SavedDocumentCard } from "@/components/SavedDocumentCard";
-import {
-  FREE_PROFILE_LIMIT,
-  FREE_RESULT_LIMIT,
-  OFFICIAL_EVISA_URL,
-} from "@/constants/app";
+import { FREE_PROFILE_LIMIT, OFFICIAL_EVISA_URL } from "@/constants/app";
 import { useAppTheme } from "@/theme";
 import { useVault } from "@/vault/VaultContext";
 
@@ -66,8 +63,8 @@ export default function DocumentsScreen() {
     const profileLimit = service.me?.profileLimit ?? FREE_PROFILE_LIMIT;
     if (vault.profiles.length >= profileLimit) {
       Alert.alert(
-        "eVisaFlow Pro required",
-        "The free plan stores one person. eVisaFlow Pro supports up to six."
+        "Private beta limit reached",
+        "This beta account cannot add another person. Saved proofs remain available, and the official GOV.UK service is free."
       );
       return;
     }
@@ -95,14 +92,6 @@ export default function DocumentsScreen() {
     vault.profiles.length,
     service.me?.profileLimit ?? FREE_PROFILE_LIMIT
   );
-  const localRemainingResults = Math.max(0, FREE_RESULT_LIMIT - vault.results.length);
-  const remainingResults =
-    service.me?.entitlement === "evisaflow_pro"
-      ? null
-      : Math.min(
-          service.me?.remainingFreeRuns ?? FREE_RESULT_LIMIT,
-          localRemainingResults
-        );
   const firstProfile = vault.profiles[0];
 
   return (
@@ -176,10 +165,10 @@ export default function DocumentsScreen() {
             <Clock3 color={theme.colors.warning} size={21} />
             <View style={styles.currentRunCopy}>
               <Text style={[styles.currentRunLabel, { color: theme.colors.warning }]}>
-                RUN IN PROGRESS
+                SAVE IN PROGRESS
               </Text>
               <Text style={[styles.currentRunTitle, { color: theme.colors.text }]}>
-                {activeProfile?.displayName ?? "Current eVisa proof"}
+                {activeProfile?.displayName ?? "Saved eVisa copy"}
               </Text>
             </View>
             <IconButton
@@ -218,7 +207,7 @@ export default function DocumentsScreen() {
                   <Text
                     style={[styles.emptyActivityBody, { color: theme.colors.textMuted }]}
                   >
-                    Generate a current proof to keep it available offline.
+                    Generate and verify a saved copy while you have internet access.
                   </Text>
                 </View>
               </View>
@@ -227,7 +216,7 @@ export default function DocumentsScreen() {
                   icon={ShieldCheck}
                   onPress={() => startRun(firstProfile.id)}
                   testID="empty-get-proof"
-                  title="Get current proof"
+                  title="Generate saved copy"
                 />
               ) : null}
             </View>
@@ -246,6 +235,15 @@ export default function DocumentsScreen() {
               ))}
             </View>
           )}
+          {vault.results.length > 0 ? (
+            <AppButton
+              icon={FileText}
+              onPress={() => router.push("/emergency-summary")}
+              testID="dashboard-emergency-summary"
+              title="Create offline summary"
+              variant="secondary"
+            />
+          ) : null}
         </View>
 
         <View style={styles.sectionHeadingRow}>
@@ -321,12 +319,9 @@ export default function DocumentsScreen() {
         </Pressable>
 
         <Text style={[styles.planFooter, { color: theme.colors.textMuted }]}>
-          {service.me?.entitlement === "evisaflow_pro" ? "eVisaFlow Pro" : "Free plan"} ·{" "}
-          {vault.profiles.length}/{profileLimit}{" "}
-          {profileLimit === 1 ? "person" : "people"} ·{" "}
-          {remainingResults === null
-            ? "unlimited results"
-            : `${remainingResults} results remaining`}
+          Private beta · {vault.profiles.length}/{profileLimit}{" "}
+          {profileLimit === 1 ? "person" : "people"} · {vault.results.length}{" "}
+          {vault.results.length === 1 ? "saved proof" : "saved proofs"}
         </Text>
       </ScrollView>
     </View>
@@ -392,6 +387,10 @@ function DisclosureScreen() {
         <Text style={[styles.disclosureBody, { color: theme.colors.textMuted }]}>
           Only manage an account for yourself, as a parent or guardian, or with the
           account holder's express authority.
+        </Text>
+        <Text style={[styles.disclosureBody, { color: theme.colors.textMuted }]}>
+          The official GOV.UK service is free. A saved copy is for convenience and does
+          not replace a linked passport, travel document, or live UKVI verification.
         </Text>
       </View>
 

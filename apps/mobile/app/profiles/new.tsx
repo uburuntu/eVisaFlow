@@ -102,8 +102,8 @@ export default function NewProfileScreen() {
         error instanceof MobileServiceUnavailableError
       ) {
         Alert.alert(
-          "eVisaFlow Pro required",
-          "The free plan stores one person. eVisaFlow Pro supports up to six."
+          "Private beta limit reached",
+          "This beta account cannot add another person. Saved profiles and proofs remain available."
         );
       } else {
         Alert.alert("Could not save", "The profile could not be encrypted and saved.");

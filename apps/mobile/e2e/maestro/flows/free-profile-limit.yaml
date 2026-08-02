@@ -1,8 +1,8 @@
 appId: com.evisaflow.mobile
-name: Free plan enforces one profile
+name: Private beta enforces the configured profile limit
 tags:
   - regression
-  - monetization
+  - beta-limits
 ---
 - launchApp:
     clearState: true
@@ -10,5 +10,5 @@ tags:
 - runFlow: "../subflows/add-fictional-profile.yaml"
 - tapOn:
     id: "family-add-person-header"
-- assertVisible: "eVisaFlow Pro required"
-- assertVisible: ".*The free plan stores one person.*"
+- assertVisible: "Private beta limit reached"
+- assertVisible: ".*cannot add another person.*"

@@ -12,8 +12,12 @@ tags:
     id: "dashboard-settings"
 - assertVisible:
     id: "settings-screen"
-- assertVisible: "1 person, 0 proofs, 0 files"
+- assertVisible: ".*1 person, 0 proofs, 0 files.*"
 - takeScreenshot: "privacy-settings"
+- scrollUntilVisible:
+    element:
+      id: "settings-delete-all"
+    direction: DOWN
 - tapOn:
     id: "settings-delete-all"
 - assertVisible: "Delete all app data?"

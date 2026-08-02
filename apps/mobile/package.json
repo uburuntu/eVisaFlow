@@ -12,6 +12,8 @@
     "ios": "expo run:ios",
     "e2e": "maestro test e2e/maestro/flows",
     "e2e:smoke": "maestro test --include-tags=smoke e2e/maestro/flows",
+    "pretest": "pnpm --filter @evisa-flow/protocol build",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -24,6 +26,7 @@
     "expo-crypto": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-linking": "56.0.16",
+    "expo-notifications": "56.0.22",
     "expo-print": "~56.0.4",
     "expo-router": "56.2.16",
     "expo-secure-store": "~56.0.4",
@@ -48,6 +51,7 @@
   "devDependencies": {
     "@react-native/metro-config": "0.85.3",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "4.1.10"
   }
 }

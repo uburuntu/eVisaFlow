@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
 import {
+  BellRing,
   ExternalLink,
   FileLock2,
   LockKeyhole,
@@ -10,11 +11,15 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
 import { AppText as Text } from "@/components/AppText";
 import { OFFICIAL_EVISA_URL } from "@/constants/app";
+import {
+  reconcileExpiryReminders,
+  requestReminderPermission,
+} from "@/notifications/reminders";
 import { useAppTheme } from "@/theme";
 import { useVault } from "@/vault/VaultContext";
 
@@ -23,8 +28,15 @@ export default function SettingsScreen() {
   const vault = useVault();
   const service = useMobileService();
   const [deleting, setDeleting] = useState(false);
+  const [savingReminders, setSavingReminders] = useState(false);
   const fileCount = vault.results.reduce(
     (total, result) => total + result.artifacts.length,
+    0
+  );
+  const storedBytes = vault.results.reduce(
+    (total, result) =>
+      total +
+      result.artifacts.reduce((subtotal, artifact) => subtotal + artifact.byteLength, 0),
     0
   );
 
@@ -59,6 +71,29 @@ export default function SettingsScreen() {
     );
   };
 
+  const setReminders = async (enabled: boolean) => {
+    if (savingReminders) return;
+    setSavingReminders(true);
+    try {
+      if (enabled && !(await requestReminderPermission())) {
+        Alert.alert(
+          "Notifications are off",
+          "Allow notifications in device settings to receive saved-proof reminders."
+        );
+        return;
+      }
+      await reconcileExpiryReminders(vault.results, enabled);
+      await vault.setExpiryRemindersEnabled(enabled);
+    } catch {
+      Alert.alert(
+        "Could not update reminders",
+        "Your reminder preference was not changed."
+      );
+    } finally {
+      setSavingReminders(false);
+    }
+  };
+
   return (
     <ScrollView
       contentContainerStyle={styles.content}
@@ -82,6 +117,35 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Reminders</Text>
+        <View style={styles.preferenceRow}>
+          <View style={[styles.rowIcon, { backgroundColor: theme.colors.infoMuted }]}>
+            <BellRing color={theme.colors.info} size={20} />
+          </View>
+          <View style={styles.preferenceCopy}>
+            <Text style={[styles.rowTitle, { color: theme.colors.text }]}>
+              Expiry reminders
+            </Text>
+            <Text style={[styles.rowBody, { color: theme.colors.textMuted }]}>
+              Private alerts 30, 14, 7, and 1 days before a saved share code expires.
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Expiry reminders"
+            disabled={savingReminders}
+            onValueChange={(enabled) => void setReminders(enabled)}
+            testID="settings-expiry-reminders"
+            thumbColor={theme.colors.surface}
+            trackColor={{
+              false: theme.colors.border,
+              true: theme.colors.primary,
+            }}
+            value={vault.expiryRemindersEnabled}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
           On this device
         </Text>
@@ -91,7 +155,7 @@ export default function SettingsScreen() {
           title="Encrypted offline vault"
         />
         <SettingRow
-          body={`${vault.profiles.length} ${vault.profiles.length === 1 ? "person" : "people"}, ${vault.results.length} ${vault.results.length === 1 ? "proof" : "proofs"}, ${fileCount} ${fileCount === 1 ? "file" : "files"}`}
+          body={`${vault.profiles.length} ${vault.profiles.length === 1 ? "person" : "people"}, ${vault.results.length} ${vault.results.length === 1 ? "proof" : "proofs"}, ${fileCount} ${fileCount === 1 ? "file" : "files"} (${formatBytes(storedBytes)})`}
           icon={FileLock2}
           title="Saved locally"
         />
@@ -157,6 +221,12 @@ function SettingRow({
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 44, gap: 26 },
   heading: { flexDirection: "row", alignItems: "center", gap: 14 },
@@ -183,6 +253,8 @@ const styles = StyleSheet.create({
   rowCopy: { flex: 1, gap: 3 },
   rowTitle: { fontSize: 14, lineHeight: 19, fontWeight: "700" },
   rowBody: { fontSize: 13, lineHeight: 19 },
+  preferenceRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  preferenceCopy: { flex: 1, gap: 3 },
   deleteSection: { borderTopWidth: 1, paddingTop: 22, gap: 12 },
   deleteBody: { fontSize: 13, lineHeight: 19 },
   version: { textAlign: "center", fontSize: 11, lineHeight: 16 },

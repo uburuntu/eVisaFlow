@@ -307,6 +307,11 @@ jobs:
             | iOS | <img src="${base}/ios/choose-purpose.png" width="220" alt="iOS purpose selection"> | <img src="${base}/ios/dashboard-with-offline-proof.png" width="220" alt="iOS persisted dashboard"> | <img src="${base}/ios/privacy-settings.png" width="220" alt="iOS privacy settings"> |
             | Android | <img src="${base}/android/choose-purpose.png" width="220" alt="Android purpose selection"> | <img src="${base}/android/dashboard-with-offline-proof.png" width="220" alt="Android persisted dashboard"> | <img src="${base}/android/privacy-settings.png" width="220" alt="Android privacy settings"> |
 
+            | Platform | Printable offline summary |
+            | --- | --- |
+            | iOS | <img src="${base}/ios/offline-summary.png" width="250" alt="iOS printable offline summary selection"> |
+            | Android | <img src="${base}/android/offline-summary.png" width="250" alt="Android printable offline summary selection"> |
+
             | Platform | Large text dashboard (200%) | Scrolled controls (200%) |
             | --- | --- | --- |
             | iOS | <img src="${base}/ios/large-text-dashboard.png" width="250" alt="iOS dashboard at 200 percent text size"> | <img src="${base}/ios/large-text-dashboard-bottom.png" width="250" alt="iOS scrolled dashboard controls at 200 percent text size"> |

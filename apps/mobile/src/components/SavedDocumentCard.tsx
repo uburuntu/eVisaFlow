@@ -74,7 +74,7 @@ export function SavedDocumentCard({
           {purposeLabels[result.purpose]}
         </Text>
         <Text style={[styles.expiry, { color: theme.colors.text }]}>
-          {expiryState === "expired" ? "Expired" : "Valid until"} {expiry}
+          Share code {expiryState === "expired" ? "expired" : "valid until"} {expiry}
         </Text>
       </View>
       <ChevronRight color={theme.colors.textMuted} size={20} />

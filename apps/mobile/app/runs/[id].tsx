@@ -602,7 +602,7 @@ function phasePresentation(
     },
     creating_share_code: {
       title: "Creating share code",
-      body: "Requesting current proof",
+      body: "Requesting a saved copy",
       progress: 0.68,
     },
     downloading_pdf: {

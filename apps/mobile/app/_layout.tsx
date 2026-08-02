@@ -1,4 +1,5 @@
-import { Stack } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useState } from "react";
@@ -7,8 +8,17 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { MobileApiRequestError } from "@/api/client";
 import { ServiceProvider, useMobileService } from "@/api/ServiceContext";
 import { AppText as Text } from "@/components/AppText";
+import {
+  configureLocalNotifications,
+  reconcileExpiryReminders,
+  resultIdFromNotificationResponse,
+} from "@/notifications/reminders";
 import { useAppTheme } from "@/theme";
+import { cleanupTemporaryArtifacts } from "@/vault/artifact-actions";
+import { cleanupTemporaryEmergencySummaries } from "@/vault/emergency-summary";
 import { useVault, VaultProvider } from "@/vault/VaultContext";
+
+configureLocalNotifications();
 
 function ServiceBootstrap() {
   const vault = useVault();
@@ -100,6 +110,14 @@ function ServiceBootstrap() {
   return null;
 }
 
+function LocalFileCleanup() {
+  useEffect(() => {
+    cleanupTemporaryArtifacts();
+    cleanupTemporaryEmergencySummaries();
+  }, []);
+  return null;
+}
+
 function Navigation() {
   const theme = useAppTheme();
 
@@ -121,7 +139,8 @@ function Navigation() {
           <Stack.Screen name="profiles/new" options={{ title: "Add person" }} />
           <Stack.Screen name="profiles/[id]" options={{ title: "Person details" }} />
           <Stack.Screen name="documents/[id]" options={{ title: "Saved proof" }} />
-          <Stack.Screen name="runs/new" options={{ title: "Get current proof" }} />
+          <Stack.Screen name="emergency-summary" options={{ title: "Offline summary" }} />
+          <Stack.Screen name="runs/new" options={{ title: "Generate saved copy" }} />
           <Stack.Screen name="runs/[id]" options={{ title: "Getting proof" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
         </Stack>
@@ -129,6 +148,40 @@ function Navigation() {
       <PrivacyShield />
     </View>
   );
+}
+
+function ReminderSync() {
+  const vault = useVault();
+  useEffect(() => {
+    if (vault.status !== "ready") return;
+    void reconcileExpiryReminders(vault.results, vault.expiryRemindersEnabled).catch(
+      () => {
+        // The preference remains encrypted locally and reconciliation retries on change.
+      }
+    );
+  }, [vault.expiryRemindersEnabled, vault.results, vault.status]);
+  return null;
+}
+
+function NotificationNavigation() {
+  useEffect(() => {
+    const openResponse = (response: Notifications.NotificationResponse) => {
+      const resultId = resultIdFromNotificationResponse(response);
+      if (resultId) {
+        router.push({ pathname: "/documents/[id]", params: { id: resultId } });
+      }
+    };
+    const subscription =
+      Notifications.addNotificationResponseReceivedListener(openResponse);
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        openResponse(response);
+        void Notifications.clearLastNotificationResponseAsync();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+  return null;
 }
 
 function PrivacyShield() {
@@ -184,6 +237,9 @@ export default function RootLayout() {
       <VaultProvider>
         <ServiceProvider>
           <ServiceBootstrap />
+          <LocalFileCleanup />
+          <ReminderSync />
+          <NotificationNavigation />
           <Navigation />
         </ServiceProvider>
       </VaultProvider>

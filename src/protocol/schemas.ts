@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const IsoDateTimeSchema = z.iso.datetime({ offset: true });
+
 const documentNumberSchema = z
   .string()
   .trim()
@@ -73,7 +75,7 @@ export const MobileEntitlementSchema = z.enum(["free", "evisaflow_pro"]);
 
 export const MobileServiceStatusSchema = z.enum(["available", "maintenance"]);
 
-export const ShareCodeValidUntilSchema = z.union([z.iso.date(), z.iso.datetime()]);
+export const ShareCodeValidUntilSchema = z.union([z.iso.date(), IsoDateTimeSchema]);
 
 export const EVisaPhaseSchema = z.enum([
   "launching",
@@ -102,11 +104,11 @@ export const MobileProfileSchema = z.object({
   applicant: ApplicantSchema,
   preferredTwoFactorMethod: TwoFactorMethodSchema,
   authorityBasis: AuthorityBasisSchema,
-  attestedAt: z.iso.datetime(),
+  attestedAt: IsoDateTimeSchema,
   termsVersion: z.string().trim().min(1).max(32),
   lastPurpose: PurposeSchema.optional(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: IsoDateTimeSchema,
+  updatedAt: IsoDateTimeSchema,
 });
 
 export const MobileRunCreateRequestSchema = z.object({
@@ -116,7 +118,7 @@ export const MobileRunCreateRequestSchema = z.object({
   purpose: PurposeSchema,
   preferredTwoFactorMethod: TwoFactorMethodSchema,
   authorityBasis: AuthorityBasisSchema,
-  attestedAt: z.iso.datetime(),
+  attestedAt: IsoDateTimeSchema,
   termsVersion: z.string().trim().min(1).max(32),
 });
 
@@ -140,8 +142,8 @@ export const MobileRunSnapshotSchema = z.object({
   retryable: z.boolean().optional(),
   errorCode: z.string().trim().min(1).max(80).optional(),
   artifacts: z.array(MobileArtifactDescriptorSchema).optional(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: IsoDateTimeSchema,
+  updatedAt: IsoDateTimeSchema,
 });
 
 const MobileClaimTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
@@ -149,11 +151,11 @@ const MobileClaimManifestHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const MobileRunClaimSessionSchema = z.object({
   claimToken: MobileClaimTokenSchema,
-  claimExpiresAt: z.iso.datetime(),
+  claimExpiresAt: IsoDateTimeSchema,
   manifestHash: MobileClaimManifestHashSchema,
   shareCode: z.string().trim().min(1).max(32),
   validUntil: ShareCodeValidUntilSchema.optional(),
-  generatedAt: z.iso.datetime(),
+  generatedAt: IsoDateTimeSchema,
   artifacts: z.array(MobileArtifactDescriptorSchema),
 });
 
@@ -166,7 +168,7 @@ export const MobileRunClaimAcknowledgementRequestSchema = z.object({
 });
 
 export const MobileRunClaimAcknowledgementSchema = z.object({
-  claimedAt: z.iso.datetime(),
+  claimedAt: IsoDateTimeSchema,
   usageConsumed: z.boolean(),
 });
 
@@ -198,7 +200,7 @@ export const MobileRunEventSchema = z.object({
   type: z.string().trim().min(1).max(80),
   phase: EVisaPhaseSchema.optional(),
   message: z.string().trim().min(1).max(240).optional(),
-  createdAt: z.iso.datetime(),
+  createdAt: IsoDateTimeSchema,
 });
 
 export const MobileApiErrorSchema = z.object({

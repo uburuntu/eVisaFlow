@@ -164,7 +164,7 @@ export default function ProfileDetailsScreen() {
           onPress={() =>
             router.push({ pathname: "/runs/new", params: { profileId: profile.id } })
           }
-          title="Get current proof"
+          title="Generate saved copy"
         />
       ) : null}
 

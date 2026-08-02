@@ -50,6 +50,7 @@ for screenshot in \
   security-code \
   saved-offline-proof \
   dashboard-with-offline-proof \
+  offline-summary \
   privacy-settings \
   large-text-dashboard \
   large-text-dashboard-bottom; do

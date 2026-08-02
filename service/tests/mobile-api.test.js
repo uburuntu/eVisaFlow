@@ -6,6 +6,28 @@ const userId = "9591fc30-b78f-4282-8fc9-ae662d725ad1";
 const profileId = "1f8f9e99-f0ea-4591-a745-aabf871febc1";
 const runId = "c6d85ab7-22cd-4ef7-a394-e82c0fd8226b";
 const now = "2026-08-01T09:00:00.000Z";
+const claimToken = "c".repeat(43);
+const manifestHash = "d".repeat(64);
+const artifactId = "1df5b293-76a3-4a95-994b-8c98cc9fa260";
+
+const claimSession = {
+  claimToken,
+  claimExpiresAt: "2026-08-01T09:10:00.000Z",
+  manifestHash,
+  shareCode: "ABC 123 XYZ",
+  validUntil: "2026-10-30",
+  generatedAt: now,
+  artifacts: [
+    {
+      id: artifactId,
+      kind: "evisa_pdf",
+      filename: "Fictional proof.pdf",
+      contentType: "application/pdf",
+      byteLength: 4,
+      sha256: "a".repeat(64),
+    },
+  ],
+};
 
 const runRequest = {
   clientRunId: runId,
@@ -26,6 +48,9 @@ function createFixture(options = {}) {
   const started = [];
   const cancelled = [];
   const slots = new Set();
+  const beginClaimCalls = [];
+  const acknowledgementCalls = [];
+  const artifactCalls = [];
   let deletedAccountId = null;
   const store = {
     async getMe(ownerId) {
@@ -76,17 +101,23 @@ function createFixture(options = {}) {
     async getRun(ownerId, id) {
       return ownerId === userId ? (runs.get(id) ?? null) : null;
     },
-    async getEvents() {
-      return [];
+    async getEvents(_ownerId, _runId, afterId) {
+      return (options.events ?? []).filter((event) => event.id > afterId);
     },
     async updateRun(id, update) {
       runs.set(id, { ...runs.get(id), ...update });
     },
-    async claimResult() {
-      return null;
+    async beginClaim(ownerId, id) {
+      beginClaimCalls.push({ ownerId, id });
+      return options.claimSession ?? null;
     },
-    async downloadArtifact() {
-      return null;
+    async acknowledgeClaim(ownerId, id, body) {
+      acknowledgementCalls.push({ ownerId, id, body });
+      return options.acknowledgement ?? null;
+    },
+    async downloadArtifact(ownerId, id, requestedArtifactId, token) {
+      artifactCalls.push({ ownerId, id, requestedArtifactId, token });
+      return options.artifact ?? null;
     },
   };
   const coordinator = {
@@ -119,6 +150,9 @@ function createFixture(options = {}) {
     slots,
     started,
     cancelled,
+    beginClaimCalls,
+    acknowledgementCalls,
+    artifactCalls,
     deletedAccountId: () => deletedAccountId,
   };
 }
@@ -269,5 +303,114 @@ test("mobile API rate limits repeated security-code submissions", async () => {
   assert.equal(limited.statusCode, 429);
   assert.equal(limited.json().code, "RATE_LIMITED");
   assert.ok(Number(limited.headers["retry-after"]) > 0);
+  await app.close();
+});
+
+test("mobile API uses two-phase result claim and token-bound artifact downloads", async () => {
+  const acknowledgement = { claimedAt: now, usageConsumed: true };
+  const artifact = {
+    descriptor: claimSession.artifacts[0],
+    bytes: Buffer.from([1, 2, 3, 4]),
+  };
+  const { app, beginClaimCalls, acknowledgementCalls, artifactCalls } = createFixture({
+    claimSession,
+    acknowledgement,
+    artifact,
+  });
+
+  const begin = await app.inject(
+    authorized({ method: "POST", url: `/v1/runs/${runId}/claim-result` })
+  );
+  assert.equal(begin.statusCode, 200);
+  assert.equal(begin.json().claimToken, claimToken);
+  assert.deepEqual(beginClaimCalls, [{ ownerId: userId, id: runId }]);
+  assert.equal(acknowledgementCalls.length, 0);
+
+  const missingToken = await app.inject(
+    authorized({
+      method: "GET",
+      url: `/v1/runs/${runId}/artifacts/${artifactId}`,
+    })
+  );
+  assert.equal(missingToken.statusCode, 404);
+  assert.equal(artifactCalls.length, 0);
+
+  const download = await app.inject(
+    authorized({
+      method: "GET",
+      url: `/v1/runs/${runId}/artifacts/${artifactId}`,
+      headers: { "x-evisaflow-claim-token": claimToken },
+    })
+  );
+  assert.equal(download.statusCode, 200);
+  assert.deepEqual(download.rawPayload, Buffer.from([1, 2, 3, 4]));
+  assert.equal(artifactCalls[0].token, claimToken);
+
+  const acknowledged = await app.inject(
+    authorized({
+      method: "POST",
+      url: `/v1/runs/${runId}/claim-result/acknowledge`,
+      payload: { claimToken, manifestHash },
+    })
+  );
+  assert.equal(acknowledged.statusCode, 200);
+  assert.deepEqual(acknowledged.json(), acknowledgement);
+  assert.deepEqual(acknowledgementCalls[0].body, { claimToken, manifestHash });
+  await app.close();
+});
+
+test("mobile API rejects malformed and expired claim acknowledgements safely", async () => {
+  const { app } = createFixture({ claimSession });
+  const malformed = await app.inject(
+    authorized({
+      method: "POST",
+      url: `/v1/runs/${runId}/claim-result/acknowledge`,
+      payload: { claimToken: "short", manifestHash },
+    })
+  );
+  assert.equal(malformed.statusCode, 400);
+  assert.equal(malformed.json().code, "REQUEST_INVALID");
+
+  const expired = await app.inject(
+    authorized({
+      method: "POST",
+      url: `/v1/runs/${runId}/claim-result/acknowledge`,
+      payload: { claimToken, manifestHash },
+    })
+  );
+  assert.equal(expired.statusCode, 409);
+  assert.equal(expired.json().code, "CLAIM_ACKNOWLEDGEMENT_REJECTED");
+  assert.equal(expired.json().retryable, true);
+  await app.close();
+});
+
+test("mobile SSE replays events after Last-Event-ID and closes on terminal state", async () => {
+  const events = [
+    { id: 1, runId, type: "queued", phase: "launching", createdAt: now },
+    { id: 2, runId, type: "completed", phase: "completed", createdAt: now },
+  ];
+  const { app, runs } = createFixture({ events });
+  runs.set(runId, {
+    id: runId,
+    clientRunId: runId,
+    profileId,
+    purpose: "right_to_work",
+    status: "succeeded",
+    phase: "completed",
+    createdAt: now,
+    updatedAt: now,
+  });
+  const response = await app.inject(
+    authorized({
+      method: "GET",
+      url: `/v1/runs/${runId}/events`,
+      headers: { "last-event-id": "1" },
+    })
+  );
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers["content-type"], /^text\/event-stream/);
+  assert.doesNotMatch(response.body, /id: 1\n/);
+  assert.match(response.body, /id: 2\n/);
+  assert.match(response.body, /"type":"completed"/);
   await app.close();
 });

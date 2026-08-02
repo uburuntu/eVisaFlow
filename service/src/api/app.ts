@@ -1,6 +1,7 @@
 import {
   MobileChallengeSubmissionSchema,
   MobileProfileSlotRequestSchema,
+  MobileRunClaimAcknowledgementRequestSchema,
   MobileRunCreateRequestSchema,
 } from "evisa-flow/protocol";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
@@ -13,6 +14,7 @@ import type { MobileStore } from "./mobile-store.js";
 
 const IdParamsSchema = z.object({ id: z.uuid() });
 const ArtifactParamsSchema = z.object({ id: z.uuid(), artifactId: z.uuid() });
+const ClaimTokenHeaderSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 
 interface MobileApiDependencies {
   auth: MobileAuth;
@@ -28,7 +30,8 @@ interface MobileApiDependencies {
     | "getRun"
     | "getEvents"
     | "updateRun"
-    | "claimResult"
+    | "beginClaim"
+    | "acknowledgeClaim"
     | "downloadArtifact"
   >;
   log: Logger;
@@ -180,7 +183,7 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
       const snapshot = await dependencies.store.getRun(ownerId, params.id);
       if (!snapshot || isTerminal(snapshot.status)) break;
       reply.raw.write(": heartbeat\n\n");
-      await delay(10_000);
+      await delay(15_000);
     }
     reply.raw.end();
   });
@@ -241,7 +244,7 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     if (!params) return;
     const ownerId = userId(request);
     if (rateLimited(rateLimiter, reply, `claim:${ownerId}`, 10, 15 * 60_000)) return;
-    const result = await dependencies.store.claimResult(ownerId, params.id);
+    const result = await dependencies.store.beginClaim(ownerId, params.id);
     if (!result) {
       return sendError(
         reply,
@@ -254,9 +257,40 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     return result;
   });
 
+  app.post("/v1/runs/:id/claim-result/acknowledge", async (request, reply) => {
+    const params = parse(IdParamsSchema, request.params, reply);
+    const body = parse(MobileRunClaimAcknowledgementRequestSchema, request.body, reply);
+    if (!params || !body) return;
+    const ownerId = userId(request);
+    if (rateLimited(rateLimiter, reply, `claim-ack:${ownerId}`, 10, 15 * 60_000)) {
+      return;
+    }
+    const acknowledgement = await dependencies.store.acknowledgeClaim(
+      ownerId,
+      params.id,
+      body
+    );
+    if (!acknowledgement) {
+      return sendError(
+        reply,
+        409,
+        "CLAIM_ACKNOWLEDGEMENT_REJECTED",
+        "The secure result confirmation expired. Start the save step again.",
+        true
+      );
+    }
+    return acknowledgement;
+  });
+
   app.get("/v1/runs/:id/artifacts/:artifactId", async (request, reply) => {
     const params = parse(ArtifactParamsSchema, request.params, reply);
     if (!params) return;
+    const claimToken = ClaimTokenHeaderSchema.safeParse(
+      request.headers["x-evisaflow-claim-token"]
+    );
+    if (!claimToken.success) {
+      return sendError(reply, 404, "ARTIFACT_NOT_FOUND", "Artifact not found.", false);
+    }
     const ownerId = userId(request);
     if (rateLimited(rateLimiter, reply, `artifacts:${ownerId}`, 30, 5 * 60_000)) {
       return;
@@ -264,7 +298,8 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
     const artifact = await dependencies.store.downloadArtifact(
       ownerId,
       params.id,
-      params.artifactId
+      params.artifactId,
+      claimToken.data
     );
     if (!artifact) {
       return sendError(reply, 404, "ARTIFACT_NOT_FOUND", "Artifact not found.", false);
@@ -285,6 +320,9 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
       "Mobile API request failed"
     );
     const mapped = mapError(error);
+    if (mapped.code === "BETA_DAILY_LIMIT") {
+      reply.header("Retry-After", String(secondsUntilNextUtcDay()));
+    }
     sendError(reply, mapped.status, mapped.code, mapped.message, mapped.retryable);
   });
 
@@ -375,6 +413,15 @@ function mapError(error: unknown): {
       retryable: false,
     };
   }
+  if (message === "BETA_DAILY_LIMIT") {
+    return {
+      status: 429,
+      code: message,
+      message:
+        "Private beta automation is paused for today. Use the official GOV.UK service.",
+      retryable: true,
+    };
+  }
   if (message === "PROFILE_NOT_FOUND") {
     return {
       status: 404,
@@ -409,4 +456,9 @@ function mapError(error: unknown): {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function secondsUntilNextUtcDay(now = new Date()): number {
+  const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((nextDay - now.getTime()) / 1000));
 }

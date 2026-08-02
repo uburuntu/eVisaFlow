@@ -3,10 +3,14 @@ import type {
   MobileChallengeSubmission,
   MobileMe,
   MobileProfileSlotRequest,
-  MobileRunClaimResult,
+  MobileRunClaimAcknowledgement,
+  MobileRunClaimAcknowledgementRequest,
+  MobileRunClaimSession,
   MobileRunCreateRequest,
+  MobileRunEvent,
   MobileRunSnapshot,
 } from "@evisa-flow/protocol";
+import { mobileClaimManifestJson } from "@evisa-flow/protocol";
 import { CryptoDigestAlgorithm, digest } from "expo-crypto";
 import type { MobileApi } from "./client";
 import { MobileApiRequestError } from "./client";
@@ -17,6 +21,8 @@ interface DemoRun {
   challengeSubmittedAt?: number;
   cancelled: boolean;
   claimed: boolean;
+  claimToken?: string;
+  manifestHash?: string;
 }
 
 const artifactIds = {
@@ -113,29 +119,97 @@ export class DemoMobileApiClient implements MobileApi {
     return this.snapshot(run);
   }
 
-  async claimResult(runId: string): Promise<MobileRunClaimResult> {
+  async beginClaim(runId: string): Promise<MobileRunClaimSession> {
     const run = this.requireRun(runId);
     if (!isSuccessful(this.snapshot(run).status)) {
       throw apiError(409, "RESULT_NOT_READY", "The result is not ready to claim.", true);
     }
-    run.claimed = true;
-    return {
+    const artifacts = (await this.artifacts()).descriptors;
+    const generatedAt = new Date(
+      (run.challengeSubmittedAt ?? new Date(run.createdAt).getTime()) + 1_300
+    ).toISOString();
+    const result = {
       shareCode: "ABC 123 XYZ",
       validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10),
-      artifacts: (await this.artifacts()).descriptors,
+      generatedAt,
+      artifacts,
     };
+    run.claimToken = "d".repeat(43);
+    run.manifestHash = await sha256(mobileClaimManifestJson({ runId, ...result }));
+    return {
+      claimToken: run.claimToken,
+      claimExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      manifestHash: run.manifestHash,
+      ...result,
+    };
+  }
+
+  async acknowledgeClaim(
+    runId: string,
+    request: MobileRunClaimAcknowledgementRequest
+  ): Promise<MobileRunClaimAcknowledgement> {
+    const run = this.requireRun(runId);
+    if (
+      !run.claimToken ||
+      !run.manifestHash ||
+      request.claimToken !== run.claimToken ||
+      request.manifestHash !== run.manifestHash
+    ) {
+      throw apiError(
+        409,
+        "CLAIM_ACKNOWLEDGEMENT_REJECTED",
+        "The secure result confirmation expired.",
+        true
+      );
+    }
+    run.claimed = true;
+    return { claimedAt: new Date().toISOString(), usageConsumed: true };
   }
 
   async downloadArtifact(
     runId: string,
-    artifact: MobileArtifactDescriptor
+    artifact: MobileArtifactDescriptor,
+    claimToken: string
   ): Promise<Uint8Array> {
-    this.requireRun(runId);
+    const run = this.requireRun(runId);
+    if (!run.claimToken || claimToken !== run.claimToken) {
+      throw apiError(404, "ARTIFACT_NOT_FOUND", "Artifact not found.");
+    }
     const bytes = (await this.artifacts()).bytes.get(artifact.id);
     if (!bytes) throw apiError(404, "ARTIFACT_NOT_FOUND", "Artifact not found.");
     return bytes;
+  }
+
+  async streamRunEvents(
+    runId: string,
+    options: {
+      lastEventId?: number;
+      signal: AbortSignal;
+      onEvent: (event: MobileRunEvent) => void;
+    }
+  ): Promise<void> {
+    const run = this.requireRun(runId);
+    let previous = "";
+    let eventId = options.lastEventId ?? 0;
+    while (!options.signal.aborted) {
+      const snapshot = this.snapshot(run);
+      const signature = `${snapshot.status}:${snapshot.phase ?? ""}`;
+      if (signature !== previous) {
+        previous = signature;
+        eventId += 1;
+        options.onEvent({
+          id: eventId,
+          runId,
+          type: snapshot.status,
+          ...(snapshot.phase ? { phase: snapshot.phase } : {}),
+          createdAt: new Date().toISOString(),
+        });
+      }
+      if (isTerminal(snapshot.status)) return;
+      await delay(200);
+    }
   }
 
   private requireRun(runId: string): DemoRun {
@@ -259,6 +333,29 @@ function createPdf(title: string, subtitle: string): Uint8Array {
   }
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return new TextEncoder().encode(pdf);
+}
+
+async function sha256(value: string): Promise<string> {
+  return toHex(
+    new Uint8Array(
+      await digest(CryptoDigestAlgorithm.SHA256, new TextEncoder().encode(value))
+    )
+  );
+}
+
+function isTerminal(status: MobileRunSnapshot["status"]): boolean {
+  return [
+    "succeeded",
+    "partial_success",
+    "failed",
+    "cancelled",
+    "interrupted",
+    "expired",
+  ].includes(status);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function escapePdf(value: string): string {

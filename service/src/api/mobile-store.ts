@@ -1,16 +1,20 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   MobileArtifactDescriptor,
   MobileMe,
-  MobileRunClaimResult,
+  MobileRunClaimAcknowledgement,
+  MobileRunClaimAcknowledgementRequest,
+  MobileRunClaimSession,
   MobileRunCreateRequest,
   MobileRunEvent,
   MobileRunSnapshot,
 } from "evisa-flow/protocol";
 import {
-  MobileRunClaimResultSchema,
+  MobileRunClaimAcknowledgementSchema,
+  MobileRunClaimSessionSchema,
   MobileRunCreateRequestSchema,
+  mobileClaimManifestJson,
 } from "evisa-flow/protocol";
 import { decrypt, decryptBytes, encrypt, encryptBytes } from "../crypto/encryption.js";
 
@@ -18,6 +22,7 @@ const ARTIFACT_BUCKET = "mobile-run-artifacts";
 const FREE_PROFILE_LIMIT = 1;
 const PRO_PROFILE_LIMIT = 6;
 const FREE_RESULT_LIMIT = 3;
+const CLAIM_TTL_MS = 10 * 60 * 1000;
 
 interface DbMobileUser {
   id: string;
@@ -38,6 +43,11 @@ interface DbMobileRun {
   challenge_deadline: string | null;
   retryable: boolean | null;
   error_code: string | null;
+  completed_at: string | null;
+  claimed_at: string | null;
+  claim_token_hash: string | null;
+  claim_manifest_hash: string | null;
+  claim_expires_at: string | null;
   expires_at: string;
   created_at: string;
   updated_at: string;
@@ -63,7 +73,8 @@ interface StoredResult {
 export class MobileStore {
   constructor(
     private readonly db: SupabaseClient,
-    private readonly encryptionKey: string
+    private readonly encryptionKey: string,
+    private readonly maxDailyRuns = 25
   ) {}
 
   async getMe(userId: string): Promise<MobileMe> {
@@ -185,6 +196,10 @@ export class MobileStore {
         phase: "failed",
         encrypted_request: null,
         encrypted_result: null,
+        claim_token_hash: null,
+        claim_manifest_hash: null,
+        claim_started_at: null,
+        claim_expires_at: null,
         challenge_method: null,
         challenge_deadline: null,
         retryable: false,
@@ -417,49 +432,122 @@ export class MobileStore {
     }
   }
 
-  async claimResult(userId: string, runId: string): Promise<MobileRunClaimResult | null> {
-    const { data: claimed, error: claimError } = await this.db.rpc("claim_mobile_run", {
-      claim_run_id: runId,
-      claim_user_id: userId,
-    });
-    if (claimError) throw claimError;
-    if (!claimed) return null;
-
+  async beginClaim(userId: string, runId: string): Promise<MobileRunClaimSession | null> {
     const { data, error } = await this.db
       .from("mobile_runs")
-      .select("encrypted_result")
+      .select("encrypted_result,status,completed_at,expires_at,claimed_at")
       .eq("id", runId)
       .eq("user_id", userId)
-      .single();
+      .in("status", ["succeeded", "partial_success"])
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
     if (error) throw error;
-    if (!data.encrypted_result) return null;
+    if (!data || data.claimed_at || !data.encrypted_result || !data.completed_at) {
+      return null;
+    }
+
     const result = JSON.parse(
       decrypt(data.encrypted_result, this.encryptionKey)
     ) as StoredResult;
-    return MobileRunClaimResultSchema.parse({
+    const artifacts = await this.getArtifacts(runId);
+    const manifestHash = createHash("sha256")
+      .update(
+        mobileClaimManifestJson({
+          runId,
+          ...result,
+          generatedAt: data.completed_at,
+          artifacts,
+        })
+      )
+      .digest("hex");
+    const claimToken = randomBytes(32).toString("base64url");
+    const claimTokenHash = hashClaimToken(claimToken);
+    const claimExpiresAt = new Date(
+      Math.min(Date.now() + CLAIM_TTL_MS, new Date(data.expires_at).getTime())
+    ).toISOString();
+    const { data: updated, error: updateError } = await this.db
+      .from("mobile_runs")
+      .update({
+        claim_token_hash: claimTokenHash,
+        claim_manifest_hash: manifestHash,
+        claim_started_at: new Date().toISOString(),
+        claim_expires_at: claimExpiresAt,
+      })
+      .eq("id", runId)
+      .eq("user_id", userId)
+      .is("claimed_at", null)
+      .select("id")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (!updated) return null;
+
+    return MobileRunClaimSessionSchema.parse({
+      claimToken,
+      claimExpiresAt,
+      manifestHash,
       ...result,
-      artifacts: await this.getArtifacts(runId),
+      generatedAt: data.completed_at,
+      artifacts,
     });
+  }
+
+  async acknowledgeClaim(
+    userId: string,
+    runId: string,
+    acknowledgement: MobileRunClaimAcknowledgementRequest
+  ): Promise<MobileRunClaimAcknowledgement | null> {
+    const { data, error } = await this.db.rpc("acknowledge_mobile_run", {
+      acknowledged_run_id: runId,
+      acknowledged_user_id: userId,
+      acknowledged_token_hash: hashClaimToken(acknowledgement.claimToken),
+      acknowledged_manifest_hash: acknowledgement.manifestHash,
+    });
+    if (error) throw error;
+    if (!data) return null;
+    const parsed = MobileRunClaimAcknowledgementSchema.parse(data);
+
+    const now = new Date().toISOString();
+    const { error: expireError } = await this.db
+      .from("mobile_run_artifacts")
+      .update({ expires_at: now })
+      .eq("run_id", runId);
+    if (expireError) throw expireError;
+    await this.deleteRunArtifacts(runId);
+    return parsed;
   }
 
   async downloadArtifact(
     userId: string,
     runId: string,
-    artifactId: string
+    artifactId: string,
+    claimToken: string
   ): Promise<{ descriptor: MobileArtifactDescriptor; bytes: Buffer } | null> {
     const { data, error } = await this.db
       .from("mobile_run_artifacts")
-      .select("*,mobile_runs!inner(user_id,claimed_at,expires_at)")
+      .select(
+        "*,mobile_runs!inner(user_id,claimed_at,claim_token_hash,claim_expires_at,expires_at)"
+      )
       .eq("id", artifactId)
       .eq("run_id", runId)
       .eq("mobile_runs.user_id", userId)
-      .not("mobile_runs.claimed_at", "is", null)
       .gt("mobile_runs.expires_at", new Date().toISOString())
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
 
-    const artifact = data as DbMobileArtifact;
+    const joinedRun = firstJoinedRun(data.mobile_runs);
+    if (
+      !joinedRun ||
+      joinedRun.claimed_at !== null ||
+      !joinedRun.claim_token_hash ||
+      !joinedRun.claim_expires_at ||
+      new Date(joinedRun.claim_expires_at).getTime() <= Date.now() ||
+      !safeHashEqual(joinedRun.claim_token_hash, hashClaimToken(claimToken))
+    ) {
+      return null;
+    }
+
+    const artifact = data as unknown as DbMobileArtifact;
     const { data: encryptedBlob, error: downloadError } = await this.db.storage
       .from(ARTIFACT_BUCKET)
       .download(artifact.storage_path);
@@ -504,6 +592,16 @@ export class MobileStore {
     const me = await this.getMe(userId);
     if (me.serviceStatus !== "available") throw new Error("SERVICE_MAINTENANCE");
     if (me.remainingFreeRuns === 0) throw new Error("FREE_RUN_LIMIT");
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const { count: dailyRunCount, error: dailyRunError } = await this.db
+      .from("mobile_runs")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", startOfDay.toISOString());
+    if (dailyRunError) throw dailyRunError;
+    if ((dailyRunCount ?? 0) >= this.maxDailyRuns) {
+      throw new Error("BETA_DAILY_LIMIT");
+    }
     const { data, error } = await this.db
       .from("mobile_profile_slots")
       .select("id")
@@ -525,6 +623,25 @@ export class MobileStore {
     return (data ?? []).map((artifact) =>
       this.toArtifactDescriptor(artifact as DbMobileArtifact)
     );
+  }
+
+  private async deleteRunArtifacts(runId: string): Promise<void> {
+    const { data, error } = await this.db
+      .from("mobile_run_artifacts")
+      .select("id,storage_path")
+      .eq("run_id", runId);
+    if (error) throw error;
+    const artifacts = data ?? [];
+    if (artifacts.length === 0) return;
+    const { error: storageError } = await this.db.storage
+      .from(ARTIFACT_BUCKET)
+      .remove(artifacts.map((artifact) => artifact.storage_path));
+    if (storageError) throw storageError;
+    const { error: deleteError } = await this.db
+      .from("mobile_run_artifacts")
+      .delete()
+      .eq("run_id", runId);
+    if (deleteError) throw deleteError;
   }
 
   private toArtifactDescriptor(artifact: DbMobileArtifact): MobileArtifactDescriptor {
@@ -568,4 +685,25 @@ export class MobileStore {
       updatedAt: run.updated_at,
     };
   }
+}
+
+interface JoinedClaimRun {
+  claimed_at: string | null;
+  claim_token_hash: string | null;
+  claim_expires_at: string | null;
+}
+
+function firstJoinedRun(value: unknown): JoinedClaimRun | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || typeof candidate !== "object") return null;
+  return candidate as JoinedClaimRun;
+}
+
+function hashClaimToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function safeHashEqual(left: string, right: string): boolean {
+  if (!/^[a-f0-9]{64}$/.test(left) || !/^[a-f0-9]{64}$/.test(right)) return false;
+  return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
 }

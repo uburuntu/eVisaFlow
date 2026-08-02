@@ -22,8 +22,12 @@ import {
   createEmptyVault,
   deleteResultArtifacts,
   loadVault,
+  moveResultArtifactsToTrash,
+  type PendingClaimAcknowledgement,
   persistResult,
+  readResultArtifact,
   resetVault as resetStoredVault,
+  restoreResultArtifactsFromTrash,
   type SavedResult,
   type SaveResultInput,
   saveVault,
@@ -65,7 +69,9 @@ interface VaultContextValue {
   profiles: MobileProfile[];
   results: SavedResult[];
   activeRuns: ActiveRun[];
+  pendingClaimAcknowledgements: PendingClaimAcknowledgement[];
   profileSlotTombstones: string[];
+  expiryRemindersEnabled: boolean;
   hasAcceptedDisclosure: boolean;
   acceptDisclosure: () => Promise<void>;
   addProfile: (
@@ -82,6 +88,15 @@ interface VaultContextValue {
   }) => Promise<void>;
   removeRun: (runId: string) => Promise<void>;
   saveResult: (input: SaveResultInput) => Promise<SavedResult>;
+  confirmClaimAcknowledged: (runId: string) => Promise<void>;
+  updatePendingClaim: (
+    runId: string,
+    claimToken: string,
+    manifestHash: string
+  ) => Promise<void>;
+  discardPendingClaim: (runId: string) => Promise<void>;
+  deleteResult: (resultId: string) => Promise<void>;
+  setExpiryRemindersEnabled: (enabled: boolean) => Promise<void>;
   resetVault: () => Promise<void>;
 }
 
@@ -207,6 +222,13 @@ export function VaultProvider({ children }: PropsWithChildren) {
             ...current,
             profiles: current.profiles.filter((profile) => profile.id !== profileId),
             results: current.results.filter((result) => result.profileId !== profileId),
+            pendingClaimAcknowledgements: current.pendingClaimAcknowledgements.filter(
+              (pending) =>
+                !current.results.some(
+                  (result) =>
+                    result.id === pending.resultId && result.profileId === profileId
+                )
+            ),
             profileSlotTombstones: Array.from(
               new Set([...current.profileSlotTombstones, profileId])
             ),
@@ -262,8 +284,9 @@ export function VaultProvider({ children }: PropsWithChildren) {
       .catch(() => undefined)
       .then(async () => {
         const persistedResult = await persistResult(input);
+        const previousDocument = documentRef.current;
         try {
-          const current = documentRef.current;
+          const current = previousDocument;
           const nextDocument: VaultDocument = {
             ...current,
             profiles: current.profiles.map((profile) =>
@@ -280,12 +303,37 @@ export function VaultProvider({ children }: PropsWithChildren) {
               ...current.results.filter((result) => result.id !== persistedResult.id),
             ],
             activeRuns: current.activeRuns.filter((run) => run.id !== input.runId),
+            pendingClaimAcknowledgements: [
+              {
+                runId: input.runId,
+                resultId: persistedResult.id,
+                claimToken: input.claim.claimToken,
+                manifestHash: input.claim.manifestHash,
+                createdAt: new Date().toISOString(),
+              },
+              ...current.pendingClaimAcknowledgements.filter(
+                (pending) => pending.runId !== input.runId
+              ),
+            ],
           };
           await saveVault(nextDocument);
-          documentRef.current = nextDocument;
-          setDocument(nextDocument);
+          const verifiedDocument = await loadVault();
+          const verifiedResult = verifiedDocument.results.find(
+            (result) => result.id === persistedResult.id
+          );
+          if (!verifiedResult) {
+            throw new Error("The saved proof could not be verified.");
+          }
+          for (const artifact of verifiedResult.artifacts) {
+            await readResultArtifact(artifact);
+          }
+          documentRef.current = verifiedDocument;
+          setDocument(verifiedDocument);
           savedResult = persistedResult;
         } catch (error) {
+          await saveVault(previousDocument).catch(() => undefined);
+          documentRef.current = previousDocument;
+          setDocument(previousDocument);
           deleteResultArtifacts([persistedResult.id]);
           throw error;
         }
@@ -295,6 +343,89 @@ export function VaultProvider({ children }: PropsWithChildren) {
     await operation;
     return savedResult as SavedResult;
   }, []);
+
+  const confirmClaimAcknowledged = useCallback(
+    async (runId: string) => {
+      await mutate((current) => [
+        {
+          ...current,
+          pendingClaimAcknowledgements: current.pendingClaimAcknowledgements.filter(
+            (pending) => pending.runId !== runId
+          ),
+        },
+        undefined,
+      ]);
+    },
+    [mutate]
+  );
+
+  const updatePendingClaim = useCallback(
+    async (runId: string, claimToken: string, manifestHash: string) => {
+      await mutate((current) => [
+        {
+          ...current,
+          pendingClaimAcknowledgements: current.pendingClaimAcknowledgements.map(
+            (pending) =>
+              pending.runId === runId ? { ...pending, claimToken, manifestHash } : pending
+          ),
+        },
+        undefined,
+      ]);
+    },
+    [mutate]
+  );
+
+  const discardPendingClaim = useCallback(
+    async (runId: string) => {
+      await confirmClaimAcknowledged(runId);
+    },
+    [confirmClaimAcknowledged]
+  );
+
+  const deleteResult = useCallback(async (resultId: string) => {
+    const operation = writeQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const trash = await moveResultArtifactsToTrash(resultId);
+        try {
+          const current = documentRef.current;
+          const removedRunIds = new Set(
+            current.results
+              .filter((result) => result.id === resultId)
+              .map((result) => result.runId)
+          );
+          const nextDocument: VaultDocument = {
+            ...current,
+            results: current.results.filter((result) => result.id !== resultId),
+            pendingClaimAcknowledgements: current.pendingClaimAcknowledgements.filter(
+              (pending) => !removedRunIds.has(pending.runId)
+            ),
+          };
+          await saveVault(nextDocument);
+          documentRef.current = nextDocument;
+          setDocument(nextDocument);
+          if (trash?.exists) trash.delete();
+        } catch (error) {
+          await restoreResultArtifactsFromTrash(resultId, trash).catch(() => undefined);
+          throw error;
+        }
+      });
+    writeQueueRef.current = operation.catch(() => undefined);
+    await operation;
+  }, []);
+
+  const setExpiryRemindersEnabled = useCallback(
+    async (enabled: boolean) => {
+      await mutate((current) => [
+        {
+          ...current,
+          preferences: { ...current.preferences, expiryRemindersEnabled: enabled },
+        },
+        undefined,
+      ]);
+    },
+    [mutate]
+  );
 
   const resetVault = useCallback(async () => {
     await writeQueueRef.current.catch(() => undefined);
@@ -313,7 +444,9 @@ export function VaultProvider({ children }: PropsWithChildren) {
       profiles: document.profiles,
       results: document.results,
       activeRuns: document.activeRuns,
+      pendingClaimAcknowledgements: document.pendingClaimAcknowledgements,
       profileSlotTombstones: document.profileSlotTombstones,
+      expiryRemindersEnabled: document.preferences.expiryRemindersEnabled,
       hasAcceptedDisclosure:
         document.acceptedDisclosureAt !== null &&
         document.acceptedTermsVersion === TERMS_VERSION,
@@ -324,20 +457,30 @@ export function VaultProvider({ children }: PropsWithChildren) {
       trackRun,
       removeRun,
       saveResult,
+      confirmClaimAcknowledged,
+      updatePendingClaim,
+      discardPendingClaim,
+      deleteResult,
+      setExpiryRemindersEnabled,
       resetVault,
     }),
     [
       acceptDisclosure,
       addProfile,
       clearProfileSlotTombstone,
+      confirmClaimAcknowledged,
+      deleteResult,
+      discardPendingClaim,
       deleteProfile,
       document,
       error,
       removeRun,
       resetVault,
       saveResult,
+      setExpiryRemindersEnabled,
       status,
       trackRun,
+      updatePendingClaim,
     ]
   );
 

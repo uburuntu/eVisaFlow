@@ -1,3 +1,4 @@
+export { mobileClaimManifestJson } from "./claim-manifest.js";
 export {
   ApplicantSchema,
   AuthorityBasisSchema,
@@ -13,7 +14,10 @@ export {
   MobileMeSchema,
   MobileProfileSchema,
   MobileProfileSlotRequestSchema,
+  MobileRunClaimAcknowledgementRequestSchema,
+  MobileRunClaimAcknowledgementSchema,
   MobileRunClaimResultSchema,
+  MobileRunClaimSessionSchema,
   MobileRunCreateRequestSchema,
   MobileRunEventSchema,
   MobileRunSnapshotSchema,

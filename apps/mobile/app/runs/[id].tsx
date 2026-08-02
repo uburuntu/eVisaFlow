@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
@@ -22,6 +23,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { mobileClaimManifestHash } from "@/api/claim";
 import { MobileApiRequestError } from "@/api/client";
 import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
@@ -70,18 +72,90 @@ export default function RunStatusScreen() {
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      const next = await loadRun();
-      if (active && (!next || !terminalStatuses.has(next.status))) {
-        timer = setTimeout(poll, 1_200);
+    let controller: AbortController | undefined;
+    let failures = 0;
+    let lastEventId: number | undefined;
+    let appIsActive = AppState.currentState === "active";
+    let refreshPromise: ReturnType<typeof loadRun> | null = null;
+
+    const refresh = () => {
+      refreshPromise ??= loadRun().finally(() => {
+        refreshPromise = null;
+      });
+      return refreshPromise;
+    };
+
+    const schedule = (callback: () => void, delayMs: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(callback, delayMs);
+    };
+
+    const pollFallback = async () => {
+      if (!active || !appIsActive) return;
+      const next = await refresh();
+      if (!active || !appIsActive || (next && terminalStatuses.has(next.status))) {
+        return;
+      }
+      failures += 1;
+      if (failures % 3 === 0) {
+        schedule(() => void connect(), next?.status === "queued" ? 15_000 : 5_000);
+      } else {
+        schedule(() => void pollFallback(), next?.status === "queued" ? 15_000 : 5_000);
       }
     };
-    void poll();
+
+    const connect = async () => {
+      if (!active || !appIsActive || !id) return;
+      const initial = await refresh();
+      if (!active || !appIsActive || (initial && terminalStatuses.has(initial.status))) {
+        return;
+      }
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        await service.getClient().streamRunEvents(id, {
+          lastEventId,
+          signal: controller.signal,
+          onEvent: (event) => {
+            lastEventId = Math.max(lastEventId ?? 0, event.id);
+            failures = 0;
+            void refresh();
+          },
+        });
+        const latest = await refresh();
+        if (active && appIsActive && latest && !terminalStatuses.has(latest.status)) {
+          failures += 1;
+          schedule(() => void connect(), 1_000);
+        }
+      } catch {
+        if (!active || !appIsActive || controller.signal.aborted) return;
+        failures += 1;
+        if (failures >= 3) {
+          schedule(() => void pollFallback(), 5_000);
+        } else {
+          schedule(() => void connect(), 2 ** (failures - 1) * 1_000);
+        }
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      appIsActive = state === "active";
+      controller?.abort();
+      if (timer) clearTimeout(timer);
+      if (appIsActive) {
+        failures = 0;
+        void connect();
+      }
+    });
+
+    void connect();
     return () => {
       active = false;
+      controller?.abort();
       if (timer) clearTimeout(timer);
+      appStateSubscription.remove();
     };
-  }, [loadRun]);
+  }, [id, loadRun, service]);
 
   const saveCompletedResult = useCallback(async () => {
     if (!id || !snapshot || claimingRef.current) return;
@@ -90,8 +164,30 @@ export default function RunStatusScreen() {
     setActionError(null);
     try {
       const client = service.getClient();
-      setSaveProgress("Claiming secure result");
-      const result = await client.claimResult(id);
+      const existing = vault.results.find((result) => result.runId === id);
+      const pending = vault.pendingClaimAcknowledgements.find(
+        (candidate) => candidate.runId === id
+      );
+      if (existing) {
+        if (pending) {
+          await client
+            .acknowledgeClaim(id, {
+              claimToken: pending.claimToken,
+              manifestHash: pending.manifestHash,
+            })
+            .then(() => vault.confirmClaimAcknowledged(id))
+            .catch(() => undefined);
+        }
+        router.replace({ pathname: "/documents/[id]", params: { id: existing.id } });
+        return;
+      }
+
+      setSaveProgress("Preparing secure transfer");
+      const result = await client.beginClaim(id);
+      const manifestHash = await mobileClaimManifestHash(id, result);
+      if (manifestHash !== result.manifestHash) {
+        throw new Error("The secure result manifest could not be verified.");
+      }
       const artifacts = [];
       for (let index = 0; index < result.artifacts.length; index += 1) {
         const descriptor = result.artifacts[index];
@@ -99,7 +195,7 @@ export default function RunStatusScreen() {
         setSaveProgress(`Securing file ${index + 1} of ${result.artifacts.length}`);
         artifacts.push({
           descriptor,
-          bytes: await client.downloadArtifact(id, descriptor),
+          bytes: await client.downloadArtifact(id, descriptor, result.claimToken),
         });
       }
       const saved = await vault.saveResult({
@@ -109,8 +205,21 @@ export default function RunStatusScreen() {
         purpose: snapshot.purpose,
         shareCode: result.shareCode,
         validUntil: result.validUntil,
+        generatedAt: result.generatedAt,
+        claim: {
+          claimToken: result.claimToken,
+          manifestHash: result.manifestHash,
+        },
         artifacts,
       });
+      setSaveProgress("Confirming offline save");
+      await client
+        .acknowledgeClaim(id, {
+          claimToken: result.claimToken,
+          manifestHash: result.manifestHash,
+        })
+        .then(() => vault.confirmClaimAcknowledged(id))
+        .catch(() => undefined);
       void service.connect().catch(() => {});
       router.replace({ pathname: "/documents/[id]", params: { id: saved.id } });
     } catch (saveError) {

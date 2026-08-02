@@ -11,7 +11,11 @@ export async function startMobileApi(options: {
   env: Env;
   log: Logger;
 }) {
-  const store = new MobileStore(options.db, options.env.ENCRYPTION_KEY);
+  const store = new MobileStore(
+    options.db,
+    options.env.ENCRYPTION_KEY,
+    options.env.MOBILE_BETA_DAILY_RUN_LIMIT
+  );
   await store.interruptActiveRuns();
   const cleanup = await store.cleanupExpiredData();
   if (cleanup.artifactsDeleted > 0 || cleanup.eventsDeleted > 0) {

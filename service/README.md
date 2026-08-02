@@ -59,6 +59,7 @@ Fill in the values:
 | `HEALTH_PORT` | HTTP health port for `/live` and `/ready` (default: 8080) |
 | `MOBILE_API_PORT` | Internal mobile API port (default: 8090) |
 | `MOBILE_API_HOST` | Mobile API bind address inside the container (default: `0.0.0.0`) |
+| `MOBILE_BETA_DAILY_RUN_LIMIT` | Global UTC-day admission cap for private-beta mobile runs (default: 25) |
 | `SCHEDULER_CRON` | Cron expression for daily check (default: `0 9 * * *`) |
 | `SCHEDULE_INTERVAL_DAYS` | Days between scheduled runs per user (default: 30) |
 

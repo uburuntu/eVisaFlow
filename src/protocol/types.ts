@@ -346,10 +346,27 @@ export interface MobileRunSnapshot {
   updatedAt: string;
 }
 
-export interface MobileRunClaimResult {
+export interface MobileRunClaimSession {
+  claimToken: string;
+  claimExpiresAt: string;
+  manifestHash: string;
   shareCode: string;
   validUntil?: string;
+  generatedAt: string;
   artifacts: MobileArtifactDescriptor[];
+}
+
+/** @deprecated Use MobileRunClaimSession. */
+export type MobileRunClaimResult = MobileRunClaimSession;
+
+export interface MobileRunClaimAcknowledgementRequest {
+  claimToken: string;
+  manifestHash: string;
+}
+
+export interface MobileRunClaimAcknowledgement {
+  claimedAt: string;
+  usageConsumed: boolean;
 }
 
 export interface MobileMe {

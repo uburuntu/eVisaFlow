@@ -4,6 +4,7 @@ import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { AppState, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { MobileApiRequestError } from "@/api/client";
 import { ServiceProvider, useMobileService } from "@/api/ServiceContext";
 import { AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
@@ -14,9 +15,13 @@ function ServiceBootstrap() {
   const service = useMobileService();
   const {
     clearProfileSlotTombstone,
+    confirmClaimAcknowledged,
+    discardPendingClaim,
     hasAcceptedDisclosure,
+    pendingClaimAcknowledgements,
     profileSlotTombstones,
     status: vaultStatus,
+    updatePendingClaim,
   } = vault;
   const { connect, getClient, mode } = service;
   useEffect(() => {
@@ -31,6 +36,46 @@ function ServiceBootstrap() {
           await client.deleteProfileSlot(profileId);
           if (active) await clearProfileSlotTombstone(profileId);
         }
+        for (const pending of pendingClaimAcknowledgements) {
+          try {
+            await client.acknowledgeClaim(pending.runId, {
+              claimToken: pending.claimToken,
+              manifestHash: pending.manifestHash,
+            });
+            if (active) await confirmClaimAcknowledged(pending.runId);
+          } catch (error) {
+            if (
+              !(error instanceof MobileApiRequestError) ||
+              error.code !== "CLAIM_ACKNOWLEDGEMENT_REJECTED"
+            ) {
+              continue;
+            }
+            try {
+              const renewed = await client.beginClaim(pending.runId);
+              if (renewed.manifestHash !== pending.manifestHash) continue;
+              if (active) {
+                await updatePendingClaim(
+                  pending.runId,
+                  renewed.claimToken,
+                  renewed.manifestHash
+                );
+              }
+              await client.acknowledgeClaim(pending.runId, {
+                claimToken: renewed.claimToken,
+                manifestHash: renewed.manifestHash,
+              });
+              if (active) await confirmClaimAcknowledged(pending.runId);
+            } catch (renewError) {
+              if (
+                active &&
+                renewError instanceof MobileApiRequestError &&
+                renewError.code === "RESULT_NOT_READY"
+              ) {
+                await discardPendingClaim(pending.runId);
+              }
+            }
+          }
+        }
       })
       .catch(() => {
         // Offline startup is expected; a user action will retry the connection.
@@ -40,11 +85,15 @@ function ServiceBootstrap() {
     };
   }, [
     clearProfileSlotTombstone,
+    confirmClaimAcknowledged,
     connect,
     getClient,
     hasAcceptedDisclosure,
+    discardPendingClaim,
     mode,
+    pendingClaimAcknowledgements,
     profileSlotTombstones,
+    updatePendingClaim,
     vaultStatus,
   ]);
 

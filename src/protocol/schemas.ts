@@ -144,10 +144,30 @@ export const MobileRunSnapshotSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 
-export const MobileRunClaimResultSchema = z.object({
+const MobileClaimTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+const MobileClaimManifestHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const MobileRunClaimSessionSchema = z.object({
+  claimToken: MobileClaimTokenSchema,
+  claimExpiresAt: z.iso.datetime(),
+  manifestHash: MobileClaimManifestHashSchema,
   shareCode: z.string().trim().min(1).max(32),
   validUntil: ShareCodeValidUntilSchema.optional(),
+  generatedAt: z.iso.datetime(),
   artifacts: z.array(MobileArtifactDescriptorSchema),
+});
+
+/** @deprecated Use MobileRunClaimSessionSchema. */
+export const MobileRunClaimResultSchema = MobileRunClaimSessionSchema;
+
+export const MobileRunClaimAcknowledgementRequestSchema = z.object({
+  claimToken: MobileClaimTokenSchema,
+  manifestHash: MobileClaimManifestHashSchema,
+});
+
+export const MobileRunClaimAcknowledgementSchema = z.object({
+  claimedAt: z.iso.datetime(),
+  usageConsumed: z.boolean(),
 });
 
 export const MobileMeSchema = z.object({

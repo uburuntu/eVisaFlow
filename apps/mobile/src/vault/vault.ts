@@ -24,6 +24,7 @@ const VAULT_DIRECTORY_NAME = "evisaflow-vault";
 const VAULT_FILE_NAME = "manifest.v1.enc";
 const VAULT_TEMP_FILE_NAME = "manifest.v1.tmp";
 const ARTIFACT_DIRECTORY_NAME = "artifacts";
+const STAGING_PREFIX = ".staging-";
 
 const SavedArtifactSchema = MobileArtifactDescriptorSchema.extend({
   encryptedPath: z.string().regex(/^[0-9a-f-]+\/[0-9a-f-]+\.enc$/),
@@ -36,6 +37,7 @@ const SavedResultSchema = z.object({
   purpose: PurposeSchema,
   shareCode: z.string().trim().min(1).max(32),
   validUntil: ShareCodeValidUntilSchema.optional(),
+  generatedAt: z.iso.datetime().optional(),
   savedAt: z.iso.datetime(),
   artifacts: z.array(SavedArtifactSchema),
 });
@@ -47,6 +49,18 @@ const ActiveRunSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 
+const PendingClaimAcknowledgementSchema = z.object({
+  runId: z.uuid(),
+  resultId: z.uuid(),
+  claimToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  createdAt: z.iso.datetime(),
+});
+
+const VaultPreferencesSchema = z.object({
+  expiryRemindersEnabled: z.boolean().default(false),
+});
+
 const VaultDocumentSchema = z.object({
   version: z.literal(1),
   acceptedDisclosureAt: z.iso.datetime().nullable(),
@@ -54,13 +68,22 @@ const VaultDocumentSchema = z.object({
   profiles: z.array(MobileProfileSchema).max(6),
   results: z.array(SavedResultSchema).max(100).default([]),
   activeRuns: z.array(ActiveRunSchema).max(1).default([]),
+  pendingClaimAcknowledgements: z
+    .array(PendingClaimAcknowledgementSchema)
+    .max(3)
+    .default([]),
   profileSlotTombstones: z.array(z.uuid()).max(100).default([]),
+  preferences: VaultPreferencesSchema.default({ expiryRemindersEnabled: false }),
 });
 
 export type VaultDocument = z.infer<typeof VaultDocumentSchema>;
 export type SavedResult = z.infer<typeof SavedResultSchema>;
 export type SavedArtifact = z.infer<typeof SavedArtifactSchema>;
 export type ActiveRun = z.infer<typeof ActiveRunSchema>;
+export type PendingClaimAcknowledgement = z.infer<
+  typeof PendingClaimAcknowledgementSchema
+>;
+export type VaultPreferences = z.infer<typeof VaultPreferencesSchema>;
 
 export interface TrackRunInput {
   id: string;
@@ -76,6 +99,11 @@ export interface SaveResultInput {
   purpose: SavedResult["purpose"];
   shareCode: string;
   validUntil?: string;
+  generatedAt: string;
+  claim: {
+    claimToken: string;
+    manifestHash: string;
+  };
   artifacts: Array<{
     descriptor: MobileArtifactDescriptor;
     bytes: Uint8Array;
@@ -104,7 +132,9 @@ export function createEmptyVault(): VaultDocument {
     profiles: [],
     results: [],
     activeRuns: [],
+    pendingClaimAcknowledgements: [],
     profileSlotTombstones: [],
+    preferences: { expiryRemindersEnabled: false },
   };
 }
 
@@ -178,7 +208,9 @@ export async function loadVault(): Promise<VaultDocument> {
     const sealedData = AESSealedData.fromCombined(encryptedBytes);
     const plaintextBytes = await aesDecryptAsync(sealedData, key);
     const parsed = JSON.parse(new TextDecoder().decode(plaintextBytes));
-    return VaultDocumentSchema.parse(parsed);
+    const document = VaultDocumentSchema.parse(parsed);
+    cleanupUnreferencedArtifactDirectories(document);
+    return document;
   } catch (error) {
     throw new VaultCorruptError("The encrypted vault could not be opened.", {
       cause: error,
@@ -227,10 +259,15 @@ export async function resetVault(): Promise<VaultDocument> {
 export async function persistResult(input: SaveResultInput): Promise<SavedResult> {
   const key = await getOrCreateKey();
   const resultDirectory = getResultDirectory(input.id);
+  const stagingDirectory = new Directory(
+    getArtifactDirectory(),
+    `${STAGING_PREFIX}${input.id}`
+  );
   if (resultDirectory.exists) {
     resultDirectory.delete();
   }
-  resultDirectory.create({ idempotent: true, intermediates: true });
+  if (stagingDirectory.exists) stagingDirectory.delete();
+  stagingDirectory.create({ idempotent: true, intermediates: true });
 
   try {
     const artifacts: SavedArtifact[] = [];
@@ -255,9 +292,16 @@ export async function persistResult(input: SaveResultInput): Promise<SavedResult
       const sealedData = await aesEncryptAsync(artifact.bytes, key);
       const encryptedBytes = await sealedData.combined();
       const encryptedPath = `${input.id}/${artifact.descriptor.id}.enc`;
-      const file = getArtifactFile(encryptedPath);
+      const file = new File(stagingDirectory, `${artifact.descriptor.id}.enc`);
       file.create({ overwrite: true, intermediates: true });
       file.write(encryptedBytes);
+      const readBack = await aesDecryptAsync(
+        AESSealedData.fromCombined(await file.bytes()),
+        key
+      );
+      if (!bytesEqual(readBack, artifact.bytes)) {
+        throw new VaultCorruptError("Encrypted artifact read-back did not match.");
+      }
       artifacts.push(
         SavedArtifactSchema.parse({
           ...artifact.descriptor,
@@ -266,17 +310,23 @@ export async function persistResult(input: SaveResultInput): Promise<SavedResult
       );
     }
 
-    return SavedResultSchema.parse({
+    const savedResult = SavedResultSchema.parse({
       id: input.id,
       runId: input.runId,
       profileId: input.profileId,
       purpose: input.purpose,
       shareCode: input.shareCode,
       validUntil: input.validUntil,
+      generatedAt: input.generatedAt,
       savedAt: new Date().toISOString(),
       artifacts,
     });
+    await stagingDirectory.move(resultDirectory);
+    return savedResult;
   } catch (error) {
+    if (stagingDirectory.exists) {
+      stagingDirectory.delete();
+    }
     if (resultDirectory.exists) {
       resultDirectory.delete();
     }
@@ -312,8 +362,49 @@ export function deleteResultArtifacts(resultIds: string[]): void {
   }
 }
 
+export async function moveResultArtifactsToTrash(
+  resultId: string
+): Promise<Directory | null> {
+  const source = getResultDirectory(resultId);
+  if (!source.exists) return null;
+  const trash = new Directory(
+    getArtifactDirectory(),
+    `${STAGING_PREFIX}delete-${resultId}`
+  );
+  if (trash.exists) trash.delete();
+  await source.move(trash);
+  return trash;
+}
+
+export async function restoreResultArtifactsFromTrash(
+  resultId: string,
+  trash: Directory | null
+): Promise<void> {
+  if (!trash?.exists) return;
+  await trash.move(getResultDirectory(resultId));
+}
+
+function cleanupUnreferencedArtifactDirectories(document: VaultDocument): void {
+  const directory = getArtifactDirectory();
+  if (!directory.exists) return;
+  const expected = new Set(document.results.map((result) => result.id));
+  for (const entry of directory.list()) {
+    if (entry instanceof Directory && !expected.has(entry.name)) {
+      entry.delete();
+    }
+  }
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 export function validateProfile(profile: MobileProfile): MobileProfile {

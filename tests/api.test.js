@@ -6,9 +6,12 @@ import {
   formatShareCodeValidUntil,
   MobileApiErrorSchema,
   MobileMeSchema,
+  MobileRunClaimAcknowledgementRequestSchema,
+  MobileRunClaimAcknowledgementSchema,
   MobileRunClaimResultSchema,
   MobileRunCreateRequestSchema,
   MobileRunSnapshotSchema,
+  mobileClaimManifestJson,
   shareCodeExpiryDeadlineMs,
 } from "../dist/protocol/index.js";
 import {
@@ -112,27 +115,69 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
     3
   );
   const claim = MobileRunClaimResultSchema.parse({
+    claimToken: "a".repeat(43),
+    claimExpiresAt: "2026-08-01T09:10:00.000Z",
+    manifestHash: "b".repeat(64),
     shareCode: "W12 345 678",
     validUntil: "2026-10-30",
+    generatedAt: now,
     artifacts: [artifact],
   });
   assert.equal(claim.validUntil, "2026-10-30");
   assert.equal(claim.artifacts[0].kind, "evisa_pdf");
   assert.equal(
     MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T09:10:00.000Z",
+      manifestHash: "b".repeat(64),
       shareCode: "W12 345 678",
       validUntil: "2026-10-30T09:00:00.000Z",
+      generatedAt: now,
       artifacts: [artifact],
     }).success,
     true
   );
   assert.equal(
     MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T09:10:00.000Z",
+      manifestHash: "b".repeat(64),
       shareCode: "W12 345 678",
       validUntil: "2026-02-30",
+      generatedAt: now,
       artifacts: [artifact],
     }).success,
     false
+  );
+  assert.equal(
+    MobileRunClaimAcknowledgementRequestSchema.parse({
+      claimToken: "a".repeat(43),
+      manifestHash: "b".repeat(64),
+    }).manifestHash,
+    "b".repeat(64)
+  );
+  assert.equal(
+    MobileRunClaimAcknowledgementSchema.parse({
+      claimedAt: now,
+      usageConsumed: true,
+    }).usageConsumed,
+    true
+  );
+  assert.equal(
+    mobileClaimManifestJson({
+      runId,
+      shareCode: claim.shareCode,
+      validUntil: claim.validUntil,
+      generatedAt: claim.generatedAt,
+      artifacts: [artifact],
+    }),
+    mobileClaimManifestJson({
+      runId,
+      shareCode: claim.shareCode,
+      validUntil: claim.validUntil,
+      generatedAt: claim.generatedAt,
+      artifacts: [artifact],
+    })
   );
   assert.equal(
     MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })

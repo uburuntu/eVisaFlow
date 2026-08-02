@@ -4,6 +4,7 @@ IOS_WORKSPACE := apps/mobile/ios/eVisaFlow.xcworkspace
 IOS_DEVICE ?=
 ANDROID_DEVICE ?=
 ANDROID_ARCH ?= arm64-v8a
+UNPROXIED := env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy
 
 help:
 	@printf '%s\n' \
@@ -31,81 +32,81 @@ help:
 		'  debug-flow   Run local headed debug flow'
 
 install:
-	pnpm install
+	$(UNPROXIED) pnpm install
 
 build:
-	pnpm run build
+	$(UNPROXIED) pnpm run build
 
 dev:
-	pnpm run dev
+	$(UNPROXIED) pnpm run dev
 
 mobile:
-	pnpm run dev:mobile
+	$(UNPROXIED) pnpm run dev:mobile
 
 mobile-ios:
-	pnpm --filter evisa-flow-mobile run ios
+	$(UNPROXIED) pnpm --filter evisa-flow-mobile run ios
 
 mobile-ios-device:
-	pnpm --filter evisa-flow-mobile run ios --device $(if $(IOS_DEVICE),"$(IOS_DEVICE)")
+	$(UNPROXIED) pnpm --filter evisa-flow-mobile run ios --device $(if $(IOS_DEVICE),"$(IOS_DEVICE)")
 
 mobile-ios-prebuild:
-	pnpm run build:protocol
-	pnpm --dir apps/mobile exec expo prebuild --platform ios
+	$(UNPROXIED) pnpm run build:protocol
+	$(UNPROXIED) pnpm --dir apps/mobile exec expo prebuild --platform ios
 
 mobile-ios-xcode: mobile-ios-prebuild
 	@test -d "$(IOS_WORKSPACE)" || { \
 		printf '%s\n' 'Missing $(IOS_WORKSPACE); the Expo iOS prebuild did not complete.'; \
 		exit 1; \
 	}
-	open "$(IOS_WORKSPACE)"
+	$(UNPROXIED) open "$(IOS_WORKSPACE)"
 
 mobile-e2e:
-	pnpm run e2e:mobile
+	$(UNPROXIED) pnpm run e2e:mobile
 
 mobile-e2e-android:
-	ANDROID_DEVICE="$(ANDROID_DEVICE)" ANDROID_ARCH="$(ANDROID_ARCH)" scripts/mobile-e2e-android.sh
+	$(UNPROXIED) ANDROID_DEVICE="$(ANDROID_DEVICE)" ANDROID_ARCH="$(ANDROID_ARCH)" scripts/mobile-e2e-android.sh
 
 mobile-e2e-ios:
-	pnpm run build:protocol
-	pnpm --dir apps/mobile exec expo prebuild --platform ios --no-install
-	cd apps/mobile/ios && pod install
-	IOS_DEVICE="$(IOS_DEVICE)" scripts/mobile-e2e-ios.sh
+	$(UNPROXIED) pnpm run build:protocol
+	$(UNPROXIED) pnpm --dir apps/mobile exec expo prebuild --platform ios --no-install
+	cd apps/mobile/ios && $(UNPROXIED) pod install
+	$(UNPROXIED) IOS_DEVICE="$(IOS_DEVICE)" scripts/mobile-e2e-ios.sh
 
 mobile-assets:
-	node scripts/generate-mobile-assets.mjs
+	$(UNPROXIED) node scripts/generate-mobile-assets.mjs
 
 format:
-	pnpm run format
+	$(UNPROXIED) pnpm run format
 
 lint:
-	pnpm run lint
+	$(UNPROXIED) pnpm run lint
 
 typecheck:
-	pnpm run typecheck
+	$(UNPROXIED) pnpm run typecheck
 
 run:
-	pnpm start
+	$(UNPROXIED) pnpm start
 
 snapshots:
-	pnpm run snapshots
+	$(UNPROXIED) pnpm run snapshots
 
 smoke:
-	pnpm run smoke:live
+	$(UNPROXIED) pnpm run smoke:live
 
 debug-flow: build
 	@test -f scripts/debug-flow.js || { \
 		printf '%s\n' 'Missing scripts/debug-flow.js. Start from scripts/debug-flow.example.js and add local test details.'; \
 		exit 1; \
 	}
-	node scripts/debug-flow.js
+	$(UNPROXIED) node scripts/debug-flow.js
 
 fixtures:
-	pnpm run fixtures
+	$(UNPROXIED) pnpm run fixtures
 
 test:
-	pnpm test
+	$(UNPROXIED) pnpm test
 
 validate:
-	pnpm run validate
+	$(UNPROXIED) pnpm run validate
 
 .PHONY: help install build dev mobile mobile-ios mobile-ios-device mobile-ios-prebuild mobile-ios-xcode mobile-e2e mobile-e2e-android mobile-e2e-ios mobile-assets format lint typecheck run snapshots smoke debug-flow fixtures test validate

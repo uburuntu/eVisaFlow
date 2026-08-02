@@ -81,6 +81,7 @@ export function ServiceProvider({ children }: PropsWithChildren) {
     if (pendingDeletionRef.current) return pendingDeletionRef.current;
     const operation = Promise.resolve()
       .then(async () => {
+        if (runtime.mode !== "live") return;
         if (!(await hasPendingAccountDeletion())) return;
         try {
           await getClient().deleteAccount();
@@ -101,10 +102,10 @@ export function ServiceProvider({ children }: PropsWithChildren) {
       });
     pendingDeletionRef.current = operation;
     return operation;
-  }, [getClient, runtime.auth]);
+  }, [getClient, runtime.auth, runtime.mode]);
 
   useEffect(() => {
-    if (runtime.mode === "unconfigured") return;
+    if (runtime.mode !== "live") return;
     let active = true;
     void completePendingAccountDeletion().catch(() => {
       if (active) setAccountDeletionPending(true);
@@ -144,7 +145,8 @@ export function ServiceProvider({ children }: PropsWithChildren) {
 
   const deleteAccount = useCallback(async () => {
     await connectionRef.current?.catch(() => undefined);
-    if (runtime.client) await runtime.client.deleteAccount();
+    if (!runtime.client) throw new MobileServiceUnavailableError();
+    await runtime.client.deleteAccount();
     await runtime.auth?.signOut();
     runtime.auth?.dispose();
     connectionRef.current = null;

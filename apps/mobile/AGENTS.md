@@ -56,7 +56,8 @@
   out, then crypto-erases the local session and vault. If the service is unreachable,
   the user may erase the vault immediately; retain only the encrypted anonymous
   session and a non-sensitive pending-deletion marker, then retry remote deletion
-  before normal bootstrap creates a fresh anonymous account.
+  from a live-configured build before normal bootstrap creates a fresh anonymous
+  account. Demo or unconfigured builds must never clear that marker.
 
 ## Service modes
 - `EXPO_PUBLIC_EVISAFLOW_DEMO_MODE=true` selects the deterministic fictional client.

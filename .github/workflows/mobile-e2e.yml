@@ -83,6 +83,15 @@ jobs:
         working-directory: apps/mobile
         run: pnpm exec expo prebuild --platform android --clean --no-install
 
+      - name: Enable KVM access
+        run: |
+          if [[ ! -c /dev/kvm ]]; then
+            echo "This hosted runner does not expose /dev/kvm." >&2
+            exit 1
+          fi
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
       - name: Build release APK
         working-directory: apps/mobile/android
         env:
@@ -92,14 +101,6 @@ jobs:
           -PreactNativeArchitectures=x86_64
           --no-daemon
           --stacktrace
-
-      - name: Enable KVM access
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
-            sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm && test -w /dev/kvm
 
       - uses: actions/cache@v5
         with:

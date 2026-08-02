@@ -135,7 +135,8 @@ VALUES (
   'mobile-run-artifacts',
   'mobile-run-artifacts',
   false,
-  10485760,
+  -- Standalone checker HTML is capped at 20 MiB before AES-GCM encryption.
+  26214400,
   ARRAY['application/octet-stream']
 )
 ON CONFLICT (id) DO UPDATE SET

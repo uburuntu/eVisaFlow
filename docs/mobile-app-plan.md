@@ -1,202 +1,176 @@
-# eVisaFlow Mobile Apps
+# eVisaFlow Mobile Remaining Roadmap
 
-Status: approved implementation plan for the first Android and iOS release.
+Status: PR #4 establishes the mobile foundation. Implemented behavior is documented
+as durable guidance in:
 
-## Implementation checkpoint
+- `AGENTS.md`
+- `apps/mobile/AGENTS.md`
+- `apps/mobile/e2e/AGENTS.md`
+- `packages/protocol/AGENTS.md`
+- `service/AGENTS.md`
+- `.github/AGENTS.md`
 
-PR #4 implements the shared protocol, Expo application, encrypted offline vault,
-authenticated mobile API, Playwright worker integration, OTP recovery, artifact
-hash verification, App Review fixture mode, in-app deletion, expiry cleanup, and local
-Android/iOS Maestro infrastructure, including an automated 200% large-text journey.
-Subscriptions, reminders, integrity attestation, optional biometrics, multi-person
-batch runs, and store beta work remain open. This document stays forward-looking until
-the folder-specific guidance is promoted into durable `AGENTS.md` files before merge.
+This document contains only unresolved decisions, launch gates, and future work. Do
+not move an item out of this file until it is implemented and verified, then record the
+result in the nearest scoped `AGENTS.md`.
 
-## Product and launch constraints
+## Public-launch gates
 
-- Build one Expo/React Native codebase for iOS 16.4+ and Android 9+.
-- Keep Playwright on server-side workers. The installed apps never automate GOV.UK
-  directly.
-- Target adults worldwide who need reliable offline access to their own eVisa proof,
-  plus people who manage other UKVI accounts with legal authority.
-- A prepared user should start their first run within 90 seconds. A repeat run should
-  take two taps before the GOV.UK security-code challenge.
-- Results include the share code, GOV.UK eVisa PDF, sanitized checker HTML, and an
-  eVisaFlow-generated checker PDF.
-- Public paid launch is gated on written Home Office or GDS authorization covering
-  automation, authorised proxies, downloads, monetization, branding, distribution,
-  and rate limits.
-- Before release, publish through a legal entity with Apple and Google organisation
-  accounts, complete a DPIA, publish privacy and deletion pages, and assess ICO
-  registration requirements.
-- Complete Apple's encryption export-compliance assessment before setting the
-  `ITSAppUsesNonExemptEncryption` declaration; the app uses AES-256-GCM for local
-  identity data and must not claim an exemption without review.
+- Obtain a written Home Office or GDS position covering user-authorised automation,
+  authorised proxies, adult and child accounts, downloads, paid convenience features,
+  branding, app-store distribution, and acceptable request rates.
+- Confirm current Apple and Google policy treatment of an unofficial app that
+  facilitates access to a government immigration service. An unofficial disclaimer
+  alone must not be assumed sufficient.
+- Publish through a legal entity using Apple and Google organisation accounts.
+- Complete a UK GDPR data-protection impact assessment and determine controller/
+  processor roles, lawful bases, adult proxy consent evidence, guardian handling,
+  retention, subject rights, breach response, international transfers, and whether ICO
+  registration is required.
+- Publish privacy, terms, support, and account-deletion web pages that match actual app
+  and service behavior.
+- Complete Apple's encryption export-compliance assessment before declaring an
+  exemption or setting `ITSAppUsesNonExemptEncryption`.
+- Apply `service/migrations/004_mobile_api.sql`, enable anonymous Auth, provision the
+  private bucket, configure secrets, and put the mobile API behind a production TLS
+  reverse proxy with request/body limits.
+- Complete physical-device, accessibility, store-beta, and adverse-network validation
+  before asking for public review.
 
-The UKVI account terms allow an account holder or an authorised proxy to use an
-account, while a normal helper cannot access View and Prove. No public share-code
-generation API was found in the government API catalogue during planning. The app
-must therefore remain clearly unofficial and provide a direct route to the free
-official service.
+## Decisions required before billing work
 
-## User experience
+- Confirm whether the intended free allowance remains one person and three complete
+  claimed results over the lifetime of an anonymous account.
+- Confirm whether Pro remains six people with unlimited complete results, and whether
+  GBP 3.99 monthly / GBP 24.99 yearly is appropriate after store fees, Playwright
+  infrastructure cost, support cost, and policy risk.
+- Decide whether payment covers only convenience features or also live automation;
+  store and in-app wording must make clear that the underlying government service is
+  free.
+- Decide whether RevenueCat is the entitlement authority and whether the Supabase
+  anonymous user ID is its App User ID.
+- Define RevenueCat webhook authentication, replay protection, idempotency, grace
+  periods, refunds, chargebacks, billing retry, offline entitlement cache, and database
+  reconciliation.
+- Resolve restore behavior. Anonymous identity makes cross-device/cross-platform
+  recovery and reinstall-based lifetime limits weak without a visible account. Choose
+  deliberately between that limitation, optional account linking, or a different
+  entitlement model; do not add device fingerprinting by default.
+- Design and test the paywall, purchase, restore, manage-subscription, expired-
+  entitlement, and billing-unavailable journeys on both stores.
 
-- Use `eVisaFlow` as the product name and `eVisa documents and share codes` as the
-  store subtitle. Do not use crowns, GOV.UK visual styling, Home Office logos, or
-  claims of official status.
-- Open on the offline document vault rather than a marketing screen. Put saved eVisa
-  PDFs, printable proofs, and share codes first; show managed people as the supporting
-  organisation layer. Show one concise first-run disclosure covering unofficial
-  status, transient server processing, authority, terms, and privacy.
-- Create profiles with a manual form for display name, document type and number,
-  date of birth, preferred two-factor method, and authority basis: self,
-  parent/guardian, or authorised proxy.
-- Generate a code by tapping a person and confirming a purpose selector. Preselect
-  the last purpose but require confirmation. A family batch applies one confirmed
-  purpose and processes selected people sequentially.
-- Keep a run recoverable when the app backgrounds or its event stream disconnects.
-  Restore authoritative state from the API when the app resumes.
-- Keep all successful history encrypted on the device. Provide copy, open, print,
-  share, and delete actions, and distinguish GOV.UK downloads from artifacts
-  generated by eVisaFlow.
-- Schedule local reminders 14 and 3 days before the latest code expires for each
-  person and purpose. Replace old reminders when a newer code supersedes them.
-- Keep profiles and history available offline. Disable live generation when offline
-  and link to the official GOV.UK service from errors and maintenance states.
-- Do not add profile scanning, cloud profile sync, background automatic generation,
-  Telegram account linking, advertisements, or third-party product analytics in v1.
+## Production architecture decision
 
-## Commercial model
+The current mobile queue and OTP broker are in-process. API startup deliberately
+interrupts active runs rather than replaying a possibly-started GOV.UK session. This is
+a candidate for a tightly controlled single-replica beta, but it still needs an
+explicit reliability decision and is not a durable or horizontally scalable worker
+topology.
 
-- Create a silent anonymous app session; there is no visible login.
-- Free users may keep one active profile and claim three complete results over the
-  lifetime of the anonymous account.
-- `evisaflow_pro` permits six active profiles and removes the product usage cap. Initial
-  prices are GBP 3.99 monthly and GBP 24.99 yearly, localized by each store.
-- Use StoreKit and Google Play Billing through RevenueCat. The Supabase anonymous
-  user ID is the RevenueCat App User ID.
-- Restore purchases on the same store platform. Cross-platform entitlement recovery
-  is unsupported without a visible identity.
-- Show the paywall when adding a second profile or starting a fourth free run. State
-  that payment covers convenience, automation, encrypted organisation, and reminders;
-  the government service itself is free.
-- Failed, cancelled, interrupted, and partial runs do not consume free allowance. A
-  free success is recorded atomically when the app claims a share code for which all
-  three artifacts have been staged.
-- Telegram remains a separate service with its existing users, profiles, and limits.
+Before multiple replicas or meaningful paid traffic, decide whether to:
 
-## Mobile architecture
+1. retain a single combined service with documented downtime/interruption behavior;
+2. introduce a durable queue such as PGMQ and separate API/worker processes; or
+3. use another managed queue with equivalent ownership, lease, and retry guarantees.
 
-- Add an Expo application workspace and a Playwright-free shared protocol package.
-- Store the profile manifest and each result artifact as AES-256-GCM encrypted files.
-  Keep the per-installation key in Keychain or Android Keystore through SecureStore.
-- Exclude vault files from cloud and automatic device backups. Losing or uninstalling
-  the app loses local profiles and history; purchase restoration does not restore data.
-- Offer optional biometric locking. If the protected key becomes invalid after a
-  biometric-set change, require a local vault reset rather than weakening protection.
-- Decrypt files only into temporary cache for viewing, printing, or sharing, then
-  remove the plaintext cache. Crypto-erase the vault key during Delete All.
-- Render checker HTML with JavaScript and network access disabled. Validate PDF
-  viewing on physical devices and fall back to the operating-system preview rather
-  than weakening TLS or WebView security.
-- Use local notifications only; the first release does not need APNs or FCM push
-  tokens.
-- Protect live API mutations with a short-lived device session backed by App Attest,
-  DeviceCheck, or Play Integrity via Expo App Integrity.
+The chosen design must specify:
 
-Anonymous sessions make reinstall-based trial resetting harder to prevent than an
-email account would. The first release accepts that tradeoff and does not add invasive
-device fingerprinting.
+- atomic claiming and lease renewal;
+- per-user serialization and global backpressure;
+- crash before browser navigation versus crash after navigation;
+- OTP challenge routing without persistent OTP storage;
+- cancellation and shutdown behavior;
+- artifact packaging idempotency;
+- duplicate prevention and bounded retries;
+- maintenance/kill-switch behavior;
+- observability that contains no identity data;
+- capacity and cost thresholds for adding workers.
 
-## Service architecture
+Also decide whether the app should consume the existing SSE event stream or retain
+1.2-second authoritative snapshot polling. Evaluate battery, network loss, proxy
+behavior, resume semantics, implementation complexity, and server cost.
 
-- Extract transport-neutral applicant, challenge, result, event, and error contracts
-  into `@evisa-flow/protocol` without breaking the public `evisa-flow` API.
-- Generalise the existing runner so Telegram and mobile supply their own challenge
-  brokers and result delivery adapters.
-- Build Telegram, Fastify API, and worker entrypoints from one service image but run
-  them as separate containers.
-- Use Supabase Postgres, private Storage, anonymous Auth, and PGMQ. Queue messages
-  contain only run IDs; sensitive values remain in application-encrypted transient
-  records.
-- Keep mobile tables separate from existing Telegram tables. Store only anonymous
-  users, opaque profile slots, run state, sanitized events, encrypted transient data,
-  artifact manifests, entitlements, and service flags.
-- Permit one active run per anonymous user. Start with browser concurrency two and
-  add worker replicas when queue delay or utilisation warrants it.
-- Replay a queued job after a crash only if browser navigation never started. Once a
-  GOV.UK session starts, mark a crash as interrupted and require an explicit user
-  retry.
+## Security work
 
-### Public API
+- Select and integrate a supported device/app integrity mechanism for mutation
+  endpoints, likely App Attest/DeviceCheck on Apple and Play Integrity on Android.
+- Define behavior for unsupported, rooted/jailbroken, emulated, restored, or falsely
+  rejected devices without blocking legitimate vulnerable users from their already
+  saved offline documents.
+- Add optional biometric vault locking only after defining key invalidation and reset
+  behavior. Never introduce a weaker fallback that silently bypasses device security.
+- Commission an external threat-model review covering anonymous Auth token theft,
+  replay, API abuse, service-role exposure, artifact enumeration, queue denial of
+  service, logs, backups, screenshots, clipboard behavior, and local temporary files.
+- Decide whether a hardened in-app checker HTML viewer is needed. If added, disable
+  JavaScript and network access and test hostile HTML; otherwise keep OS sharing as the
+  explicit supported behavior.
+- Define privacy-preserving crash and reliability telemetry, or launch without it.
+  Document exactly what is collected and enforce sensitive-data scanning.
 
-- `GET /v1/me`
-- `PUT /v1/profile-slots/:id`
-- `DELETE /v1/profile-slots/:id`
-- `POST /v1/runs`
-- `GET /v1/runs/:id`
-- `GET /v1/runs/:id/events`
-- `POST /v1/runs/:id/challenge`
-- `POST /v1/runs/:id/cancel`
-- `POST /v1/runs/:id/claim-result`
-- Authenticated artifact downloads, entitlement refresh, in-app deletion, external
-  deletion-token handling, and a RevenueCat webhook.
+## User-value work
 
-Run creation uses a client-generated UUID for idempotency. Public states are `queued`,
-`running`, `awaiting_2fa`, `packaging`, `succeeded`, `partial_success`, `failed`,
-`cancelled`, `interrupted`, and `expired`. Server-sent events use event IDs, replay,
-and heartbeats; `GET /v1/runs/:id` remains authoritative after reconnect.
+- Add local expiry reminders, initially 14 and 3 days before the newest result expires
+  for each person and purpose. Replace superseded reminders and require no APNs/FCM.
+- Design a sequential multi-person run that asks once for a confirmed purpose, remains
+  recoverable between people, presents each OTP clearly, and never promises unattended
+  background generation.
+- Design a trusted-helper handoff for the target case: setup is completed by a relative,
+  then an older user can open the correct offline proof at a border with poor or no
+  connectivity. Consider a readiness check, a deliberately simple offline view, expiry
+  warnings, and safe device-transfer expectations without adding cloud profile sync.
+- Decide whether per-proof deletion, storage management, export, or a printable
+  emergency bundle is required before beta.
+- Validate the target of first useful setup within 90 seconds and a repeat generation
+  path requiring no more than two taps before the GOV.UK security-code challenge.
+- Finalize store name/subtitle, screenshots, onboarding disclosure, paywall text, and
+  official-source attribution with policy/legal review.
 
-### Data lifecycle
+## Verification and beta exit
 
-- Delete applicant payloads at terminal state or within 30 minutes.
-- Delete security codes immediately after consumption or within 10 minutes.
-- Delete staged results one hour after claim or expiry.
-- Delete sanitized failure diagnostics after 24 hours and detailed run events after
-  30 days.
-- Retain only the aggregate free-success count until app-account deletion.
-- Keep document numbers, dates of birth, OTPs, share codes, photos, status text, and
-  artifact contents out of logs, analytics, URLs, and support bundles.
+- Run TestFlight and Google Play closed testing before public submission.
+- Test VoiceOver and TalkBack with real users or qualified accessibility reviewers.
+- Test maximum text, small phones, tablets, rotation policy, high contrast, reduced
+  motion, keyboard behavior, and switch/external-keyboard navigation on physical
+  devices.
+- Verify real PDF open/print/share, HTML sharing/viewing, clipboard behavior, file
+  cleanup, Keychain/Keystore persistence, uninstall/reinstall, device backup/restore,
+  OS upgrade, and low-storage failure behavior.
+- Exercise airplane mode, captive portal, packet loss, slow network, app background,
+  process death, service restart, OTP expiry, duplicate taps, partial artifacts,
+  maintenance mode, account deletion failure, and GOV.UK layout change.
+- Add integration coverage for durable-queue leases and worker crashes if the
+  production topology changes.
+- Keep live automation creator/internal-only until written authorization is available.
+- Beta exit targets:
+  - no lost local proof after a successful verified save;
+  - no lost active-run recovery under the supported restart model;
+  - at least 99.5% crash-free sessions;
+  - at least 95% app-controlled run success, excluding GOV.UK and user errors;
+  - zero detected personal data in telemetry, CI media, logs, or support bundles;
+  - the two-tap repeat-generation target validated with representative users.
 
-## Delivery sequence
+## Explicit v1 non-goals
 
-1. Establish the shared protocol, transport-neutral runner, workspace structure, and
-   tracked review plan.
-2. Add the durable mobile run schema, queue consumer, challenge broker, artifact
-   cleanup, kill switch, and authenticated API.
-3. Build the encrypted mobile vault, dashboard, profile editor, single and multi-person
-   runs, OTP recovery, history, viewers, printing, sharing, and reminders.
-4. Add RevenueCat products, entitlement enforcement, subscription restoration,
-   privacy deletion, and storage management.
-5. Add an offline fixture-backed review mode with fictional profiles, simulated
-   progress, a fixed OTP, sanitized artifacts, and Premium demonstration.
-6. Test through TestFlight and Google Play closed testing. Keep live automation
-   creator/internal-only until written authorization is available.
-7. Release worldwide in English with phased rollout. If authorization is refused, do
-   not release paid automation; restrict any public app to local organisation and
-   official GOV.UK deep links.
+- Identity-document scanning or photo capture.
+- Cloud profile/document sync.
+- Unattended background share-code generation.
+- Telegram account linking.
+- Advertising SDKs or third-party behavioral analytics.
+- Dynamic downloaded automation code in the mobile app.
 
-## Verification
+## Recommended sequence
 
-- Unit-test protocol validation, encryption and migrations, profile limits, result
-  claims, entitlement changes, reminder replacement, and deletion.
-- Use Maestro for accessibility-level Android and iOS journeys. Every flow starts from
-  clean application state, uses fictional data, emits JUnit and diagnostic artifacts,
-  and shares deterministic fixture-backed server behavior.
-- Every mobile-facing pull request must receive an automated service comment with
-  deterministic screenshots of the core screens on both iOS and Android. Keep the
-  comment updated in place so reviewers can compare the current commit without
-  downloading transient test logs.
-- Integration-test ownership boundaries, idempotency, queue leases, worker crashes,
-  OTP expiry, cancellation, partial artifacts, cleanup, webhooks, and the kill switch.
-- Reuse sanitized GOV.UK fixtures for every supported document and purpose branch.
-- Run mobile end-to-end journeys on iOS and Android for first use, repeat generation,
-  multi-person batches, background/resume, failures, paywall, purchase restore, history,
-  and review mode.
-- Verify PDFs, HTML, printing, sharing, biometrics, integrity attestation,
-  notifications, app-switcher privacy, VoiceOver/TalkBack, large text, and small and
-  large screens on physical devices.
-- Beta exit requires the two-tap repeat path, hash-verified artifacts, no lost run on
-  reconnect, at least 99.5% crash-free sessions, at least 95% app-controlled run
-  success excluding GOV.UK and user errors, and zero detected personal data in
-  telemetry.
+1. Resolve government authorization, store-policy, legal-entity, and data-protection
+   questions before building paid distribution around an uncertain permission model.
+2. Choose the beta production topology and deploy the existing API/migration behind
+   TLS with secrets, backups, monitoring, and a kill switch.
+3. Complete physical-device and accessibility validation of the free fictional/live
+   beta, including the poor-connectivity handoff scenario.
+4. Implement integrity controls and the approved billing/restore model with full store
+   sandbox E2E.
+5. Add reminders, optional biometric locking, and sequential multi-person generation
+   in that order unless user research changes the priority.
+6. Submit a complete fictional demo mode to both stores early. If authorization is
+   refused, do not release paid automation; restrict any public app to local
+   organisation and deep links to the free official service.

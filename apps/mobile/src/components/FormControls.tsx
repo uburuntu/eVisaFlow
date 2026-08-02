@@ -2,13 +2,13 @@ import { Check, Circle } from "lucide-react-native";
 import {
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   type TextInputProps,
   View,
   type ViewStyle,
 } from "react-native";
 import { useAppTheme } from "@/theme";
+import { MAX_ACCESSIBLE_FONT_SCALE, AppText as Text } from "./AppText";
 
 interface TextFieldProps extends TextInputProps {
   label: string;
@@ -30,6 +30,7 @@ export function TextField({
       <Text style={[styles.label, { color: theme.colors.text }]}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
+        maxFontSizeMultiplier={MAX_ACCESSIBLE_FONT_SCALE}
         placeholderTextColor={theme.colors.textMuted}
         selectionColor={theme.colors.primary}
         style={[

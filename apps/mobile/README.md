@@ -14,8 +14,9 @@ API once that service is available.
 - hash-verified eVisa PDF, checker HTML/PDF, share, print, and copy actions;
 - fixture-backed App Review mode using fictional data and artifacts;
 - app-switcher privacy cover, expiry warnings, and full local/service deletion;
-- Maestro Android/iOS lifecycle, validation, entitlement, privacy, and offline-proof
-  journeys.
+- 200% accessible text scaling with a dedicated maximum-system-size smoke journey;
+- Maestro Android/iOS lifecycle, validation, entitlement, privacy, offline-proof, and
+  large-text journeys.
 
 Subscriptions, reminders, biometric locking, integrity attestation, and multi-person
 batch runs remain later milestones. Store release remains gated by the authorization

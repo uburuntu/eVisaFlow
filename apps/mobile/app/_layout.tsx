@@ -2,9 +2,10 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { AppState, StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ServiceProvider, useMobileService } from "@/api/ServiceContext";
+import { AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
 import { useVault, VaultProvider } from "@/vault/VaultContext";
 

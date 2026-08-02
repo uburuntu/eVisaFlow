@@ -17,6 +17,9 @@ They do not call GOV.UK or require a production account.
   status polling.
 - `offline-proof.yaml` runs the fixture-backed worker journey through OTP, encrypted
   artifact persistence, process restart, and reopening the proof offline.
+- `accessibility/large-text.yaml` raises the device to its maximum text setting and
+  verifies that the dashboard and primary navigation remain usable at the app's 200%
+  accessibility scale ceiling.
 - Reusable setup lives under `maestro/subflows/`; files there are not discovered as
   standalone tests.
 
@@ -36,7 +39,8 @@ The target generates the native Android project, builds a Release APK for ARM64,
 installs it, and runs every Maestro flow. Override `ANDROID_DEVICE` when more than
 one device is connected, or `ANDROID_ARCH` for a non-ARM emulator. Android flows
 run in isolated Maestro processes so a driver failure cannot contaminate the next
-journey; each flow receives its own JUnit report and debug directory.
+journey; each flow receives its own JUnit report and debug directory. The runner
+restores the emulator's original font scale after the accessibility journey.
 
 For iOS, boot Simulator and run the complete local pipeline:
 
@@ -54,6 +58,8 @@ The target prebuilds iOS, installs pods, creates a Release simulator app, instal
 it, and runs all Maestro flows. It also embeds a test-only Keychain entitlement
 for ad-hoc simulator builds; App Store entitlements continue to come from Expo
 configuration and Apple's provisioning profile.
+The runner also restores the simulator's original content-size category after the
+large-text journey.
 
 For an already installed Android or iOS build, run `pnpm e2e:mobile` or
 `pnpm e2e:mobile:smoke` directly.

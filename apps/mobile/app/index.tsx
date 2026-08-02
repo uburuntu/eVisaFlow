@@ -11,18 +11,11 @@ import {
   UsersRound,
 } from "lucide-react-native";
 import { useState } from "react";
-import {
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { ConfirmationRow } from "@/components/FormControls";
 import { IconButton } from "@/components/IconButton";
 import { ProfileCard } from "@/components/ProfileCard";
@@ -202,7 +195,7 @@ export default function DocumentsScreen() {
 
         <View style={styles.activitySection}>
           <View style={styles.sectionHeadingRow}>
-            <View>
+            <View style={styles.sectionHeadingCopy}>
               <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
                 Saved documents
               </Text>
@@ -256,7 +249,7 @@ export default function DocumentsScreen() {
         </View>
 
         <View style={styles.sectionHeadingRow}>
-          <View>
+          <View style={styles.sectionHeadingCopy}>
             <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
               People
             </Text>
@@ -560,6 +553,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 12,
   },
+  sectionHeadingCopy: { flex: 1, minWidth: 0 },
   sectionHeading: { fontSize: 18, lineHeight: 23, fontWeight: "800" },
   sectionMeta: { marginTop: 2, fontSize: 12, lineHeight: 17 },
   sectionCount: { fontSize: 13, lineHeight: 18, fontWeight: "700" },

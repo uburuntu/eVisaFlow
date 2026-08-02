@@ -13,8 +13,9 @@ import {
   Share2,
 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { IconButton } from "@/components/IconButton";
 import { useAppTheme } from "@/theme";
 import { getExpiryState } from "@/utils/expiry";

@@ -10,8 +10,9 @@ import {
   UserRound,
 } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
 import {
   authorityLabels,

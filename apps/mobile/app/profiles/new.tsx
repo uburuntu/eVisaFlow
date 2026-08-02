@@ -13,11 +13,11 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { MobileServiceUnavailableError, useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { ChoiceGroup, ConfirmationRow, TextField } from "@/components/FormControls";
 import { useAppTheme } from "@/theme";
 import { ProfileLimitError, useVault } from "@/vault/VaultContext";

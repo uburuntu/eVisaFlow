@@ -298,6 +298,11 @@ jobs:
             | iOS | <img src="${base}/ios/choose-purpose.png" width="220" alt="iOS purpose selection"> | <img src="${base}/ios/dashboard-with-offline-proof.png" width="220" alt="iOS persisted dashboard"> | <img src="${base}/ios/privacy-settings.png" width="220" alt="iOS privacy settings"> |
             | Android | <img src="${base}/android/choose-purpose.png" width="220" alt="Android purpose selection"> | <img src="${base}/android/dashboard-with-offline-proof.png" width="220" alt="Android persisted dashboard"> | <img src="${base}/android/privacy-settings.png" width="220" alt="Android privacy settings"> |
 
+            | Platform | Large text dashboard (200%) |
+            | --- | --- |
+            | iOS | <img src="${base}/ios/large-text-dashboard.png" width="280" alt="iOS dashboard at 200 percent text size"> |
+            | Android | <img src="${base}/android/large-text-dashboard.png" width="280" alt="Android dashboard at 200 percent text size"> |
+
             **Journey videos:** [iOS](${base}/ios/offline-proof-journey.mp4) · [Android](${base}/android/offline-proof-journey.mp4)
 
             [CI run and full diagnostics](${runUrl})`;

@@ -1,10 +1,11 @@
 import type { MobileProfile } from "@evisa-flow/protocol";
 import { ChevronRight, FileCheck2 } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useAppTheme } from "@/theme";
 import { getExpiryState } from "@/utils/expiry";
 import { purposeLabels } from "@/utils/run";
 import type { SavedResult } from "@/vault/vault";
+import { AppText as Text } from "./AppText";
 
 interface SavedDocumentCardProps {
   index: number;

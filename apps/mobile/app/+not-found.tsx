@@ -1,6 +1,7 @@
 import { router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
 
 export default function NotFoundScreen() {

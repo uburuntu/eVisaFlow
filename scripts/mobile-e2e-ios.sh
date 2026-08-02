@@ -11,6 +11,16 @@ simulator_access_group="FAKETEAMID.${bundle_id}"
 build_directory="apps/mobile/e2e/build/ios"
 entitlements_path="apps/mobile/e2e/ios-simulator.entitlements"
 result_directory="${MOBILE_E2E_RESULTS_DIR:-apps/mobile/e2e/results/local-ios}"
+ios_test_device=""
+ios_original_content_size=""
+
+restore_ios_content_size() {
+  if [[ -z "${ios_test_device}" || -z "${ios_original_content_size}" ]]; then
+    return
+  fi
+  xcrun simctl ui "${ios_test_device}" content_size \
+    "${ios_original_content_size}" >/dev/null
+}
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -177,7 +187,7 @@ run_tests() {
   configure_java
   configure_maestro
 
-  local app_path test_status
+  local accessibility_status app_path test_status
   app_path="$(find_app)"
   if [[ -z "${app_path}" ]]; then
     printf '%s\n' 'Missing simulator app. Run this script with build or all first.' >&2
@@ -208,6 +218,25 @@ run_tests() {
     apps/mobile/e2e/maestro/flows
   test_status=$?
   set -e
+
+  ios_test_device="${device_id}"
+  ios_original_content_size="$(xcrun simctl ui "${device_id}" content_size)"
+  trap restore_ios_content_size EXIT
+  xcrun simctl ui "${device_id}" content_size accessibility-extra-extra-extra-large
+  set +e
+  maestro --device "${device_id}" test \
+    --format JUNIT \
+    --output "${result_directory}/accessibility-junit.xml" \
+    --test-output-dir "${result_directory}/artifacts/accessibility" \
+    --debug-output "${result_directory}/debug/accessibility" \
+    apps/mobile/e2e/maestro/accessibility/large-text.yaml
+  accessibility_status=$?
+  set -e
+  if ((accessibility_status != 0)); then
+    test_status="${accessibility_status}"
+  fi
+  restore_ios_content_size
+  trap - EXIT
 
   xcrun simctl spawn "${device_id}" log show \
     --last 15m \

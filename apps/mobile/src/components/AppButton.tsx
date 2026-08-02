@@ -1,12 +1,7 @@
 import type { LucideIcon } from "lucide-react-native";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  type ViewStyle,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, type ViewStyle } from "react-native";
 import { useAppTheme } from "@/theme";
+import { AppText as Text } from "./AppText";
 
 interface AppButtonProps {
   title: string;
@@ -81,6 +76,7 @@ const styles = StyleSheet.create({
   button: {
     minHeight: 48,
     paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: 7,
     borderWidth: 1,
     alignItems: "center",
@@ -89,8 +85,10 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   label: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: "700",
+    textAlign: "center",
   },
   compact: {
     minHeight: 40,

@@ -50,7 +50,8 @@ for screenshot in \
   security-code \
   saved-offline-proof \
   dashboard-with-offline-proof \
-  privacy-settings; do
+  privacy-settings \
+  large-text-dashboard; do
   cp "$(latest_match "*/takeScreenshot/${screenshot}.png")" \
     "$output_directory/${screenshot}.png"
 done

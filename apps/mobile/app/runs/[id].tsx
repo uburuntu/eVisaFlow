@@ -19,13 +19,13 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
 import { MobileApiRequestError } from "@/api/client";
 import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
+import { MAX_ACCESSIBLE_FONT_SCALE, AppText as Text } from "@/components/AppText";
 import { useAppTheme } from "@/theme";
 import { purposeLabels } from "@/utils/run";
 import { useVault } from "@/vault/VaultContext";
@@ -344,6 +344,7 @@ export default function RunStatusScreen() {
               }
               keyboardType="number-pad"
               maxLength={8}
+              maxFontSizeMultiplier={MAX_ACCESSIBLE_FONT_SCALE}
               onChangeText={(value) => {
                 setSecurityCode(value.replace(/\D/g, ""));
                 setActionError(null);

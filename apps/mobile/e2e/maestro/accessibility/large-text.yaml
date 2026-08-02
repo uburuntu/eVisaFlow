@@ -1,0 +1,20 @@
+appId: com.evisaflow.mobile
+name: Dashboard remains usable with large text
+tags:
+  - accessibility
+  - critical
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- assertVisible: "Saved documents"
+- assertVisible: "People"
+- assertVisible:
+    id: "dashboard-settings"
+- assertVisible:
+    id: "family-add-person-header"
+- takeScreenshot: "large-text-dashboard"
+- tapOn:
+    id: "family-add-person-header"
+- assertVisible:
+    id: "profile-form"

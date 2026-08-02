@@ -9,6 +9,20 @@ cd "${repo_root}"
 apk_path="${MOBILE_E2E_ANDROID_APK:-apps/mobile/android/app/build/outputs/apk/release/app-release.apk}"
 result_directory="${MOBILE_E2E_RESULTS_DIR:-apps/mobile/e2e/results/local-android}"
 android_arch="${ANDROID_ARCH:-arm64-v8a}"
+android_test_device=""
+android_original_font_scale=""
+
+restore_android_font_scale() {
+  if [[ -z "${android_test_device}" || -z "${android_original_font_scale}" ]]; then
+    return
+  fi
+  if [[ "${android_original_font_scale}" == "null" ]]; then
+    adb -s "${android_test_device}" shell settings delete system font_scale >/dev/null
+  else
+    adb -s "${android_test_device}" shell settings put system font_scale \
+      "${android_original_font_scale}" >/dev/null
+  fi
+}
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -184,6 +198,27 @@ run_tests() {
       test_status="${flow_status}"
     fi
   done
+
+  android_test_device="${device_id}"
+  android_original_font_scale="$(
+    adb -s "${device_id}" shell settings get system font_scale | tr -d '\r'
+  )"
+  trap restore_android_font_scale EXIT
+  adb -s "${device_id}" shell settings put system font_scale 2.0
+  set +e
+  maestro --device "${device_id}" test \
+    --format JUNIT \
+    --output "${result_directory}/junit/large-text.xml" \
+    --test-output-dir "${result_directory}/artifacts/large-text" \
+    --debug-output "${result_directory}/debug/large-text" \
+    apps/mobile/e2e/maestro/accessibility/large-text.yaml
+  flow_status=$?
+  set -e
+  if ((flow_status != 0)); then
+    test_status="${flow_status}"
+  fi
+  restore_android_font_scale
+  trap - EXIT
 
   adb -s "${device_id}" logcat -d > "${result_directory}/logcat.txt" || true
   return "${test_status}"

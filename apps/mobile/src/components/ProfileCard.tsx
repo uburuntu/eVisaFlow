@@ -1,10 +1,11 @@
 import type { MobileProfile } from "@evisa-flow/protocol";
 import { ChevronRight, KeyRound } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useAppTheme } from "@/theme";
 import { documentTypeLabels, maskDocumentNumber } from "@/utils/profile";
 import type { SavedResult } from "@/vault/vault";
 import { AppButton } from "./AppButton";
+import { AppText as Text } from "./AppText";
 
 interface ProfileCardProps {
   index: number;

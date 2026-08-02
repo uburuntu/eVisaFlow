@@ -10,9 +10,10 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
 import { useMobileService } from "@/api/ServiceContext";
 import { AppButton } from "@/components/AppButton";
+import { AppText as Text } from "@/components/AppText";
 import { OFFICIAL_EVISA_URL } from "@/constants/app";
 import { useAppTheme } from "@/theme";
 import { useVault } from "@/vault/VaultContext";

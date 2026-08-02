@@ -61,7 +61,7 @@ this register.
 | PRIV-02 | External beta | not_started | Privacy counsel | Children, guardians, adults lacking capacity, Article 9, and Article 14 duties have an approved product model | Pending |
 | PRIV-03 | Public release | not_started | Privacy owner | DPIA, records of processing, legitimate-interests assessment where needed, residual-risk acceptance, and ICO fee assessment are complete | Pending |
 | PRIV-04 | Public release | not_started | Privacy owner | Vendor/subprocessor map, UK/EEA regions, international-transfer mechanisms, and retention schedule match production | Pending |
-| PRIV-05 | External beta | in_progress | Product owner | Privacy notice, terms, support page, in-app deletion, and public web deletion path are live and match actual behavior | In-app deletion, server cascade, and immediate bearer-cache invalidation are tested; public privacy, terms, support, and deletion pages remain |
+| PRIV-05 | External beta | in_progress | Product owner | Privacy notice, terms, support page, in-app deletion, and public web deletion path are live and match actual behavior | In-app deletion supports offline local crypto-erasure with deferred server retry; server cascade and immediate bearer-cache invalidation are tested; public privacy, terms, support, and deletion pages remain |
 | PRIV-06 | Public release | not_started | Privacy owner | Backup expiry, incident response, subject-rights handling, breach response, and support-access procedures are documented and exercised | Pending |
 
 ## Architecture and security

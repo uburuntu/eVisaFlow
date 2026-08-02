@@ -11,6 +11,7 @@ const SESSION_KEY_NAME = "evisaflow.session.key.v1";
 const SESSION_DIRECTORY_NAME = "evisaflow-session";
 const SESSION_FILE_NAME = "session.v1.enc";
 const SESSION_TEMP_FILE_NAME = "session.v1.tmp";
+const PENDING_ACCOUNT_DELETION_KEY = "evisaflow.pending-account-deletion.v1";
 
 type SessionDocument = Record<string, string>;
 
@@ -120,3 +121,15 @@ export const encryptedSessionStorage = {
     });
   },
 };
+
+export async function hasPendingAccountDeletion(): Promise<boolean> {
+  return (await encryptedSessionStorage.getItem(PENDING_ACCOUNT_DELETION_KEY)) === "true";
+}
+
+export async function markPendingAccountDeletion(): Promise<void> {
+  await encryptedSessionStorage.setItem(PENDING_ACCOUNT_DELETION_KEY, "true");
+}
+
+export async function clearPendingAccountDeletion(): Promise<void> {
+  await encryptedSessionStorage.removeItem(PENDING_ACCOUNT_DELETION_KEY);
+}

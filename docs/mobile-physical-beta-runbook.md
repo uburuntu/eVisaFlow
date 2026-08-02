@@ -29,6 +29,10 @@ For each platform:
    correct.
 7. Delete one proof and verify its person/profile remains.
 8. Delete all data and verify the vault cannot be recovered.
+9. Repeat Delete All with the API unavailable. Choose local erasure, confirm proofs
+   are immediately unrecoverable, then restore the API and relaunch. Verify the
+   deferred anonymous-account deletion completes before a fresh service account is
+   created.
 
 `PROD-02` and the offline persistence portion of `QA-01` require zero failures.
 

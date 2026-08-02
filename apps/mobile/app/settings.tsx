@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import type { LucideIcon } from "lucide-react-native";
 import {
   BellRing,
+  CircleAlert,
   ExternalLink,
   FileLock2,
   LockKeyhole,
@@ -44,12 +45,38 @@ export default function SettingsScreen() {
     setDeleting(true);
     try {
       await service.deleteAccount();
+      await reconcileExpiryReminders([], false).catch(() => undefined);
       await vault.resetVault();
       router.replace("/");
     } catch {
       Alert.alert(
-        "Could not delete all data",
-        "Your local vault has not been changed. Check your connection and try again."
+        "Service deletion is unavailable",
+        "You can keep everything and retry, or erase this phone now. If you erase this phone, eVisaFlow will retry deleting the anonymous service account when you next open the app online.",
+        [
+          { text: "Keep my data", style: "cancel" },
+          {
+            text: "Erase this phone",
+            style: "destructive",
+            onPress: () => void deleteLocalDataAndDeferAccount(),
+          },
+        ]
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteLocalDataAndDeferAccount = async () => {
+    setDeleting(true);
+    try {
+      await service.deferAccountDeletion();
+      await reconcileExpiryReminders([], false).catch(() => undefined);
+      await vault.resetVault();
+      router.replace("/");
+    } catch {
+      Alert.alert(
+        "Could not erase this phone",
+        "The local vault was not fully erased. Try again from Settings."
       );
     } finally {
       setDeleting(false);
@@ -172,8 +199,24 @@ export default function SettingsScreen() {
         </Text>
         <Text style={[styles.deleteBody, { color: theme.colors.textMuted }]}>
           Removes the encrypted vault from this device and deletes the anonymous service
-          account and usage history when connected.
+          account and usage history. Local erasure remains available without a connection.
         </Text>
+        {service.accountDeletionPending ? (
+          <View
+            accessibilityRole="alert"
+            style={[styles.pendingDeletion, { borderColor: theme.colors.warning }]}
+          >
+            <CircleAlert color={theme.colors.warning} size={20} />
+            <View style={styles.pendingDeletionCopy}>
+              <Text style={[styles.rowTitle, { color: theme.colors.text }]}>
+                Service deletion pending
+              </Text>
+              <Text style={[styles.rowBody, { color: theme.colors.textMuted }]}>
+                Reopen eVisaFlow with an internet connection to finish.
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <AppButton
           icon={Trash2}
           loading={deleting}
@@ -257,5 +300,14 @@ const styles = StyleSheet.create({
   preferenceCopy: { flex: 1, gap: 3 },
   deleteSection: { borderTopWidth: 1, paddingTop: 22, gap: 12 },
   deleteBody: { fontSize: 13, lineHeight: 19 },
+  pendingDeletion: {
+    borderLeftWidth: 3,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingLeft: 12,
+    paddingVertical: 4,
+  },
+  pendingDeletionCopy: { flex: 1, gap: 3 },
   version: { textAlign: "center", fontSize: 11, lineHeight: 16 },
 });

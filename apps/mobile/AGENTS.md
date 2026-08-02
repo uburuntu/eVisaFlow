@@ -53,8 +53,10 @@
   removes the person's local results and queues an opaque server-slot tombstone for
   the next successful connection.
 - Delete All is remote-first: it cancels/deletes the anonymous service account, signs
-  out, then crypto-erases the local session and vault. If remote deletion fails, local
-  data remains intact and the user is asked to retry.
+  out, then crypto-erases the local session and vault. If the service is unreachable,
+  the user may erase the vault immediately; retain only the encrypted anonymous
+  session and a non-sensitive pending-deletion marker, then retry remote deletion
+  before normal bootstrap creates a fresh anonymous account.
 
 ## Service modes
 - `EXPO_PUBLIC_EVISAFLOW_DEMO_MODE=true` selects the deterministic fictional client.
@@ -106,6 +108,9 @@
   obsolete encrypted staging directory never prevents a valid vault from opening.
 - Missing key plus existing ciphertext is an explicit unrecoverable-vault state. Offer
   a reset; never weaken encryption or invent a recovery key.
+- Never require connectivity to erase local proofs. A deferred server deletion must
+  preserve just enough encrypted session state to retry and must not permit normal
+  service use before the retry is resolved.
 - Do not add advertising SDKs or third-party behavioral analytics. Sensitive values
   must never enter logs, crash metadata, URLs, clipboard telemetry, or support bundles.
 

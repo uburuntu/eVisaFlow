@@ -121,6 +121,7 @@ export default function NewProfileScreen() {
     >
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.intro}>

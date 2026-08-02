@@ -20,7 +20,7 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-day"
 - inputText: "15"
-- tapOn: "Date of birth"
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "profile-birth-month"
@@ -28,7 +28,7 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-month"
 - inputText: "06"
-- tapOn: "Date of birth"
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "profile-birth-year"
@@ -36,7 +36,7 @@ appId: com.evisaflow.mobile
 - tapOn:
     id: "profile-birth-year"
 - inputText: "1990"
-- tapOn: "Date of birth"
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "profile-two-factor-email"
@@ -47,20 +47,39 @@ appId: com.evisaflow.mobile
     element:
       id: "profile-authority-authorised_proxy"
     direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: "profile-authority-authorised_proxy"
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       id: "profile-authority-confirmation"
     direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: "profile-authority-confirmation"
+    retryTapIfNoChange: true
+- assertVisible:
+    id: "profile-authority-confirmation"
+    checked: true
 - scrollUntilVisible:
     element:
       id: "profile-save"
     direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: "profile-save"
+    enabled: true
+    retryTapIfNoChange: true
 - assertVisible:
     id: "family-screen"
 - assertVisible: ".*Alex Morgan.*"

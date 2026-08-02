@@ -36,7 +36,9 @@
 - Every run, event, claim, artifact download, cancellation, and account deletion must
   be scoped to the authenticated owner.
 - Deleting an account cancels active work first, removes private blobs, then deletes
-  the Supabase Auth user so database rows cascade.
+  the Supabase Auth user so database rows cascade. Immediately invalidate the exact
+  bearer token in `SupabaseMobileAuth`; invalidation must win over cached and in-flight
+  verification so a concurrent request cannot recreate a deleted server row.
 
 ## Sensitive-data lifecycle
 - Applicant requests and share-code result metadata are AES-256-GCM encrypted with

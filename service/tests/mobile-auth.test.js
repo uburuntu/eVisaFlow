@@ -48,3 +48,29 @@ test("mobile auth expires invalid-session cache entries", async () => {
   assert.equal(await auth.getUserId("invalid-token"), null);
   assert.equal(calls, 2);
 });
+
+test("mobile auth invalidation wins over cached and in-flight verification", async () => {
+  let calls = 0;
+  let release;
+  const db = {
+    auth: {
+      async getUser() {
+        calls += 1;
+        await new Promise((resolve) => {
+          release = resolve;
+        });
+        return { data: { user: { id: "deleted-user" } }, error: null };
+      },
+    },
+  };
+  const auth = new SupabaseMobileAuth(db);
+
+  const pending = auth.getUserId("deleted-user-token");
+  await new Promise((resolve) => setImmediate(resolve));
+  auth.invalidateAccessToken("deleted-user-token");
+  release();
+
+  assert.equal(await pending, null);
+  assert.equal(await auth.getUserId("deleted-user-token"), null);
+  assert.equal(calls, 1);
+});

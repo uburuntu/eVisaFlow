@@ -37,7 +37,10 @@ interface MobileApiDependencies {
   log: Logger;
 }
 
-type AuthenticatedRequest = FastifyRequest & { mobileUserId: string };
+type AuthenticatedRequest = FastifyRequest & {
+  mobileUserId: string;
+  mobileAccessToken: string;
+};
 
 export function buildMobileApi(dependencies: MobileApiDependencies) {
   const app = Fastify({
@@ -74,7 +77,9 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
         false
       );
     }
-    (request as AuthenticatedRequest).mobileUserId = userId;
+    const authenticatedRequest = request as AuthenticatedRequest;
+    authenticatedRequest.mobileUserId = userId;
+    authenticatedRequest.mobileAccessToken = token;
   });
 
   app.get("/v1/me", async (request) => dependencies.store.getMe(userId(request)));
@@ -86,6 +91,7 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
       dependencies.coordinator.cancel(ownerId, runId);
     }
     await dependencies.store.deleteAccount(ownerId);
+    dependencies.auth.invalidateAccessToken(accessToken(request));
     return reply.code(204).send();
   });
 
@@ -331,6 +337,10 @@ export function buildMobileApi(dependencies: MobileApiDependencies) {
 
 function userId(request: FastifyRequest): string {
   return (request as AuthenticatedRequest).mobileUserId;
+}
+
+function accessToken(request: FastifyRequest): string {
+  return (request as AuthenticatedRequest).mobileAccessToken;
 }
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, reply: FastifyReply): T | null {

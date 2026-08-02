@@ -51,6 +51,7 @@ function createFixture(options = {}) {
   const beginClaimCalls = [];
   const acknowledgementCalls = [];
   const artifactCalls = [];
+  const invalidatedAccessTokens = new Set();
   let deletedAccountId = null;
   const store = {
     async getMe(ownerId) {
@@ -136,7 +137,12 @@ function createFixture(options = {}) {
   };
   const auth = {
     async getUserId(token) {
-      return token === "valid-token" ? userId : null;
+      return token === "valid-token" && !invalidatedAccessTokens.has(token)
+        ? userId
+        : null;
+    },
+    invalidateAccessToken(token) {
+      invalidatedAccessTokens.add(token);
     },
   };
   const app = buildMobileApi({
@@ -154,6 +160,7 @@ function createFixture(options = {}) {
     beginClaimCalls,
     acknowledgementCalls,
     artifactCalls,
+    invalidatedAccessTokens,
     deletedAccountId: () => deletedAccountId,
   };
 }
@@ -249,8 +256,8 @@ test("mobile API interrupts and clears a run when queue startup fails", async ()
   await app.close();
 });
 
-test("mobile API cancels active work before deleting the anonymous account", async () => {
-  const { app, cancelled, deletedAccountId } = createFixture();
+test("mobile API cancels work and invalidates the session when deleting an account", async () => {
+  const { app, cancelled, deletedAccountId, invalidatedAccessTokens } = createFixture();
   const created = await app.inject(
     authorized({ method: "POST", url: "/v1/runs", payload: runRequest })
   );
@@ -260,6 +267,11 @@ test("mobile API cancels active work before deleting the anonymous account", asy
   assert.equal(response.statusCode, 204);
   assert.deepEqual(cancelled, [{ ownerId: userId, id: runId }]);
   assert.equal(deletedAccountId(), userId);
+  assert.deepEqual([...invalidatedAccessTokens], ["valid-token"]);
+
+  const afterDeletion = await app.inject(authorized({ method: "GET", url: "/v1/me" }));
+  assert.equal(afterDeletion.statusCode, 401);
+  assert.equal(afterDeletion.json().code, "AUTH_INVALID");
   await app.close();
 });
 

@@ -35,8 +35,9 @@
   `saved-offline-proof`, `dashboard-with-offline-proof`, `privacy-settings`,
   `offline-summary`, `large-text-dashboard`, and `large-text-dashboard-bottom`.
 - Required recording basename: `offline-proof-journey.mp4`.
-- Android uses Maestro recording inside the shared proof subflow. iOS uses native
-  `simctl recordVideo`, then `avconvert` to a metadata-filtered H.264 720p file.
+- Android records inside the shared proof subflow. iOS records only the focused review
+  flow. The iOS runner then uses `avconvert` to publish a metadata-filtered H.264 720p
+  copy at the stable collector path.
 - Do not accept blank, one-frame, tiny, corrupt, clipped, or personal-data media.
   Inspect contact sheets and video frame counts before considering visual CI complete.
 

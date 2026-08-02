@@ -123,7 +123,7 @@ jobs:
 
       - name: Upload Android diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-e2e-android-${{ github.run_attempt }}
           path: apps/mobile/e2e/results/android/
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload failing Android build
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-e2e-android-apk-${{ github.run_attempt }}
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
@@ -216,7 +216,7 @@ jobs:
 
       - name: Upload iOS diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-e2e-ios-${{ github.run_attempt }}
           path: apps/mobile/e2e/results/ios/
@@ -225,7 +225,7 @@ jobs:
 
       - name: Upload failing iOS build
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-e2e-ios-app-${{ github.run_attempt }}
           path: apps/mobile/e2e/build/ios/Build/Products/**/*.app
@@ -246,13 +246,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: mobile-e2e-android-*
           path: artifacts/android
           merge-multiple: true
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: mobile-e2e-ios-*
           path: artifacts/ios

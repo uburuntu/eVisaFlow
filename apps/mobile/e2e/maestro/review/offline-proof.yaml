@@ -1,0 +1,5 @@
+appId: com.evisaflow.mobile
+name: Record the offline proof journey
+---
+- launchApp
+- runFlow: "../subflows/generate-and-persist-offline-proof.yaml"

@@ -1,12 +1,7 @@
 appId: com.evisaflow.mobile
-name: Generate and persist an offline proof
-tags:
-  - smoke
-  - critical
-  - monetization
+name: Prepare the fictional profile for visual review
 ---
 - launchApp:
     clearState: true
 - runFlow: "../subflows/accept-disclosure.yaml"
 - runFlow: "../subflows/add-fictional-profile.yaml"
-- runFlow: "../subflows/generate-and-persist-offline-proof.yaml"

@@ -13,6 +13,7 @@ entitlements_path="apps/mobile/e2e/ios-simulator.entitlements"
 result_directory="${MOBILE_E2E_RESULTS_DIR:-apps/mobile/e2e/results/local-ios}"
 ios_test_device=""
 ios_original_content_size=""
+ios_recording_pid=""
 
 restore_ios_content_size() {
   if [[ -z "${ios_test_device}" || -z "${ios_original_content_size}" ]]; then
@@ -20,6 +21,21 @@ restore_ios_content_size() {
   fi
   xcrun simctl ui "${ios_test_device}" content_size \
     "${ios_original_content_size}" >/dev/null
+}
+
+stop_ios_recording() {
+  if [[ -z "${ios_recording_pid}" ]]; then
+    return
+  fi
+
+  kill -INT "${ios_recording_pid}" >/dev/null 2>&1 || true
+  wait "${ios_recording_pid}" >/dev/null 2>&1 || true
+  ios_recording_pid=""
+}
+
+cleanup_ios_test_state() {
+  stop_ios_recording
+  restore_ios_content_size
 }
 
 require_command() {
@@ -122,6 +138,108 @@ find_app() {
   find "${build_directory}/Build/Products" -maxdepth 2 -name '*.app' -print -quit
 }
 
+record_review_journey() {
+  local device_id="$1"
+  local encoded_path raw_path recording_directory recording_log recording_path
+  local recording_started recording_status review_status setup_status video_bytes
+
+  recording_directory="${result_directory}/artifacts/review-video/startRecording"
+  recording_log="${result_directory}/review-video.log"
+  recording_path="${recording_directory}/offline-proof-journey.mp4"
+  raw_path="${recording_directory}/offline-proof-journey-raw.mov"
+  encoded_path="${recording_directory}/offline-proof-journey-encoded.m4v"
+  mkdir -p "${recording_directory}" || return
+
+  if maestro --device "${device_id}" test \
+      --format JUNIT \
+      --output "${result_directory}/review-setup-junit.xml" \
+      --test-output-dir "${result_directory}/artifacts/review-setup" \
+      --debug-output "${result_directory}/debug/review-setup" \
+      apps/mobile/e2e/maestro/review/setup-offline-proof.yaml; then
+    setup_status=0
+  else
+    setup_status=$?
+  fi
+  if ((setup_status != 0)); then
+    return "${setup_status}"
+  fi
+
+  xcrun simctl io "${device_id}" recordVideo \
+    --codec=h264 \
+    --force \
+    "${raw_path}" \
+    > "${recording_log}" 2>&1 &
+  ios_recording_pid=$!
+
+  recording_started="false"
+  for _ in {1..100}; do
+    if grep -Fq 'Recording started' "${recording_log}"; then
+      recording_started="true"
+      break
+    fi
+    if ! kill -0 "${ios_recording_pid}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "${recording_started}" != "true" ]]; then
+    printf '%s\n' 'iOS review recording did not start.' >&2
+    cat "${recording_log}" >&2
+    stop_ios_recording
+    return 1
+  fi
+
+  if maestro --device "${device_id}" test \
+      --format JUNIT \
+      --output "${result_directory}/review-junit.xml" \
+      --test-output-dir "${result_directory}/artifacts/review-run" \
+      --debug-output "${result_directory}/debug/review-run" \
+      apps/mobile/e2e/maestro/review/offline-proof.yaml; then
+    review_status=0
+  else
+    review_status=$?
+  fi
+  kill -INT "${ios_recording_pid}" >/dev/null 2>&1
+  if wait "${ios_recording_pid}"; then
+    recording_status=0
+  else
+    recording_status=$?
+  fi
+  ios_recording_pid=""
+
+  if ((review_status != 0)); then
+    return "${review_status}"
+  fi
+  if ((recording_status != 0)); then
+    printf 'iOS review recording failed with status %s.\n' "${recording_status}" >&2
+    cat "${recording_log}" >&2
+    return "${recording_status}"
+  fi
+  if [[ ! -s "${raw_path}" ]]; then
+    printf 'iOS review recording was not created at %s.\n' "${raw_path}" >&2
+    return 1
+  fi
+
+  if ! avconvert \
+      --source "${raw_path}" \
+      --preset PresetAppleM4V720pHD \
+      --output "${encoded_path}" \
+      --replace; then
+    printf '%s\n' 'iOS review recording could not be transcoded.' >&2
+    return 1
+  fi
+  mv "${encoded_path}" "${recording_path}" || return
+  rm "${raw_path}" || return
+
+  video_bytes="$(wc -c < "${recording_path}" | tr -d ' ')"
+  if ((video_bytes < 100000)); then
+    printf 'iOS review recording is unexpectedly small: %s bytes.\n' "${video_bytes}" >&2
+    return 1
+  fi
+  return 0
+}
+
 build_app() {
   require_command codesign
   require_command xcodebuild
@@ -186,8 +304,9 @@ build_app() {
 run_tests() {
   configure_java
   configure_maestro
+  require_command avconvert
 
-  local accessibility_status app_path test_status
+  local accessibility_status app_path review_status test_status
   app_path="$(find_app)"
   if [[ -z "${app_path}" ]]; then
     printf '%s\n' 'Missing simulator app. Run this script with build or all first.' >&2
@@ -208,6 +327,8 @@ run_tests() {
   xcrun simctl bootstatus "${device_id}" -b
   xcrun simctl uninstall "${device_id}" "${bundle_id}" >/dev/null 2>&1 || true
   xcrun simctl install "${device_id}" "${app_path}"
+  ios_test_device="${device_id}"
+  trap cleanup_ios_test_state EXIT
 
   set +e
   maestro --device "${device_id}" test \
@@ -219,9 +340,16 @@ run_tests() {
   test_status=$?
   set -e
 
-  ios_test_device="${device_id}"
+  if record_review_journey "${device_id}"; then
+    review_status=0
+  else
+    review_status=$?
+  fi
+  if ((review_status != 0)); then
+    test_status="${review_status}"
+  fi
+
   ios_original_content_size="$(xcrun simctl ui "${device_id}" content_size)"
-  trap restore_ios_content_size EXIT
   xcrun simctl ui "${device_id}" content_size accessibility-extra-extra-extra-large
   set +e
   maestro --device "${device_id}" test \
@@ -236,6 +364,7 @@ run_tests() {
     test_status="${accessibility_status}"
   fi
   restore_ios_content_size
+  ios_original_content_size=""
   trap - EXIT
 
   xcrun simctl spawn "${device_id}" log show \

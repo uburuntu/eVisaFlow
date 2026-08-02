@@ -17,15 +17,18 @@ They do not call GOV.UK or require a production account.
   status polling.
 - `offline-proof.yaml` runs the fixture-backed worker journey through OTP, encrypted
   artifact persistence, process restart, and reopening the proof offline.
+- `review/` contains a paired fictional-data setup and proof journey used only for
+  focused PR recording; the user-facing journey is recorded without the setup form.
 - `accessibility/large-text.yaml` raises the device to its maximum text setting and
   verifies that the dashboard and primary navigation remain usable at the app's 200%
   accessibility scale ceiling.
 - Reusable setup lives under `maestro/subflows/`; files there are not discovered as
   standalone tests.
 
-Every flow launches with `clearState: true`, so tests are independent and can run in
-any order. Release E2E builds compile with `EXPO_PUBLIC_EVISAFLOW_DEMO_MODE=true` and
-use fictional artifacts; test YAML never intercepts or mocks production traffic.
+Every independently executed suite flow launches with `clearState: true`, so tests can
+run in any order. The visual-review pair deliberately shares its fixture state. Release
+E2E builds compile with `EXPO_PUBLIC_EVISAFLOW_DEMO_MODE=true` and use fictional
+artifacts; test YAML never intercepts or mocks production traffic.
 
 ## Running locally
 
@@ -59,12 +62,15 @@ it, and runs all Maestro flows. It also embeds a test-only Keychain entitlement
 for ad-hoc simulator builds; App Store entitlements continue to come from Expo
 configuration and Apple's provisioning profile.
 The runner also restores the simulator's original content-size category after the
-large-text journey.
+large-text journey. For PR review it records the focused proof journey with the native
+Simulator recorder, transcodes it to a metadata-filtered 720p MP4, and rejects empty or
+single-frame-sized output.
 
 For an already installed Android or iOS build, run `pnpm e2e:mobile` or
 `pnpm e2e:mobile:smoke` directly.
 
-Maestro captures diagnostic artifacts on failure. CI should retain those artifacts,
-the JUnit report, the app binary, and native device logs. Run the critical suite for
-every mobile change on Android and iOS; run the broader suite nightly and before a
-store submission.
+Maestro captures JUnit, screenshots, recordings, command diagnostics, and native logs.
+CI retains those artifacts and publishes deterministic iOS and Android screenshots and
+focused journey videos in one bot-owned PR comment. It also retains a failing app binary
+for reproduction. Run the critical suite for every mobile change on Android and iOS;
+run the broader suite nightly and before a store submission.

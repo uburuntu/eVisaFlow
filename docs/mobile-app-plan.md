@@ -34,9 +34,10 @@ result in the nearest scoped `AGENTS.md`.
   and service behavior.
 - Complete Apple's encryption export-compliance assessment before declaring an
   exemption or setting `ITSAppUsesNonExemptEncryption`.
-- Apply `service/migrations/004_mobile_api.sql`, enable anonymous Auth, provision the
-  private bucket, configure secrets, and put the mobile API behind a production TLS
-  reverse proxy with request/body limits.
+- Apply `service/migrations/004_mobile_api.sql` and
+  `service/migrations/005_two_phase_mobile_claim.sql`, enable anonymous Auth,
+  provision the private bucket, configure secrets, and put the mobile API behind a
+  production TLS reverse proxy with request/body limits.
 - Complete physical-device, accessibility, store-beta, and adverse-network validation
   before asking for public review.
 
@@ -89,9 +90,10 @@ The chosen design must specify:
 - observability that contains no identity data;
 - capacity and cost thresholds for adding workers.
 
-Also decide whether the app should consume the existing SSE event stream or retain
-1.2-second authoritative snapshot polling. Evaluate battery, network loss, proxy
-behavior, resume semantics, implementation complexity, and server cost.
+The app now uses SSE while foregrounded, closes it in the background, refreshes the
+authoritative snapshot on resume, and falls back to bounded polling. Before external
+live testing, validate proxy buffering, carrier disconnects, reconnect load, and
+heartbeat behavior in the deployed environment.
 
 ## Security work
 
@@ -113,8 +115,6 @@ behavior, resume semantics, implementation complexity, and server cost.
 
 ## User-value work
 
-- Add local expiry reminders, initially 14 and 3 days before the newest result expires
-  for each person and purpose. Replace superseded reminders and require no APNs/FCM.
 - Design a sequential multi-person run that asks once for a confirmed purpose, remains
   recoverable between people, presents each OTP clearly, and never promises unattended
   background generation.
@@ -122,8 +122,8 @@ behavior, resume semantics, implementation complexity, and server cost.
   then an older user can open the correct offline proof at a border with poor or no
   connectivity. Consider a readiness check, a deliberately simple offline view, expiry
   warnings, and safe device-transfer expectations without adding cloud profile sync.
-- Decide whether per-proof deletion, storage management, export, or a printable
-  emergency bundle is required before beta.
+- Validate local reminders, per-proof deletion, storage reporting, and printable
+  summaries with representative users and real notification/share/print targets.
 - Validate the target of first useful setup within 90 seconds and a repeat generation
   path requiring no more than two taps before the GOV.UK security-code challenge.
 - Finalize store name/subtitle, screenshots, onboarding disclosure, paywall text, and
@@ -172,8 +172,8 @@ behavior, resume semantics, implementation complexity, and server cost.
    beta, including the poor-connectivity handoff scenario.
 4. Implement integrity controls and the approved billing/restore model with full store
    sandbox E2E.
-5. Add reminders, optional biometric locking, and sequential multi-person generation
-   in that order unless user research changes the priority.
+5. Add optional biometric locking and sequential multi-person generation only after
+   their recovery and durable-execution semantics are approved.
 6. Submit a complete fictional demo mode to both stores early. If authorization is
    refused, do not release paid automation; restrict any public app to local
    organisation and deep links to the free official service.

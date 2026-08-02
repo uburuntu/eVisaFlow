@@ -2,8 +2,8 @@
 
 ## Required checks
 - `.github/workflows/ci.yml` runs Expo alignment, Biome, all workspace typechecks and
-  builds, 48 core/protocol tests, 39 service tests, package dry-run, production audit,
-  and both Docker image smoke checks.
+  builds, core/protocol tests, service tests, mobile unit tests, package dry-run,
+  production audit, and both Docker image smoke checks.
 - `.github/workflows/mobile-e2e.yml` builds native release apps and runs fixture-backed
   Maestro on hosted Android and iOS for mobile-facing changes and scheduled checks.
 - Keep workflow concurrency cancellation so superseded PR commits do not waste native

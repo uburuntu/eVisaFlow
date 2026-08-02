@@ -24,6 +24,11 @@
   `formatShareCodeValidUntil` and `shareCodeExpiryDeadlineMs` so date-only values stay
   calendar-stable and remain valid through the stated day.
 - A mobile run uses the caller's `clientRunId` as its durable run ID/idempotency key.
+- Claim sessions carry a short-lived token and a SHA-256 manifest hash. Artifact
+  descriptors are sorted by ID in `mobileClaimManifestJson` so the service and client
+  acknowledge the same canonical package regardless of database return order.
+- ISO date-time fields accept `Z` and explicit offsets because PostgreSQL/Supabase may
+  serialize `timestamptz` values as `+00:00`.
 
 ## Change procedure
 - Edit `src/protocol/schemas.ts`, `types.ts`, exports, and shared date helpers together.

@@ -22,6 +22,9 @@
   - full local/service deletion and clean restart;
   - invalid OTP remains actionable while status refresh continues;
   - complete proof generation, OTP, artifact persistence, restart, and offline reopen;
+  - opt-in reminder preference persists without exposing notification content;
+  - one proof can be deleted without deleting its person;
+  - a selected saved proof reaches the warned printable-summary screen;
   - dashboard navigation and scrolled controls at 200% text.
 - When adding a high-risk workflow, add a black-box failure/recovery journey rather
   than relying only on a happy-path screenshot.
@@ -30,7 +33,7 @@
 - Required screenshot basenames are consumed by `scripts/collect-mobile-visuals.sh`:
   `dashboard-before-proof`, `choose-purpose`, `security-code`,
   `saved-offline-proof`, `dashboard-with-offline-proof`, `privacy-settings`,
-  `large-text-dashboard`, and `large-text-dashboard-bottom`.
+  `offline-summary`, `large-text-dashboard`, and `large-text-dashboard-bottom`.
 - Required recording basename: `offline-proof-journey.mp4`.
 - Android uses Maestro recording inside the shared proof subflow. iOS uses native
   `simctl recordVideo`, then `avconvert` to a metadata-filtered H.264 720p file.

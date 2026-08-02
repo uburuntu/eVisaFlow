@@ -20,10 +20,12 @@
 - `app/index.tsx` is the offline-vault dashboard.
 - `app/profiles/*` owns encrypted profile creation/edit/delete.
 - `app/runs/new.tsx` confirms purpose and authority before a live run.
-- `app/runs/[id].tsx` owns run polling, OTP entry, cancellation, result claiming, and
-  offline persistence.
+- `app/runs/[id].tsx` owns foreground SSE with snapshot fallback, OTP entry,
+  cancellation, two-phase result claiming, and offline persistence.
 - `app/documents/[id].tsx` owns share-code copy and artifact print/share actions.
-- `app/settings.tsx` owns privacy disclosure and remote-plus-local deletion.
+- `app/emergency-summary.tsx` owns selection and local printable-summary actions.
+- `app/settings.tsx` owns reminders, privacy disclosure, storage reporting, and
+  remote-plus-local deletion.
 
 ## Product behavior already implemented
 - First launch requires acknowledgement that eVisaFlow is unofficial and that the
@@ -40,6 +42,13 @@
 - Successful results expose the share code, expiry, encrypted artifacts, native
   sharing, PDF printing, and copying. Share-code date-only expiries use the shared
   timezone-stable formatter.
+- Proof detail distinguishes when a copy was saved, when it was last checked online,
+  and when its share code expires. A saved copy is never described as live status or a
+  replacement for the linked passport/travel document.
+- Users can delete one proof transactionally without deleting its person, and can
+  create an explicitly warned plaintext printable summary from selected saved proofs.
+- Expiry reminders are opt-in, local-only, scheduled 30, 14, 7, and 1 day before
+  expiry, and use generic lock-screen text with no names, codes, or status details.
 - Profile deletion is blocked while that profile has an active run; otherwise it also
   removes the person's local results and queues an opaque server-slot tombstone for
   the next successful connection.
@@ -63,12 +72,16 @@
 - The client creates the run UUID; the API uses it as the run ID/idempotency key.
 - Only one local active run is tracked. The service and database also enforce one
   active run per anonymous user.
-- The app currently polls `GET /v1/runs/:id` every 1.2 seconds; the API's SSE endpoint
-  is not yet consumed by the app. Treat the snapshot endpoint as authoritative.
+- While foregrounded, the app consumes `GET /v1/runs/:id/events`, reconnects with the
+  last event ID, refreshes the authoritative snapshot, and falls back to bounded
+  polling after repeated stream failures. Networking stops when the app backgrounds
+  and a snapshot refreshes on resume.
 - OTP input accepts 4-8 digits. Never persist, log, prefill, or include a real OTP in
   analytics or diagnostics.
-- On success, claim once, download each artifact, verify byte length and SHA-256,
-  encrypt locally, update the manifest, and only then navigate to the saved proof.
+- On success, begin a short-lived claim, download each token-bound artifact, verify
+  byte length and SHA-256, encrypt and read it back from staging, atomically move it,
+  persist and reload the manifest, then acknowledge the claim. Pending encrypted
+  acknowledgements survive process/network interruption and retry safely.
 - Failed, cancelled, interrupted, and partial results do not consume free allowance.
   A complete claimed result does.
 - Current service limits are one profile and three complete claimed results for free;
@@ -89,6 +102,8 @@
   local encryption.
 - Decrypt only into `Paths.cache` for a single print/share action and delete the
   plaintext file in `finally`. Printing is PDF-only.
+- Startup removes abandoned plaintext print/share/summary files. Failure to clean an
+  obsolete encrypted staging directory never prevents a valid vault from opening.
 - Missing key plus existing ciphertext is an explicit unrecoverable-vault state. Offer
   a reset; never weaken encryption or invent a recovery key.
 - Do not add advertising SDKs or third-party behavioral analytics. Sensitive values
@@ -123,7 +138,6 @@
 
 ## Not implemented yet
 - RevenueCat/StoreKit/Google Play Billing purchase and restore flows.
-- Local expiry reminders or notification scheduling.
 - Optional biometric vault locking.
 - App Attest, DeviceCheck, Play Integrity, or equivalent mutation attestation.
 - Multi-person sequential batch generation.

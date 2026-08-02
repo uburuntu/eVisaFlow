@@ -19,8 +19,9 @@
   - `PUT` and `DELETE /v1/profile-slots/:id`;
   - `POST /v1/runs` and `GET /v1/runs/:id`;
   - `GET /v1/runs/:id/events` for SSE replay/heartbeats;
-  - `POST /v1/runs/:id/challenge`, `/cancel`, and `/claim-result`;
-  - `GET /v1/runs/:id/artifacts/:artifactId` after result claim.
+  - `POST /v1/runs/:id/challenge`, `/cancel`, `/claim-result`, and
+    `/claim-result/acknowledge`;
+  - `GET /v1/runs/:id/artifacts/:artifactId` with the active claim token.
 - Parse every body and path value with shared Zod schemas before reaching the worker.
 - Errors expose stable uppercase codes, a safe message, and `retryable`; never expose
   raw upstream errors or sensitive fields.
@@ -62,13 +63,18 @@
   concurrency is two and remains configurable by `QUEUE_CONCURRENCY`.
 - Free users may have one active profile and three complete claimed results.
   `evisaflow_pro` permits six active profiles and unlimited results.
-- Pending unclaimed complete successes reserve free allowance. Only the first atomic
-  claim of a `succeeded` run increments usage. Partial, failed, cancelled, interrupted,
-  and expired runs do not consume allowance.
+- Pending unclaimed complete successes reserve free allowance. Beginning a claim does
+  not increment usage. Only the first atomic acknowledgement after verified device
+  persistence increments usage for a `succeeded` run. Retried acknowledgements are
+  idempotent. Partial, failed, cancelled, interrupted, and expired runs do not consume
+  allowance.
 - Packaging all three artifact kinds produces `succeeded`; fewer available artifacts
   produce `partial_success` and remain claimable without consuming free allowance.
 - A maintenance flag blocks new runs while allowing existing result retrieval and
   deletion.
+- The private-beta admission cap defaults to 25 runs across the service per UTC day and
+  is configurable with `MOBILE_BETA_DAILY_RUN_LIMIT`; the API returns `Retry-After`
+  and the official-service fallback when it is reached.
 
 ## Current durability boundary
 - The queue and pending OTP broker are in-process, not PGMQ-backed. Do not describe
@@ -76,14 +82,17 @@
 - Mobile API startup marks every active mobile run `interrupted`, removes its sensitive
   request, and requires an explicit retry. This avoids replaying a possibly-started
   GOV.UK browser session.
-- The mobile app currently polls snapshots; SSE exists but is not consumed by the app.
+- The mobile app consumes SSE while foregrounded, reconnects with `Last-Event-ID`,
+  treats snapshots as authoritative, and falls back to 5-second or queued 15-second
+  polling after repeated stream failures.
 - A future durable worker topology must define leases, ownership, challenge routing,
   crash-before-navigation replay, crash-after-navigation interruption, and shutdown
   semantics before enabling multiple replicas.
 
 ## Database and deployment
 - Apply migrations in order; mobile tables, functions, RLS, and the private bucket are
-  created by `migrations/004_mobile_api.sql`.
+  created by `migrations/004_mobile_api.sql`, and
+  `migrations/005_two_phase_mobile_claim.sql` makes result accounting acknowledge-only.
 - Enable Supabase anonymous sign-ins before live mobile testing.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` and `ENCRYPTION_KEY` server-only.
 - Compose exposes the mobile API only on host loopback. Terminate TLS at a reverse

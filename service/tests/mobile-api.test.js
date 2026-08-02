@@ -85,6 +85,7 @@ function createFixture(options = {}) {
       slots.delete(id);
     },
     async createRun(_ownerId, request) {
+      if (options.createRunError) throw options.createRunError;
       const run = {
         id: request.clientRunId,
         clientRunId: request.clientRunId,
@@ -303,6 +304,20 @@ test("mobile API rate limits repeated security-code submissions", async () => {
   assert.equal(limited.statusCode, 429);
   assert.equal(limited.json().code, "RATE_LIMITED");
   assert.ok(Number(limited.headers["retry-after"]) > 0);
+  await app.close();
+});
+
+test("mobile API exposes the private-beta daily cap with an official fallback", async () => {
+  const { app } = createFixture({ createRunError: new Error("BETA_DAILY_LIMIT") });
+  const response = await app.inject(
+    authorized({ method: "POST", url: "/v1/runs", payload: runRequest })
+  );
+
+  assert.equal(response.statusCode, 429);
+  assert.equal(response.json().code, "BETA_DAILY_LIMIT");
+  assert.equal(response.json().retryable, true);
+  assert.match(response.json().message, /official GOV\.UK service/);
+  assert.ok(Number(response.headers["retry-after"]) > 0);
   await app.close();
 });
 

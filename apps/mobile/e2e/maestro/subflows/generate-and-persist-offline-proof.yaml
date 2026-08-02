@@ -67,11 +67,17 @@ appId: com.evisaflow.mobile
     direction: DOWN
 - assertVisible: ".*Private beta.*"
 - scrollUntilVisible:
+    centerElement: true
     element:
-      id: "saved-document-0"
+      text: "1 document saved"
     direction: UP
+    visibilityPercentage: 100
 - waitForAnimationToEnd
 - takeScreenshot: "dashboard-with-offline-proof"
+- scrollUntilVisible:
+    element:
+      id: "saved-document-0"
+    direction: DOWN
 - tapOn:
     id: "saved-document-0"
 - assertVisible:

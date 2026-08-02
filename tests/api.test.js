@@ -83,6 +83,13 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
     byteLength: 1024,
     sha256: "a".repeat(64),
   };
+  const secondArtifact = {
+    ...artifact,
+    id: "0df5b293-76a3-4a95-994b-8c98cc9fa260",
+    kind: "checker_pdf",
+    filename: "Status check.pdf",
+    sha256: "c".repeat(64),
+  };
 
   assert.equal(
     MobileRunSnapshotSchema.parse({
@@ -140,6 +147,18 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
   assert.equal(
     MobileRunClaimResultSchema.safeParse({
       claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T10:10:00+01:00",
+      manifestHash: "b".repeat(64),
+      shareCode: "W12 345 678",
+      validUntil: "2026-10-30T10:00:00+01:00",
+      generatedAt: "2026-08-01T10:00:00+01:00",
+      artifacts: [artifact],
+    }).success,
+    true
+  );
+  assert.equal(
+    MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
       claimExpiresAt: "2026-08-01T09:10:00.000Z",
       manifestHash: "b".repeat(64),
       shareCode: "W12 345 678",
@@ -163,21 +182,26 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
     }).usageConsumed,
     true
   );
+  const canonicalManifest = mobileClaimManifestJson({
+    runId,
+    shareCode: claim.shareCode,
+    validUntil: claim.validUntil,
+    generatedAt: claim.generatedAt,
+    artifacts: [artifact, secondArtifact],
+  });
   assert.equal(
+    canonicalManifest,
     mobileClaimManifestJson({
       runId,
       shareCode: claim.shareCode,
       validUntil: claim.validUntil,
       generatedAt: claim.generatedAt,
-      artifacts: [artifact],
-    }),
-    mobileClaimManifestJson({
-      runId,
-      shareCode: claim.shareCode,
-      validUntil: claim.validUntil,
-      generatedAt: claim.generatedAt,
-      artifacts: [artifact],
+      artifacts: [secondArtifact, artifact],
     })
+  );
+  assert.deepEqual(
+    JSON.parse(canonicalManifest).artifacts.map(({ id }) => id),
+    [secondArtifact.id, artifact.id]
   );
   assert.equal(
     MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })

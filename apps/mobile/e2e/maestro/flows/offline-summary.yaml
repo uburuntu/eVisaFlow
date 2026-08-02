@@ -9,7 +9,8 @@ tags:
 - runFlow: "../subflows/accept-disclosure.yaml"
 - runFlow: "../subflows/add-fictional-profile.yaml"
 - runFlow: "../subflows/generate-and-persist-offline-proof.yaml"
-- back
+- stopApp
+- launchApp
 - assertVisible:
     id: "family-screen"
 - scrollUntilVisible:

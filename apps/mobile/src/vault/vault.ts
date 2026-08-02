@@ -204,19 +204,25 @@ export async function loadVault(): Promise<VaultDocument> {
     );
   }
 
+  let document: VaultDocument;
   try {
     const encryptedBytes = await file.bytes();
     const sealedData = AESSealedData.fromCombined(encryptedBytes);
     const plaintextBytes = await aesDecryptAsync(sealedData, key);
     const parsed = JSON.parse(new TextDecoder().decode(plaintextBytes));
-    const document = VaultDocumentSchema.parse(parsed);
-    cleanupUnreferencedArtifactDirectories(document);
-    return document;
+    document = VaultDocumentSchema.parse(parsed);
   } catch (error) {
     throw new VaultCorruptError("The encrypted vault could not be opened.", {
       cause: error,
     });
   }
+
+  try {
+    cleanupUnreferencedArtifactDirectories(document);
+  } catch {
+    // Cleanup is retried on the next load and must never block valid encrypted data.
+  }
+  return document;
 }
 
 export async function saveVault(document: VaultDocument): Promise<void> {

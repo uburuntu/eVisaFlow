@@ -139,7 +139,10 @@ export default function DocumentsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.offlinePanel, { backgroundColor: theme.colors.inverse }]}>
+        <View
+          style={[styles.offlinePanel, { backgroundColor: theme.colors.inverse }]}
+          testID="offline-vault-summary"
+        >
           <View style={styles.offlinePanelIcon}>
             <LockKeyhole color={theme.colors.inverseText} size={22} />
           </View>

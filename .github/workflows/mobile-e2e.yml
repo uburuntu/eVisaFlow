@@ -48,7 +48,7 @@ env:
 jobs:
   android:
     name: Android
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       EXPO_PUBLIC_EVISAFLOW_DEMO_MODE: "true"
@@ -89,9 +89,17 @@ jobs:
           NODE_ENV: production
         run: >-
           ./gradlew :app:assembleRelease
-          -PreactNativeArchitectures=arm64-v8a
+          -PreactNativeArchitectures=x86_64
           --no-daemon
           --stacktrace
+
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
 
       - uses: actions/cache@v5
         with:
@@ -107,7 +115,7 @@ jobs:
           MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/android
         with:
           api-level: 34
-          arch: arm64-v8a
+          arch: x86_64
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

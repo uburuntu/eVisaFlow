@@ -24,3 +24,7 @@ export {
   TwoFactorMethodSchema,
 } from "./schemas.js";
 export type * from "./types.js";
+export {
+  formatShareCodeValidUntil,
+  shareCodeExpiryDeadlineMs,
+} from "./valid-until.js";

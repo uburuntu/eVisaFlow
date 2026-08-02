@@ -3,11 +3,13 @@ import test from "node:test";
 import * as api from "../dist/index.js";
 import {
   ApplicantSchema,
+  formatShareCodeValidUntil,
   MobileApiErrorSchema,
   MobileMeSchema,
   MobileRunClaimResultSchema,
   MobileRunCreateRequestSchema,
   MobileRunSnapshotSchema,
+  shareCodeExpiryDeadlineMs,
 } from "../dist/protocol/index.js";
 import {
   ConfigSchema,
@@ -136,6 +138,20 @@ test("mobile API schemas validate snapshots, entitlements, and claimed artifacts
     MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })
       .success,
     false
+  );
+});
+
+test("share-code expiry dates remain calendar-stable and inclusive", () => {
+  assert.equal(
+    formatShareCodeValidUntil("2026-10-30", {
+      dateStyle: "long",
+      timeZone: "America/Los_Angeles",
+    }),
+    "30 October 2026"
+  );
+  assert.equal(
+    shareCodeExpiryDeadlineMs("2026-10-30"),
+    Date.parse("2026-10-30T23:59:59.999Z")
   );
 });
 

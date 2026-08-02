@@ -1,3 +1,4 @@
+import { formatShareCodeValidUntil } from "@evisa-flow/protocol";
 import * as Clipboard from "expo-clipboard";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -54,9 +55,7 @@ export default function SavedDocumentScreen() {
   }
 
   const expiry = result.validUntil
-    ? new Intl.DateTimeFormat("en-GB", { dateStyle: "long" }).format(
-        new Date(result.validUntil)
-      )
+    ? formatShareCodeValidUntil(result.validUntil, { dateStyle: "long" })
     : "Not supplied";
 
   const copyCode = async () => {

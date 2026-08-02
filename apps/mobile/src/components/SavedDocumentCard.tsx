@@ -1,4 +1,4 @@
-import type { MobileProfile } from "@evisa-flow/protocol";
+import { formatShareCodeValidUntil, type MobileProfile } from "@evisa-flow/protocol";
 import { ChevronRight, FileCheck2 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useAppTheme } from "@/theme";
@@ -23,11 +23,11 @@ export function SavedDocumentCard({
   const theme = useAppTheme();
   const expiryState = getExpiryState(result.validUntil);
   const expiry = result.validUntil
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? formatShareCodeValidUntil(result.validUntil, {
         day: "numeric",
         month: "short",
         year: "numeric",
-      }).format(new Date(result.validUntil))
+      })
     : "No expiry supplied";
   const stateColor =
     expiryState === "expired"

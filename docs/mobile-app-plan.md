@@ -10,6 +10,9 @@ as durable guidance in:
 - `service/AGENTS.md`
 - `.github/AGENTS.md`
 
+Public release status and evidence are tracked canonically in
+`docs/public-launch-gates.md`. This roadmap does not override a no-go gate.
+
 This document contains only unresolved decisions, launch gates, and future work. Do
 not move an item out of this file until it is implemented and verified, then record the
 result in the nearest scoped `AGENTS.md`.

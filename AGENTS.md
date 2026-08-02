@@ -12,9 +12,10 @@
 - Playwright runs only in Node.js service workers. Do not add Playwright, browser
   automation, downloaded automation code, or hidden WebView automation to the mobile
   binary.
-- Public paid launch remains gated by the decisions in
-  `docs/mobile-app-plan.md`; do not describe the apps as approved or production-ready
-  while those gates remain open.
+- `docs/public-launch-gates.md` is the canonical release register. Public automation
+  and monetization remain no-go until the applicable evidence-backed gates are
+  complete. `docs/mobile-app-plan.md` is the implementation roadmap, not release
+  authorization.
 
 ## Workspace ownership
 - Core library and CLI: `src/`, `bin/`, and `tests/`.
@@ -109,4 +110,5 @@ Prefix direct network/package CLI commands with
 - npm publishing uses OIDC trusted publishing, not `NPM_TOKEN`.
 - Container release workflows publish the CLI and service images.
 - Before merging mobile work, verify the scoped `AGENTS.md` files and the remaining
-  launch roadmap are still accurate.
+  launch roadmap are still accurate. Update every materially affected row in
+  `docs/public-launch-gates.md`; never mark a gate complete without durable evidence.

@@ -1,0 +1,41 @@
+appId: com.evisaflow.mobile
+name: Dashboard remains usable with large text
+tags:
+  - accessibility
+  - critical
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- assertVisible: "Saved documents"
+- assertVisible: "People"
+- assertVisible:
+    id: "dashboard-settings"
+- assertVisible:
+    id: "family-add-person-header"
+- takeScreenshot: "large-text-dashboard"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "family-add-person-empty"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "family-add-person-empty"
+- takeScreenshot: "large-text-dashboard-bottom"
+- scrollUntilVisible:
+    centerElement: true
+    element: "Your offline vault is encrypted"
+    direction: DOWN
+    timeout: 10000
+- assertVisible: "Your offline vault is encrypted"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      id: "family-add-person-empty"
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: "family-add-person-empty"
+- assertVisible:
+    id: "profile-form"

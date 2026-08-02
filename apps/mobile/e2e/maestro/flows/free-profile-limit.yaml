@@ -1,0 +1,14 @@
+appId: com.evisaflow.mobile
+name: Private beta enforces the configured profile limit
+tags:
+  - regression
+  - beta-limits
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- tapOn:
+    id: "family-add-person-header"
+- assertVisible: "Private beta limit reached"
+- assertVisible: ".*cannot add another person.*"

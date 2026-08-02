@@ -15,7 +15,7 @@ export class QueueJobCancelledError extends Error {
 type QueueItem = {
   id: string;
   key: string;
-  telegramId: number;
+  ownerKey: string;
   memberName: string;
   controller: AbortController;
   execute: (signal: AbortSignal) => Promise<void>;
@@ -30,7 +30,7 @@ type QueueItem = {
 export interface QueueJobHandle {
   id: string;
   key: string;
-  telegramId: number;
+  ownerKey: string;
   memberName: string;
   signal: AbortSignal;
   done: Promise<void>;
@@ -45,7 +45,7 @@ export type EnqueueResult =
 const queue: QueueItem[] = [];
 const jobsById = new Map<string, QueueItem>();
 const jobsByKey = new Map<string, QueueItem>();
-const activeTelegramIds = new Set<number>();
+const activeOwnerKeys = new Set<string>();
 let activeCount = 0;
 let concurrency = 2;
 
@@ -67,7 +67,7 @@ export function getQueueStats(): { active: number; waiting: number } {
 
 export function getJobInfo(
   id: string
-): { id: string; key: string; telegramId: number; state: QueueJobState } | undefined {
+): { id: string; key: string; ownerKey: string; state: QueueJobState } | undefined {
   const item = jobsById.get(id);
   if (!item) {
     return undefined;
@@ -75,7 +75,7 @@ export function getJobInfo(
   return {
     id: item.id,
     key: item.key,
-    telegramId: item.telegramId,
+    ownerKey: item.ownerKey,
     state: item.state,
   };
 }
@@ -83,7 +83,7 @@ export function getJobInfo(
 const toHandle = (item: QueueItem): QueueJobHandle => ({
   id: item.id,
   key: item.key,
-  telegramId: item.telegramId,
+  ownerKey: item.ownerKey,
   memberName: item.memberName,
   signal: item.controller.signal,
   done: item.done,
@@ -99,7 +99,7 @@ const waitingPosition = (item: QueueItem): number => {
 export function enqueue(options: {
   id: string;
   key: string;
-  telegramId: number;
+  ownerKey: string;
   memberName: string;
   execute: (signal: AbortSignal) => Promise<void>;
   onPositionUpdate: (position: number) => void | Promise<void>;
@@ -124,7 +124,7 @@ export function enqueue(options: {
   const item: QueueItem = {
     id: options.id,
     key: options.key,
-    telegramId: options.telegramId,
+    ownerKey: options.ownerKey,
     memberName: options.memberName,
     controller: new AbortController(),
     execute: options.execute,
@@ -213,7 +213,7 @@ function notifyPosition(item: QueueItem, position: number): void {
 
 function processQueue(): void {
   while (activeCount < concurrency) {
-    const nextIndex = queue.findIndex((item) => !activeTelegramIds.has(item.telegramId));
+    const nextIndex = queue.findIndex((item) => !activeOwnerKeys.has(item.ownerKey));
     if (nextIndex < 0) {
       break;
     }
@@ -225,7 +225,7 @@ function processQueue(): void {
 
     item.state = "running";
     activeCount += 1;
-    activeTelegramIds.add(item.telegramId);
+    activeOwnerKeys.add(item.ownerKey);
     notifyPosition(item, 0);
     notifyPositions();
 
@@ -260,7 +260,7 @@ function processQueue(): void {
       })
       .finally(() => {
         activeCount -= 1;
-        activeTelegramIds.delete(item.telegramId);
+        activeOwnerKeys.delete(item.ownerKey);
         jobsById.delete(item.id);
         jobsByKey.delete(item.key);
         if (item.state === "cancelled") {
@@ -283,7 +283,7 @@ export function resetQueueForTests(): void {
   queue.splice(0, queue.length);
   jobsById.clear();
   jobsByKey.clear();
-  activeTelegramIds.clear();
+  activeOwnerKeys.clear();
   activeCount = 0;
   concurrency = 2;
 }

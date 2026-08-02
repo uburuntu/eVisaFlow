@@ -1,6 +1,7 @@
-# eVisaFlow Telegram Bot
+# eVisaFlow Service
 
-Telegram bot that automates UK eVisa share code retrieval for families. Built on top of the [evisa-flow](https://github.com/uburuntu/eVisaFlow) npm package.
+Playwright worker, Telegram transport, scheduler, and authenticated mobile API built on
+the [`evisa-flow`](https://github.com/uburuntu/eVisaFlow) package.
 
 ## Features
 
@@ -30,9 +31,13 @@ Telegram bot that automates UK eVisa share code retrieval for families. Built on
    - `migrations/001_initial_schema.sql`
    - `migrations/002_bot_runtime_hardening.sql`
    - `migrations/003_drop_plaintext_share_code.sql`
+   - `migrations/004_mobile_api.sql`
 5. Verify the tables (`users`, `family_members`, `runs`, `run_events`) appear in the **Table Editor**
 
-Migration `003` removes the legacy plaintext `runs.share_code` column. The bot now stores encrypted share-code bytes plus metadata only.
+Migration `003` removes the legacy plaintext `runs.share_code` column. Migration `004`
+adds the service-role-only mobile run tables, private artifact bucket, profile/free-use
+enforcement, and atomic result claiming. Enable anonymous sign-ins under Supabase Auth
+before testing the mobile client.
 
 ### 3. Configure Environment
 
@@ -52,6 +57,9 @@ Fill in the values:
 | `EVISA_HEADLESS` | Run browser automation headlessly (default: true) |
 | `EVISA_DIAGNOSTICS_MODE` | `off`, `sanitized`, `raw`, or `sanitized_on_failure` (default) |
 | `HEALTH_PORT` | HTTP health port for `/live` and `/ready` (default: 8080) |
+| `MOBILE_API_PORT` | Internal mobile API port (default: 8090) |
+| `MOBILE_API_HOST` | Mobile API bind address inside the container (default: `0.0.0.0`) |
+| `MOBILE_BETA_DAILY_RUN_LIMIT` | Global UTC-day admission cap for private-beta mobile runs (default: 25) |
 | `SCHEDULER_CRON` | Cron expression for daily check (default: `0 9 * * *`) |
 | `SCHEDULE_INTERVAL_DAYS` | Days between scheduled runs per user (default: 30) |
 
@@ -107,6 +115,29 @@ Telegram ←→ grammY Bot (long polling) ←→ eVisaFlow (Playwright)
 - **Queue** — max 2 concurrent Playwright browsers (configurable)
 - **Encryption** — AES-256-GCM for document numbers
 - **Scheduling** — per-user 30-day cycle (load spread evenly)
+- **Mobile API** — Supabase bearer authentication, opaque profile slots, resumable
+  runs and OTP challenges, one-time result claims, and authenticated artifact downloads
+- **Mobile retention** — encrypted transient requests/results, one-hour private
+  artifacts, startup cleanup, 15-minute expiry cleanup, and 30-day event retention
+
+## Mobile API deployment
+
+The Compose service binds the mobile API to `127.0.0.1:8090` on the host. Terminate TLS
+in a host reverse proxy and forward only the public API hostname to that port. Do not
+publish the health port, Supabase service-role key, encryption key, or private Storage
+bucket. Configure request/body limits at the proxy in addition to Fastify's limits.
+
+The public client authenticates with Supabase anonymous Auth and supports:
+
+- `GET` and `DELETE /v1/me`
+- `PUT` and `DELETE /v1/profile-slots/:id`
+- `POST /v1/runs` and `GET /v1/runs/:id`
+- `GET /v1/runs/:id/events`
+- `POST /v1/runs/:id/challenge`, `/cancel`, and `/claim-result`
+- `GET /v1/runs/:id/artifacts/:artifactId`
+
+All `/v1` responses are private/no-store. Applicant payloads and results are encrypted
+with `ENCRYPTION_KEY`; OTP values exist only in memory and are never logged or stored.
 
 ## Deploy Notes
 

@@ -39,6 +39,9 @@ jobs:
       - name: Check toolchain versions
         run: pnpm run check:toolchain
 
+      - name: Check Expo dependency alignment
+        run: pnpm run check:mobile
+
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 

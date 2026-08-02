@@ -13,6 +13,9 @@ export interface HealthSnapshot {
   supabase?: {
     ready: boolean;
   };
+  mobileApi?: {
+    ready: boolean;
+  };
   queue: {
     active: number;
     waiting: number;

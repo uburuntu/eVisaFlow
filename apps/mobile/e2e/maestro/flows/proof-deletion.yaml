@@ -1,0 +1,24 @@
+appId: com.evisaflow.mobile
+name: Delete one saved proof without deleting its person
+tags:
+  - critical
+  - privacy
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- runFlow: "../subflows/generate-and-persist-offline-proof.yaml"
+- scrollUntilVisible:
+    element:
+      id: "saved-document-delete"
+    direction: DOWN
+- tapOn:
+    id: "saved-document-delete"
+- tapOn: "Delete proof"
+- extendedWaitUntil:
+    visible:
+      id: "family-screen"
+    timeout: 5000
+- assertVisible: "No documents saved"
+- assertVisible: ".*Alex Morgan.*"

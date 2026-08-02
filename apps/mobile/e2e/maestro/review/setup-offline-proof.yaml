@@ -1,0 +1,7 @@
+appId: com.evisaflow.mobile
+name: Prepare the fictional profile for visual review
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"

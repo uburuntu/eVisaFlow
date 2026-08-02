@@ -10,6 +10,9 @@ const ENV_KEYS = [
   "EVISA_HEADLESS",
   "EVISA_DIAGNOSTICS_MODE",
   "HEALTH_PORT",
+  "MOBILE_API_PORT",
+  "MOBILE_API_HOST",
+  "MOBILE_BETA_DAILY_RUN_LIMIT",
   "SCHEDULER_CRON",
   "SCHEDULE_INTERVAL_DAYS",
 ];
@@ -53,6 +56,9 @@ test("loadEnv parses required values and applies defaults", async () => {
     assert.equal(env.EVISA_HEADLESS, true);
     assert.equal(env.EVISA_DIAGNOSTICS_MODE, "sanitized_on_failure");
     assert.equal(env.HEALTH_PORT, 8080);
+    assert.equal(env.MOBILE_API_PORT, 8090);
+    assert.equal(env.MOBILE_API_HOST, "0.0.0.0");
+    assert.equal(env.MOBILE_BETA_DAILY_RUN_LIMIT, 25);
     assert.equal(env.SCHEDULE_INTERVAL_DAYS, 30);
   });
 });

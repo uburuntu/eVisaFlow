@@ -1,0 +1,353 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+action="${1:-all}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${repo_root}"
+
+bundle_id="com.evisaflow.mobile"
+simulator_access_group="FAKETEAMID.${bundle_id}"
+build_directory="apps/mobile/e2e/build/ios"
+entitlements_path="apps/mobile/e2e/ios-simulator.entitlements"
+result_directory="${MOBILE_E2E_RESULTS_DIR:-apps/mobile/e2e/results/local-ios}"
+ios_test_device=""
+ios_original_content_size=""
+
+restore_ios_content_size() {
+  if [[ -z "${ios_test_device}" || -z "${ios_original_content_size}" ]]; then
+    return
+  fi
+  xcrun simctl ui "${ios_test_device}" content_size \
+    "${ios_original_content_size}" >/dev/null
+}
+
+cleanup_ios_test_state() {
+  restore_ios_content_size
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'Missing required command: %s\n' "$1" >&2
+    exit 1
+  fi
+}
+
+configure_java() {
+  java_is_compatible() {
+    local specification_version major
+    specification_version="$(
+      "$1" -XshowSettings:properties -version 2>&1 |
+        awk -F'= ' '/java.specification.version/ { print $2; exit }'
+    )"
+    major="${specification_version%%.*}"
+    [[ "${major}" =~ ^[0-9]+$ ]] && ((major >= 17))
+  }
+
+  if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]] && \
+    java_is_compatible "${JAVA_HOME}/bin/java"; then
+    return
+  fi
+
+  local java_home java_prefix
+  for java_prefix in /opt/homebrew/opt/openjdk@17 /usr/local/opt/openjdk@17; do
+    if [[ -x "${java_prefix}/bin/java" ]] && java_is_compatible "${java_prefix}/bin/java"; then
+      export JAVA_HOME="${java_prefix}"
+      export PATH="${java_prefix}/bin:${PATH}"
+      return
+    fi
+  done
+
+  java_home="$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
+  if [[ -n "${java_home}" && -x "${java_home}/bin/java" ]] && \
+    java_is_compatible "${java_home}/bin/java"; then
+    export JAVA_HOME="${java_home}"
+    export PATH="${JAVA_HOME}/bin:${PATH}"
+    return
+  fi
+
+  printf '%s\n' 'Java 17 is required. Install it with: brew install openjdk@17' >&2
+  exit 1
+}
+
+configure_maestro() {
+  if command -v maestro >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ -x "${HOME}/.maestro/maestro/bin/maestro" ]]; then
+    export PATH="${HOME}/.maestro/maestro/bin:${PATH}"
+    return
+  fi
+
+  printf '%s\n' 'Maestro is required. Install the pinned version with: scripts/install-maestro.sh' >&2
+  exit 1
+}
+
+select_device() {
+  if [[ -n "${DEVICE_ID:-}" ]]; then
+    printf '%s' "${DEVICE_ID}"
+    return
+  fi
+
+  local device_id
+  if [[ -n "${IOS_DEVICE:-}" ]]; then
+    device_id="$(
+      xcrun simctl list devices available -j |
+        jq -r --arg name "${IOS_DEVICE}" \
+          '[.devices[][] | select(.name == $name)] | first | .udid // empty'
+    )"
+  else
+    device_id="$(
+      xcrun simctl list devices available -j |
+        jq -r '[.devices[][] | select(.state == "Booted" and (.name | startswith("iPhone")))] | first | .udid // empty'
+    )"
+    if [[ -z "${device_id}" ]]; then
+      device_id="$(
+        xcrun simctl list devices available -j |
+          jq -r '[.devices[][] | select(.name | startswith("iPhone"))] | first | .udid // empty'
+      )"
+    fi
+  fi
+
+  if [[ -z "${device_id}" ]]; then
+    printf 'No available iPhone simulator matched IOS_DEVICE=%q.\n' "${IOS_DEVICE:-}" >&2
+    exit 1
+  fi
+
+  printf '%s' "${device_id}"
+}
+
+find_workspace() {
+  find apps/mobile/ios -maxdepth 1 -name '*.xcworkspace' -print -quit
+}
+
+find_app() {
+  find "${build_directory}/Build/Products" -maxdepth 2 -name '*.app' -print -quit
+}
+
+record_review_journey() {
+  local device_id="$1"
+  local encoded_path recording_directory recording_path review_source
+  local review_status setup_status video_bytes
+
+  recording_directory="${result_directory}/artifacts/review-video/startRecording"
+  recording_path="${recording_directory}/offline-proof-journey.mp4"
+  encoded_path="${recording_directory}/offline-proof-journey-encoded.m4v"
+  mkdir -p "${recording_directory}" || return
+
+  if maestro --device "${device_id}" test \
+      --format JUNIT \
+      --output "${result_directory}/review-setup-junit.xml" \
+      --test-output-dir "${result_directory}/artifacts/review-setup" \
+      --debug-output "${result_directory}/debug/review-setup" \
+      apps/mobile/e2e/maestro/review/setup-offline-proof.yaml; then
+    setup_status=0
+  else
+    setup_status=$?
+  fi
+  if ((setup_status != 0)); then
+    return "${setup_status}"
+  fi
+
+  if maestro --device "${device_id}" test \
+      --format JUNIT \
+      --output "${result_directory}/review-junit.xml" \
+      --test-output-dir "${result_directory}/artifacts/review-run" \
+      --debug-output "${result_directory}/debug/review-run" \
+      apps/mobile/e2e/maestro/review/offline-proof.yaml; then
+    review_status=0
+  else
+    review_status=$?
+  fi
+
+  if ((review_status != 0)); then
+    return "${review_status}"
+  fi
+
+  review_source="$(
+    find "${result_directory}/artifacts/review-run" \
+      -type f \
+      -path '*/startRecording/offline-proof-journey.mp4' \
+      -print \
+      -quit
+  )"
+  if [[ -z "${review_source}" || ! -s "${review_source}" ]]; then
+    printf '%s\n' 'Maestro did not create the iOS review recording.' >&2
+    return 1
+  fi
+
+  if ! avconvert \
+      --source "${review_source}" \
+      --preset PresetAppleM4V720pHD \
+      --output "${encoded_path}" \
+      --replace; then
+    printf '%s\n' 'iOS review recording could not be transcoded.' >&2
+    return 1
+  fi
+  mv "${encoded_path}" "${recording_path}" || return
+  rm "${review_source}" || return
+
+  video_bytes="$(wc -c < "${recording_path}" | tr -d ' ')"
+  if ((video_bytes < 100000)); then
+    printf 'iOS review recording is unexpectedly small: %s bytes.\n' "${video_bytes}" >&2
+    return 1
+  fi
+  return 0
+}
+
+build_app() {
+  require_command codesign
+  require_command xcodebuild
+  export EXPO_PUBLIC_EVISAFLOW_DEMO_MODE="${EXPO_PUBLIC_EVISAFLOW_DEMO_MODE:-true}"
+
+  local workspace scheme app_path app_bundle_id executable signature_entitlements
+  workspace="$(find_workspace)"
+  if [[ -z "${workspace}" ]]; then
+    printf '%s\n' 'Missing iOS workspace. Run: make mobile-ios-prebuild' >&2
+    exit 1
+  fi
+
+  scheme="$(basename "${workspace}" .xcworkspace)"
+  printf 'Building %s for simulator %s...\n' "${scheme}" "${device_id}"
+  xcodebuild \
+    -workspace "${workspace}" \
+    -scheme "${scheme}" \
+    -configuration Release \
+    -sdk iphonesimulator \
+    -destination "platform=iOS Simulator,id=${device_id}" \
+    -derivedDataPath "${build_directory}" \
+    ONLY_ACTIVE_ARCH=YES \
+    -quiet \
+    build
+
+  app_path="$(find_app)"
+  if [[ -z "${app_path}" ]]; then
+    printf '%s\n' "No simulator app was produced under ${build_directory}." >&2
+    exit 1
+  fi
+
+  app_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app_path}/Info.plist")"
+  if [[ "${app_bundle_id}" != "${bundle_id}" ]]; then
+    printf 'Expected bundle ID %s, got %s.\n' "${bundle_id}" "${app_bundle_id}" >&2
+    exit 1
+  fi
+
+  # Ad-hoc simulator builds do not receive Apple's default Keychain group. The
+  # first signature embeds a simulator-only group; the second leaves the launch
+  # signature unrestricted while retaining the Mach-O entitlement section.
+  codesign --force --sign - \
+    --entitlements "${entitlements_path}" \
+    --timestamp=none \
+    --generate-entitlement-der \
+    "${app_path}"
+  codesign --force --sign - --timestamp=none "${app_path}"
+  codesign --verify --deep --strict --verbose=2 "${app_path}"
+
+  executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app_path}/Info.plist")"
+  if ! grep -Fq "${simulator_access_group}" < <(strings "${app_path}/${executable}"); then
+    printf '%s\n' 'The simulator Keychain access group was not embedded.' >&2
+    exit 1
+  fi
+
+  signature_entitlements="$(codesign -d --entitlements - "${app_path}" 2>&1)"
+  if grep -Eq 'application-identifier|keychain-access-groups' <<< "${signature_entitlements}"; then
+    printf '%s\n' 'Simulator entitlements must not remain in the launch signature.' >&2
+    exit 1
+  fi
+}
+
+run_tests() {
+  configure_java
+  configure_maestro
+  require_command avconvert
+
+  local accessibility_status app_path review_status test_status
+  app_path="$(find_app)"
+  if [[ -z "${app_path}" ]]; then
+    printf '%s\n' 'Missing simulator app. Run this script with build or all first.' >&2
+    exit 1
+  fi
+
+  export MAESTRO_CLI_NO_ANALYTICS=1
+  case "${result_directory}" in
+    apps/mobile/e2e/results/*) ;;
+    *)
+      printf 'Refusing to clean unsafe result directory: %s\n' "${result_directory}" >&2
+      exit 1
+      ;;
+  esac
+  rm -rf "${result_directory}"
+  mkdir -p "${result_directory}"
+  xcrun simctl boot "${device_id}" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "${device_id}" -b
+  xcrun simctl uninstall "${device_id}" "${bundle_id}" >/dev/null 2>&1 || true
+  xcrun simctl install "${device_id}" "${app_path}"
+  ios_test_device="${device_id}"
+  trap cleanup_ios_test_state EXIT
+
+  set +e
+  maestro --device "${device_id}" test \
+    --format JUNIT \
+    --output "${result_directory}/junit.xml" \
+    --test-output-dir "${result_directory}/artifacts" \
+    --debug-output "${result_directory}/debug" \
+    apps/mobile/e2e/maestro/flows
+  test_status=$?
+  set -e
+
+  if record_review_journey "${device_id}"; then
+    review_status=0
+  else
+    review_status=$?
+  fi
+  if ((review_status != 0)); then
+    test_status="${review_status}"
+  fi
+
+  ios_original_content_size="$(xcrun simctl ui "${device_id}" content_size)"
+  xcrun simctl ui "${device_id}" content_size accessibility-extra-extra-extra-large
+  set +e
+  maestro --device "${device_id}" test \
+    --format JUNIT \
+    --output "${result_directory}/accessibility-junit.xml" \
+    --test-output-dir "${result_directory}/artifacts/accessibility" \
+    --debug-output "${result_directory}/debug/accessibility" \
+    apps/mobile/e2e/maestro/accessibility/large-text.yaml
+  accessibility_status=$?
+  set -e
+  if ((accessibility_status != 0)); then
+    test_status="${accessibility_status}"
+  fi
+  restore_ios_content_size
+  ios_original_content_size=""
+  trap - EXIT
+
+  xcrun simctl spawn "${device_id}" log show \
+    --last 15m \
+    --style compact \
+    --predicate 'process == "eVisaFlow"' \
+    > "${result_directory}/simulator.log" || true
+  return "${test_status}"
+}
+
+require_command jq
+require_command xcrun
+device_id="$(select_device)"
+
+case "${action}" in
+  build)
+    build_app
+    ;;
+  test)
+    run_tests
+    ;;
+  all)
+    build_app
+    run_tests
+    ;;
+  *)
+    printf 'Usage: %s [build|test|all]\n' "$0" >&2
+    exit 2
+    ;;
+esac

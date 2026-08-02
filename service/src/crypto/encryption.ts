@@ -45,3 +45,26 @@ export function decrypt(encryptedString: string, keyHex: string): string {
 
   return decrypted;
 }
+
+export function encryptBytes(plaintext: Uint8Array, keyHex: string): Buffer {
+  const key = keyFromHex(keyHex);
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]);
+}
+
+export function decryptBytes(encrypted: Uint8Array, keyHex: string): Buffer {
+  const key = keyFromHex(keyHex);
+  const value = Buffer.from(encrypted);
+  if (value.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+    throw new Error("Encrypted bytes are malformed");
+  }
+
+  const iv = value.subarray(0, IV_LENGTH);
+  const authTag = value.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+  const ciphertext = value.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}

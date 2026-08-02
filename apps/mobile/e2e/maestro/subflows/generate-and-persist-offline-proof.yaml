@@ -1,0 +1,85 @@
+appId: com.evisaflow.mobile
+---
+- takeScreenshot: "dashboard-before-proof"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - startRecording: "offline-proof-journey"
+- tapOn:
+    id: "empty-get-proof"
+- assertVisible:
+    id: "run-purpose-screen"
+- takeScreenshot: "choose-purpose"
+- scrollUntilVisible:
+    element:
+      id: "run-start"
+    direction: DOWN
+- tapOn:
+    id: "run-start"
+- extendedWaitUntil:
+    visible:
+      id: "run-security-code"
+    timeout: 12000
+- takeScreenshot: "security-code"
+- tapOn:
+    id: "run-security-code"
+- inputText: "123456"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - pressKey: enter
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "run-submit-code"
+- extendedWaitUntil:
+    visible:
+      id: "saved-document-screen"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: "saved-offline-proof"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - stopRecording
+- assertVisible: "ABC 123 XYZ"
+- assertVisible: "Fictional eVisa proof.pdf"
+- tapOn:
+    id: "saved-document-copy-code"
+- assertVisible: "Copied to clipboard"
+- assertVisible:
+    id: "saved-document-print-evisa_pdf"
+- assertVisible:
+    id: "saved-document-share-evisa_pdf"
+- stopApp
+- launchApp
+- assertVisible:
+    id: "family-screen"
+- assertVisible: "1 document saved"
+- scrollUntilVisible:
+    element:
+      text: ".*Private beta.*"
+    direction: DOWN
+- assertVisible: ".*Private beta.*"
+- scrollUntilVisible:
+    centerElement: true
+    element:
+      text: "1 document saved"
+    direction: UP
+    visibilityPercentage: 100
+- waitForAnimationToEnd
+- takeScreenshot: "dashboard-with-offline-proof"
+- scrollUntilVisible:
+    element:
+      id: "saved-document-0"
+    direction: DOWN
+- tapOn:
+    id: "saved-document-0"
+- assertVisible:
+    id: "saved-document-screen"
+- assertVisible: "ABC 123 XYZ"

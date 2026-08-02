@@ -1,0 +1,25 @@
+appId: com.evisaflow.mobile
+---
+- scrollUntilVisible:
+    element:
+      id: "onboarding-confirmation"
+    direction: DOWN
+    visibilityPercentage: 50
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "onboarding-confirmation"
+    retryTapIfNoChange: true
+- scrollUntilVisible:
+    element:
+      id: "onboarding-continue"
+    direction: DOWN
+    visibilityPercentage: 50
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "onboarding-continue"
+    enabled: true
+    retryTapIfNoChange: true
+- assertVisible:
+    id: "family-screen"

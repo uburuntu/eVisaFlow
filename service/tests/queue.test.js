@@ -21,7 +21,7 @@ test("queue enforces configured concurrency and drains waiting items", async () 
     enqueue({
       id: "run-201",
       key: "201:member",
-      telegramId: 201,
+      ownerKey: "201",
       memberName: "Alex",
       execute: async () => {
         started.push("first");
@@ -39,7 +39,7 @@ test("queue enforces configured concurrency and drains waiting items", async () 
   const second = enqueue({
     id: "run-202",
     key: "202:member",
-    telegramId: 202,
+    ownerKey: "202",
     memberName: "Sam",
     execute: async () => {
       started.push("second");
@@ -49,7 +49,7 @@ test("queue enforces configured concurrency and drains waiting items", async () 
   const third = enqueue({
     id: "run-203",
     key: "203:member",
-    telegramId: 203,
+    ownerKey: "203",
     memberName: "Pat",
     execute: async () => {
       started.push("third");
@@ -68,7 +68,7 @@ test("queue enforces configured concurrency and drains waiting items", async () 
   assert.deepEqual(getQueueStats(), { active: 0, waiting: 0 });
 });
 
-test("queue serializes jobs for the same Telegram user", async () => {
+test("queue serializes jobs for the same owner", async () => {
   resetQueueForTests();
   setConcurrency(2);
 
@@ -78,7 +78,7 @@ test("queue serializes jobs for the same Telegram user", async () => {
     enqueue({
       id: "run-301-a",
       key: "301:a",
-      telegramId: 301,
+      ownerKey: "301",
       memberName: "Alex",
       execute: async () => {
         started.push("first");
@@ -96,7 +96,7 @@ test("queue serializes jobs for the same Telegram user", async () => {
   const sameUser = enqueue({
     id: "run-301-b",
     key: "301:b",
-    telegramId: 301,
+    ownerKey: "301",
     memberName: "Sam",
     execute: async () => {
       started.push("same-user");
@@ -106,7 +106,7 @@ test("queue serializes jobs for the same Telegram user", async () => {
   const otherUser = enqueue({
     id: "run-302-a",
     key: "302:a",
-    telegramId: 302,
+    ownerKey: "302",
     memberName: "Pat",
     execute: async () => {
       started.push("other-user");
@@ -129,7 +129,7 @@ test("queue dedupes by job key", async () => {
   const first = enqueue({
     id: "run-401",
     key: "401:member",
-    telegramId: 401,
+    ownerKey: "401",
     memberName: "Alex",
     execute: async () => {},
     onPositionUpdate: () => {},
@@ -137,7 +137,7 @@ test("queue dedupes by job key", async () => {
   const duplicate = enqueue({
     id: "run-duplicate",
     key: "401:member",
-    telegramId: 401,
+    ownerKey: "401",
     memberName: "Alex",
     execute: async () => {},
     onPositionUpdate: () => {},
@@ -159,7 +159,7 @@ test("queue cancels queued jobs", async () => {
     const first = enqueue({
       id: "run-501",
       key: "501:member",
-      telegramId: 501,
+      ownerKey: "501",
       memberName: "Alex",
       execute: async () => {
         resolve();
@@ -176,7 +176,7 @@ test("queue cancels queued jobs", async () => {
   const second = enqueue({
     id: "run-502",
     key: "502:member",
-    telegramId: 502,
+    ownerKey: "502",
     memberName: "Sam",
     execute: async () => {
       throw new Error("should not start");
@@ -201,7 +201,7 @@ test("queue rejects active jobs when they are cancelled", async () => {
     const first = enqueue({
       id: "run-601",
       key: "601:member",
-      telegramId: 601,
+      ownerKey: "601",
       memberName: "Alex",
       execute: async (signal) => {
         resolve();
@@ -218,7 +218,7 @@ test("queue rejects active jobs when they are cancelled", async () => {
   const second = enqueue({
     id: "run-602",
     key: "602:member",
-    telegramId: 602,
+    ownerKey: "602",
     memberName: "Sam",
     execute: async () => {},
     onPositionUpdate: () => {},
@@ -245,7 +245,7 @@ test("queue ignores position notification failures", async () => {
   const syncFailure = enqueue({
     id: "run-notify-sync",
     key: "notify:sync",
-    telegramId: 701,
+    ownerKey: "701",
     memberName: "Alex",
     execute: async () => {},
     onPositionUpdate() {
@@ -257,7 +257,7 @@ test("queue ignores position notification failures", async () => {
   const asyncFailure = enqueue({
     id: "run-notify-async",
     key: "notify:async",
-    telegramId: 702,
+    ownerKey: "702",
     memberName: "Sam",
     execute: async () => {},
     async onPositionUpdate() {

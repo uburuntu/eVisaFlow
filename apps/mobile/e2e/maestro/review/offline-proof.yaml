@@ -1,0 +1,15 @@
+appId: com.evisaflow.mobile
+name: Record the offline proof journey
+---
+- launchApp
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - startRecording: "offline-proof-journey"
+- runFlow: "../subflows/generate-and-persist-offline-proof.yaml"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - stopRecording

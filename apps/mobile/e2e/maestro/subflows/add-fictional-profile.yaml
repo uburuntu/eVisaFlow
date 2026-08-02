@@ -1,0 +1,109 @@
+appId: com.evisaflow.mobile
+---
+- tapOn:
+    id: "family-add-person-empty"
+- assertVisible:
+    id: "profile-form"
+- tapOn:
+    id: "profile-name"
+- inputText: "Alex Morgan"
+- tapOn:
+    id: "profile-document-type-nationalId"
+- tapOn:
+    id: "profile-document-number"
+- inputText: "AB123456"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-day"
+    direction: DOWN
+- tapOn:
+    id: "profile-birth-day"
+- inputText: "15"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-month"
+    direction: DOWN
+- tapOn:
+    id: "profile-birth-month"
+- inputText: "06"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
+- scrollUntilVisible:
+    element:
+      id: "profile-birth-year"
+    direction: DOWN
+- tapOn:
+    id: "profile-birth-year"
+- inputText: "1990"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Date of birth"
+- scrollUntilVisible:
+    element:
+      id: "profile-two-factor-email"
+    direction: DOWN
+- tapOn:
+    id: "profile-two-factor-email"
+- scrollUntilVisible:
+    element:
+      id: "profile-authority-authorised_proxy"
+    direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "profile-authority-authorised_proxy"
+    retryTapIfNoChange: true
+- scrollUntilVisible:
+    element:
+      id: "profile-authority-confirmation"
+    direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "profile-authority-confirmation"
+    retryTapIfNoChange: true
+- scrollUntilVisible:
+    element:
+      id: "profile-save"
+    direction: DOWN
+    visibilityPercentage: 50
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "profile-save"
+    enabled: true
+    retryTapIfNoChange: true
+- assertVisible:
+    id: "family-screen"
+- assertVisible: ".*Alex Morgan.*"

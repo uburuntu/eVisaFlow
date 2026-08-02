@@ -1,4 +1,5 @@
 import { run } from "@grammyjs/runner";
+import { startMobileApi } from "./api/server.js";
 import { createBot } from "./bot/bot.js";
 import { getSupabase } from "./db/client.js";
 import { markNonTerminalRunsInterrupted } from "./db/runs.js";
@@ -23,13 +24,18 @@ interface RuntimeState {
   telegramReady: boolean;
   telegramUsername?: string;
   supabaseReady: boolean;
+  mobileApiReady: boolean;
   runnerRunning: boolean;
 }
 
 function healthSnapshot(state: RuntimeState) {
   return {
     ready:
-      state.ready && state.telegramReady && state.supabaseReady && state.runnerRunning,
+      state.ready &&
+      state.telegramReady &&
+      state.supabaseReady &&
+      state.mobileApiReady &&
+      state.runnerRunning,
     shuttingDown: state.shuttingDown,
     startedAt: state.startedAt,
     telegram: {
@@ -39,6 +45,9 @@ function healthSnapshot(state: RuntimeState) {
     },
     supabase: {
       ready: state.supabaseReady,
+    },
+    mobileApi: {
+      ready: state.mobileApiReady,
     },
     queue: getQueueStats(),
   };
@@ -63,12 +72,14 @@ async function main(): Promise<void> {
     startedAt: new Date().toISOString(),
     telegramReady: false,
     supabaseReady: false,
+    mobileApiReady: false,
     runnerRunning: false,
   };
 
   const health = startHealthServer(env.HEALTH_PORT, log, () => healthSnapshot(state));
   const db = getSupabase(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   setConcurrency(env.QUEUE_CONCURRENCY);
+  let mobileApi: Awaited<ReturnType<typeof startMobileApi>> | undefined;
 
   const bot = createBot(env.TELEGRAM_BOT_TOKEN, db, env, log);
 
@@ -82,8 +93,11 @@ async function main(): Promise<void> {
       db,
       "Service restarted before the run completed"
     );
+    mobileApi = await startMobileApi({ db, env, log });
+    state.mobileApiReady = true;
   } catch (err) {
     log.fatal({ err }, "Startup readiness check failed");
+    await mobileApi?.close().catch(() => {});
     await health.close().catch(() => {});
     process.exit(1);
     return;
@@ -121,6 +135,7 @@ async function main(): Promise<void> {
     }
     state.ready = false;
     state.shuttingDown = true;
+    state.mobileApiReady = false;
     log.info({ signal }, "Shutting down");
 
     scheduler.stop();
@@ -137,6 +152,9 @@ async function main(): Promise<void> {
       { runIds: interruptedRunIds }
     ).catch((err) => {
       log.warn({ err }, "Failed to mark interrupted runs");
+    });
+    await mobileApi?.close().catch((err) => {
+      log.warn({ err }, "Failed to close mobile API");
     });
     await health.close().catch((err) => {
       log.warn({ err }, "Failed to close health server");

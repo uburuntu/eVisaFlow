@@ -12,3 +12,9 @@ snapshots/
 config.json
 scripts/debug-flow.js
 test-credentials.json
+.expo/
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/e2e/build/
+apps/mobile/e2e/results/
+apps/mobile/ios/

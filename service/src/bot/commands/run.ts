@@ -1,6 +1,8 @@
 import type {
   Applicant,
   CreateShareCodeResult,
+  EVisaChallenge,
+  EVisaChallengeContext,
   EVisaErrorCode,
   EVisaEvent,
   EVisaPhase,
@@ -23,6 +25,11 @@ import {
   hasJob,
   QueueJobCancelledError,
 } from "../../runner/queue.js";
+import {
+  cancelRequest,
+  requestCode,
+  setPromptMessageId,
+} from "../../runner/two-factor-store.js";
 import { escapeHtml, MessageTracker } from "../../utils/messages.js";
 import type { MyContext } from "../context.js";
 
@@ -533,16 +540,12 @@ async function runForMember(params: {
     );
     const applicant = buildApplicant(member, ctx.env.ENCRYPTION_KEY);
     const result = await executeRun({
-      requestId: runId,
       applicant,
       purpose: member.purpose as Purpose,
       twoFactorMethod: member.preferred_2fa_method as TwoFactorMethod,
       headless: ctx.env.EVISA_HEADLESS,
       diagnosticsMode: ctx.env.EVISA_DIAGNOSTICS_MODE,
       signal,
-      telegramId,
-      chatId,
-      memberName: member.display_name,
       onEvent: (event: EVisaEvent) => {
         persistRunEvent(ctx, runId, event);
         log.info({ event: eventRecord(event) }, "eVisa event");
@@ -561,25 +564,42 @@ async function runForMember(params: {
           lastTiming = `Last ${escapeHtml(event.operation)}: ${Math.round(event.durationMs)}ms`;
         }
       },
-      onTwoFactorNeeded: async (method: TwoFactorMethod) => {
-        progressPhase = "Waiting for 2FA";
-        await updateRunStatus(
-          ctx.db,
-          runId,
-          { status: "awaiting_2fa" },
-          { throwOnConflict: true }
-        );
-        const promptMsg = await ctx.reply(
-          [
-            `<b>2FA Required — ${escapeHtml(member.display_name)}</b>`,
-            "",
-            `A code was sent via <b>${method.toUpperCase()}</b>.`,
-            "Reply with the code or send it as the next message.",
-          ].join("\n"),
-          { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
-        );
-        tracker.track(promptMsg.message_id);
-        return promptMsg.message_id;
+      onChallenge: async (challenge: EVisaChallenge, context: EVisaChallengeContext) => {
+        const codePromise = requestCode({
+          requestId: runId,
+          telegramId,
+          chatId,
+          method: challenge.deliveryMethod,
+          memberName: member.display_name,
+          deadlineMs: context.deadlineMs,
+          signal: context.signal,
+        });
+        codePromise.catch(() => {});
+
+        try {
+          progressPhase = "Waiting for 2FA";
+          await updateRunStatus(
+            ctx.db,
+            runId,
+            { status: "awaiting_2fa" },
+            { throwOnConflict: true }
+          );
+          const promptMsg = await ctx.reply(
+            [
+              `<b>2FA Required — ${escapeHtml(member.display_name)}</b>`,
+              "",
+              `A code was sent via <b>${challenge.deliveryMethod.toUpperCase()}</b>.`,
+              "Reply with the code or send it as the next message.",
+            ].join("\n"),
+            { parse_mode: "HTML", reply_markup: cancelKeyboard(runId) }
+          );
+          tracker.track(promptMsg.message_id);
+          setPromptMessageId(runId, promptMsg.message_id);
+          return { code: await codePromise };
+        } catch (error) {
+          cancelRequest(runId, "2FA challenge failed");
+          throw error;
+        }
       },
     });
 
@@ -710,7 +730,7 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       const result = enqueue({
         id: runRecord.id,
         key,
-        telegramId,
+        ownerKey: String(telegramId),
         memberName: member.display_name,
         execute: async (signal) => {
           await runForMember({
@@ -796,7 +816,7 @@ export function registerRunCallbacks(bot: Bot<MyContext>): void {
       await ctx.answerCallbackQuery({ text: "This run is no longer active." });
       return;
     }
-    if (ctx.from?.id !== job.telegramId) {
+    if (String(ctx.from?.id) !== job.ownerKey) {
       await ctx.answerCallbackQuery({ text: "This run belongs to another user." });
       return;
     }

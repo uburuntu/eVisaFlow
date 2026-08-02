@@ -2,6 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as api from "../dist/index.js";
 import {
+  ApplicantSchema,
+  formatShareCodeValidUntil,
+  MobileApiErrorSchema,
+  MobileMeSchema,
+  MobileRunClaimAcknowledgementRequestSchema,
+  MobileRunClaimAcknowledgementSchema,
+  MobileRunClaimResultSchema,
+  MobileRunCreateRequestSchema,
+  MobileRunSnapshotSchema,
+  mobileClaimManifestJson,
+  shareCodeExpiryDeadlineMs,
+} from "../dist/protocol/index.js";
+import {
   ConfigSchema,
   createSanitizedDiagnosticSnapshot,
 } from "../dist/unstable/testing.js";
@@ -16,6 +29,199 @@ test("root package exposes the v2 client API without step internals", () => {
   assert.equal(api.EntryPageStep, undefined);
   assert.equal(api.DocumentTypeStep, undefined);
   assert.equal(api.DownloadPdfStep, undefined);
+});
+
+test("protocol schemas validate platform-neutral applicants", () => {
+  const applicant = ApplicantSchema.parse({
+    identityDocument: { type: "passport", number: "123456789" },
+    dateOfBirth: "1980-03-31",
+  });
+
+  assert.equal(applicant.identityDocument.type, "passport");
+  assert.throws(() =>
+    ApplicantSchema.parse({
+      identityDocument: { type: "passport", number: "not valid!" },
+      dateOfBirth: "1980-02-31",
+    })
+  );
+});
+
+test("mobile run protocol rejects incomplete authority metadata", () => {
+  const request = {
+    clientRunId: "b7d0648e-9bf2-46e9-a238-98061470f42c",
+    profileId: "1f8f9e99-f0ea-4591-a745-aabf871febc1",
+    applicant: {
+      identityDocument: { type: "passport", number: "123456789" },
+      dateOfBirth: "1980-03-31",
+    },
+    purpose: "immigration_status_other",
+    preferredTwoFactorMethod: "sms",
+    authorityBasis: "authorised_proxy",
+    attestedAt: "2026-08-01T09:00:00.000Z",
+    termsVersion: "2026-08-01",
+  };
+
+  assert.equal(
+    MobileRunCreateRequestSchema.parse(request).authorityBasis,
+    "authorised_proxy"
+  );
+  assert.equal(
+    MobileRunCreateRequestSchema.safeParse({ ...request, termsVersion: "" }).success,
+    false
+  );
+});
+
+test("mobile API schemas validate snapshots, entitlements, and claimed artifacts", () => {
+  const runId = "c6d85ab7-22cd-4ef7-a394-e82c0fd8226b";
+  const profileId = "1f8f9e99-f0ea-4591-a745-aabf871febc1";
+  const now = "2026-08-01T09:00:00.000Z";
+  const artifact = {
+    id: "1df5b293-76a3-4a95-994b-8c98cc9fa260",
+    kind: "evisa_pdf",
+    filename: "eVisa proof.pdf",
+    contentType: "application/pdf",
+    byteLength: 1024,
+    sha256: "a".repeat(64),
+  };
+  const secondArtifact = {
+    ...artifact,
+    id: "0df5b293-76a3-4a95-994b-8c98cc9fa260",
+    kind: "checker_pdf",
+    filename: "Status check.pdf",
+    sha256: "c".repeat(64),
+  };
+
+  assert.equal(
+    MobileRunSnapshotSchema.parse({
+      id: runId,
+      clientRunId: runId,
+      profileId,
+      purpose: "right_to_work",
+      status: "awaiting_2fa",
+      phase: "waiting_for_2fa",
+      challenge: {
+        type: "security_code",
+        deliveryMethod: "sms",
+        deadlineMs: Date.now() + 60_000,
+      },
+      createdAt: now,
+      updatedAt: now,
+    }).status,
+    "awaiting_2fa"
+  );
+  assert.equal(
+    MobileMeSchema.parse({
+      userId: "9591fc30-b78f-4282-8fc9-ae662d725ad1",
+      entitlement: "free",
+      profileLimit: 1,
+      activeProfileCount: 1,
+      successfulRunCount: 0,
+      remainingFreeRuns: 3,
+      serviceStatus: "available",
+    }).remainingFreeRuns,
+    3
+  );
+  const claim = MobileRunClaimResultSchema.parse({
+    claimToken: "a".repeat(43),
+    claimExpiresAt: "2026-08-01T09:10:00.000Z",
+    manifestHash: "b".repeat(64),
+    shareCode: "W12 345 678",
+    validUntil: "2026-10-30",
+    generatedAt: now,
+    artifacts: [artifact],
+  });
+  assert.equal(claim.validUntil, "2026-10-30");
+  assert.equal(claim.artifacts[0].kind, "evisa_pdf");
+  assert.equal(
+    MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T09:10:00.000Z",
+      manifestHash: "b".repeat(64),
+      shareCode: "W12 345 678",
+      validUntil: "2026-10-30T09:00:00.000Z",
+      generatedAt: now,
+      artifacts: [artifact],
+    }).success,
+    true
+  );
+  assert.equal(
+    MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T10:10:00+01:00",
+      manifestHash: "b".repeat(64),
+      shareCode: "W12 345 678",
+      validUntil: "2026-10-30T10:00:00+01:00",
+      generatedAt: "2026-08-01T10:00:00+01:00",
+      artifacts: [artifact],
+    }).success,
+    true
+  );
+  assert.equal(
+    MobileRunClaimResultSchema.safeParse({
+      claimToken: "a".repeat(43),
+      claimExpiresAt: "2026-08-01T09:10:00.000Z",
+      manifestHash: "b".repeat(64),
+      shareCode: "W12 345 678",
+      validUntil: "2026-02-30",
+      generatedAt: now,
+      artifacts: [artifact],
+    }).success,
+    false
+  );
+  assert.equal(
+    MobileRunClaimAcknowledgementRequestSchema.parse({
+      claimToken: "a".repeat(43),
+      manifestHash: "b".repeat(64),
+    }).manifestHash,
+    "b".repeat(64)
+  );
+  assert.equal(
+    MobileRunClaimAcknowledgementSchema.parse({
+      claimedAt: now,
+      usageConsumed: true,
+    }).usageConsumed,
+    true
+  );
+  const canonicalManifest = mobileClaimManifestJson({
+    runId,
+    shareCode: claim.shareCode,
+    validUntil: claim.validUntil,
+    generatedAt: claim.generatedAt,
+    artifacts: [artifact, secondArtifact],
+  });
+  assert.equal(
+    canonicalManifest,
+    mobileClaimManifestJson({
+      runId,
+      shareCode: claim.shareCode,
+      validUntil: claim.validUntil,
+      generatedAt: claim.generatedAt,
+      artifacts: [secondArtifact, artifact],
+    })
+  );
+  assert.deepEqual(
+    JSON.parse(canonicalManifest).artifacts.map(({ id }) => id),
+    [secondArtifact.id, artifact.id]
+  );
+  assert.equal(
+    MobileApiErrorSchema.safeParse({ code: "NOPE", message: "", retryable: true })
+      .success,
+    false
+  );
+});
+
+test("share-code expiry dates remain calendar-stable and inclusive", () => {
+  assert.equal(
+    formatShareCodeValidUntil("2026-10-30", {
+      dateStyle: "long",
+      timeZone: "America/Los_Angeles",
+    }),
+    "30 October 2026"
+  );
+  assert.equal(
+    shareCodeExpiryDeadlineMs("2026-10-30"),
+    Date.parse("2026-10-30T23:59:59.999Z")
+  );
 });
 
 test("EVisaClient validates request shape before launching a browser", async () => {

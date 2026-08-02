@@ -1,0 +1,341 @@
+name: Mobile E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-e2e.yml"
+      - "apps/mobile/**"
+      - "packages/protocol/**"
+      - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-android.sh"
+      - "scripts/mobile-e2e-ios.sh"
+      - "src/protocol/**"
+      - "Makefile"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-e2e.yml"
+      - "apps/mobile/**"
+      - "packages/protocol/**"
+      - "scripts/install-maestro.sh"
+      - "scripts/mobile-e2e-android.sh"
+      - "scripts/mobile-e2e-ios.sh"
+      - "src/protocol/**"
+      - "Makefile"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  schedule:
+    - cron: "31 5 * * 2,5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "1"
+  MAESTRO_CLI_NO_ANALYTICS: "1"
+  MAESTRO_VERSION: "2.7.0"
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_EVISAFLOW_DEMO_MODE: "true"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared protocol
+        run: pnpm run build:protocol
+
+      - name: Check Expo dependency alignment
+        run: pnpm run check:mobile
+
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --clean --no-install
+
+      - name: Enable KVM access
+        run: |
+          if [[ ! -c /dev/kvm ]]; then
+            echo "This hosted runner does not expose /dev/kvm." >&2
+            exit 1
+          fi
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        env:
+          NODE_ENV: production
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PreactNativeArchitectures=x86_64
+          --no-daemon
+          --stacktrace
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.maestro/maestro
+          key: maestro-${{ runner.os }}-2.7.0
+
+      - name: Install verified Maestro CLI
+        run: scripts/install-maestro.sh
+
+      - name: Run Maestro journeys
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        env:
+          MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/android
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: scripts/mobile-e2e-android.sh test
+
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-e2e-android-${{ github.run_attempt }}
+          path: apps/mobile/e2e/results/android/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload failing Android build
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-e2e-android-apk-${{ github.run_attempt }}
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_EVISAFLOW_DEMO_MODE: "true"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared protocol
+        run: pnpm run build:protocol
+
+      - name: Check Expo dependency alignment
+        run: pnpm run check:mobile
+
+      - name: Generate iOS project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform ios --clean --no-install
+
+      - name: Install iOS pods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Select iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          device_id="$(
+            xcrun simctl list devices available -j |
+              jq -r '[.devices[][] | select(.name | startswith("iPhone"))] | first | .udid'
+          )"
+          if [[ -z "${device_id}" || "${device_id}" == "null" ]]; then
+            echo "No available iPhone simulator was found." >&2
+            exit 1
+          fi
+          printf 'device_id=%s\n' "${device_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build iOS simulator app
+        env:
+          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+        run: scripts/mobile-e2e-ios.sh build
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.maestro/maestro
+          key: maestro-${{ runner.os }}-2.7.0
+
+      - name: Install verified Maestro CLI
+        run: scripts/install-maestro.sh
+
+      - name: Run Maestro journeys
+        env:
+          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: "240000"
+          MOBILE_E2E_RESULTS_DIR: apps/mobile/e2e/results/ios
+        run: scripts/mobile-e2e-ios.sh test
+
+      - name: Upload iOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-e2e-ios-${{ github.run_attempt }}
+          path: apps/mobile/e2e/results/ios/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload failing iOS build
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-e2e-ios-app-${{ github.run_attempt }}
+          path: apps/mobile/e2e/build/ios/Build/Products/**/*.app
+          if-no-files-found: warn
+          retention-days: 7
+
+  visual-review:
+    name: Publish visual review
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mobile-e2e-android-*
+          path: artifacts/android
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mobile-e2e-ios-*
+          path: artifacts/ios
+          merge-multiple: true
+
+      - name: Collect deterministic review assets
+        run: |
+          scripts/collect-mobile-visuals.sh android artifacts/android "${RUNNER_TEMP}/visuals"
+          scripts/collect-mobile-visuals.sh ios artifacts/ios "${RUNNER_TEMP}/visuals"
+
+      - name: Publish isolated PR asset branch
+        id: publish
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan "mobile-visuals-${GITHUB_RUN_ID}"
+          git rm -rf --ignore-unmatch .
+          mkdir -p docs/pr-assets/mobile
+          cp -R "${RUNNER_TEMP}/visuals/." docs/pr-assets/mobile/
+          git add docs/pr-assets/mobile
+          git commit -m "visuals: mobile review for PR #${PR_NUMBER}"
+          git push --force origin "HEAD:refs/heads/mobile-visuals/pr-${PR_NUMBER}"
+          printf 'asset_sha=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update visual review comment
+        uses: actions/github-script@v8
+        env:
+          ASSET_SHA: ${{ steps.publish.outputs.asset_sha }}
+        with:
+          script: |
+            const marker = '<!-- evisaflow-mobile-visuals -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const base = `https://raw.githubusercontent.com/${owner}/${repo}/${process.env.ASSET_SHA}/docs/pr-assets/mobile`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = `${marker}
+            ## Mobile visual review
+
+            Fixture-backed release builds at \`${context.sha.slice(0, 7)}\`. All identity data, share codes, and files shown here are fictional.
+
+            | Platform | Offline vault | Security code | Saved proof |
+            | --- | --- | --- | --- |
+            | iOS | <img src="${base}/ios/dashboard-before-proof.png" width="220" alt="iOS offline vault"> | <img src="${base}/ios/security-code.png" width="220" alt="iOS security code"> | <img src="${base}/ios/saved-offline-proof.png" width="220" alt="iOS saved proof"> |
+            | Android | <img src="${base}/android/dashboard-before-proof.png" width="220" alt="Android offline vault"> | <img src="${base}/android/security-code.png" width="220" alt="Android security code"> | <img src="${base}/android/saved-offline-proof.png" width="220" alt="Android saved proof"> |
+
+            | Platform | Purpose | Persisted dashboard | Privacy settings |
+            | --- | --- | --- | --- |
+            | iOS | <img src="${base}/ios/choose-purpose.png" width="220" alt="iOS purpose selection"> | <img src="${base}/ios/dashboard-with-offline-proof.png" width="220" alt="iOS persisted dashboard"> | <img src="${base}/ios/privacy-settings.png" width="220" alt="iOS privacy settings"> |
+            | Android | <img src="${base}/android/choose-purpose.png" width="220" alt="Android purpose selection"> | <img src="${base}/android/dashboard-with-offline-proof.png" width="220" alt="Android persisted dashboard"> | <img src="${base}/android/privacy-settings.png" width="220" alt="Android privacy settings"> |
+
+            | Platform | Printable offline summary |
+            | --- | --- |
+            | iOS | <img src="${base}/ios/offline-summary.png" width="250" alt="iOS printable offline summary selection"> |
+            | Android | <img src="${base}/android/offline-summary.png" width="250" alt="Android printable offline summary selection"> |
+
+            | Platform | Large text dashboard (200%) | Scrolled controls (200%) |
+            | --- | --- | --- |
+            | iOS | <img src="${base}/ios/large-text-dashboard.png" width="250" alt="iOS dashboard at 200 percent text size"> | <img src="${base}/ios/large-text-dashboard-bottom.png" width="250" alt="iOS scrolled dashboard controls at 200 percent text size"> |
+            | Android | <img src="${base}/android/large-text-dashboard.png" width="250" alt="Android dashboard at 200 percent text size"> | <img src="${base}/android/large-text-dashboard-bottom.png" width="250" alt="Android scrolled dashboard controls at 200 percent text size"> |
+
+            **Journey videos:** [iOS](${base}/ios/offline-proof-journey.mp4) · [Android](${base}/android/offline-proof-journey.mp4)
+
+            [CI run and full diagnostics](${runUrl})`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

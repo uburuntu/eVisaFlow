@@ -20,6 +20,10 @@
     "./unstable/testing": {
       "types": "./dist/unstable/testing.d.ts",
       "import": "./dist/unstable/testing.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js"
     }
   },
   "files": [
@@ -32,10 +36,15 @@
   "scripts": {
     "audit": "node ./scripts/audit.js",
     "build": "pnpm run build:service",
-    "build:lib": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --sourcemap --clean && tsc --emitDeclarationOnly --declarationMap false",
+    "build:lib": "pnpm run build:protocol && tsup && tsc --emitDeclarationOnly --declarationMap false",
+    "build:protocol": "pnpm --filter @evisa-flow/protocol build",
     "build:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot build",
+    "check:mobile": "node ./scripts/check-mobile-toolchain.js",
     "check:toolchain": "node ./scripts/check-toolchain.js",
-    "dev": "tsup src/index.ts src/cli.ts src/unstable/testing.ts --format esm --sourcemap --clean --watch --onSuccess \"tsc --emitDeclarationOnly --declarationMap false\"",
+    "dev": "pnpm run build:protocol && tsup --watch --onSuccess \"tsc --emitDeclarationOnly --declarationMap false\"",
+    "dev:mobile": "pnpm --filter evisa-flow-mobile start",
+    "e2e:mobile": "pnpm --filter evisa-flow-mobile e2e",
+    "e2e:mobile:smoke": "pnpm --filter evisa-flow-mobile e2e:smoke",
     "format": "biome check --write .",
     "format:check": "biome ci . --reporter=summary --error-on-warnings",
     "lint": "biome ci . --reporter=summary --error-on-warnings",
@@ -46,13 +55,16 @@
     "smoke:live": "pnpm run build:lib && node ./scripts/live-smoke.js",
     "fixtures": "node ./scripts/refresh-fixtures.js",
     "test": "pnpm run build && pnpm run test:built",
-    "test:built": "node --test tests/*.test.js && node --test service/tests/*.test.js",
+    "test:built": "node --test tests/*.test.js && node --test service/tests/*.test.js && pnpm run test:mobile",
     "test:lib": "pnpm run build:lib && node --test tests/*.test.js",
+    "test:mobile": "pnpm --filter evisa-flow-mobile test",
     "test:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot build && node --test service/tests/*.test.js",
-    "typecheck": "pnpm run typecheck:lib && pnpm run typecheck:service",
-    "typecheck:lib": "tsc --noEmit",
+    "typecheck": "pnpm run typecheck:protocol && pnpm run typecheck:lib && pnpm run typecheck:service && pnpm run typecheck:mobile",
+    "typecheck:lib": "pnpm run build:protocol && tsc --noEmit",
+    "typecheck:protocol": "pnpm --filter @evisa-flow/protocol typecheck",
     "typecheck:service": "pnpm run build:lib && pnpm --filter evisa-flow-bot typecheck",
-    "validate": "pnpm run lint && pnpm run check:toolchain && pnpm run typecheck && pnpm run build && pnpm run test:built && pnpm run pack:dry && pnpm run audit"
+    "typecheck:mobile": "pnpm run build:protocol && pnpm --filter evisa-flow-mobile typecheck",
+    "validate": "pnpm run lint && pnpm run check:toolchain && pnpm run check:mobile && pnpm run typecheck && pnpm run build && pnpm run test:built && pnpm run pack:dry && pnpm run audit"
   },
   "keywords": [
     "evisa",

@@ -1,0 +1,31 @@
+appId: com.evisaflow.mobile
+name: Prepare a printable offline summary
+tags:
+  - critical
+  - offline
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- runFlow: "../subflows/add-fictional-profile.yaml"
+- runFlow: "../subflows/generate-and-persist-offline-proof.yaml"
+- stopApp
+- launchApp
+- assertVisible:
+    id: "family-screen"
+- scrollUntilVisible:
+    element:
+      id: "dashboard-emergency-summary"
+    direction: DOWN
+- tapOn:
+    id: "dashboard-emergency-summary"
+- assertVisible:
+    id: "emergency-summary-screen"
+- assertVisible: "Offline summary"
+- assertVisible: ".*unofficial and is not a live UKVI check.*"
+- assertVisible: ".*Alex Morgan.*Right to work.*"
+- assertVisible:
+    id: "emergency-summary-share"
+- assertVisible:
+    id: "emergency-summary-print"
+- takeScreenshot: "offline-summary"

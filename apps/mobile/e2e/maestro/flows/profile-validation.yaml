@@ -1,0 +1,34 @@
+appId: com.evisaflow.mobile
+name: Profile validation protects the vault
+tags:
+  - regression
+---
+- launchApp:
+    clearState: true
+- runFlow: "../subflows/accept-disclosure.yaml"
+- tapOn:
+    id: "family-add-person-empty"
+- scrollUntilVisible:
+    element:
+      id: "profile-save"
+    direction: DOWN
+- tapOn:
+    id: "profile-save"
+- scrollUntilVisible:
+    element: "Enter a name."
+    direction: UP
+- assertVisible: "Enter a name."
+- scrollUntilVisible:
+    element: "Use 3-64 letters, numbers, or hyphens."
+    direction: DOWN
+- assertVisible: "Use 3-64 letters, numbers, or hyphens."
+- scrollUntilVisible:
+    element: "Enter a valid date of birth."
+    direction: DOWN
+- assertVisible: "Enter a valid date of birth."
+- scrollUntilVisible:
+    element: "Confirmation is required."
+    direction: DOWN
+- assertVisible: "Confirmation is required."
+- assertVisible:
+    id: "profile-form"
